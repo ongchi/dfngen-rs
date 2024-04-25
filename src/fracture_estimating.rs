@@ -1,0 +1,389 @@
+use std::{cell::RefCell, rc::Rc};
+
+use rand::{distributions::Uniform, Rng};
+use rand_distr::LogNormal;
+use rand_mt::Mt19937GenRand64;
+
+use crate::{
+    distributions::Distributions,
+    domain::domain_truncation,
+    generating_points::truncated_power_law,
+    insert_shape::{
+        generate_poly, generate_poly_with_radius, get_family_number, get_largest_fracture_radius,
+        p32_complete, re_translate_poly, shape_type,
+    },
+    math_functions::{
+        adjust_cdf_and_fam_prob, cdf_idx_from_fam_num, create_cdf, get_area,
+        index_from_prob_and_p32_status,
+    },
+    read_input::Input,
+    structures::Shape,
+};
+
+// **********************************************************************
+// ****************  Sort Families Radii Lists  *************************
+// Uses std::sort to sort each family's radii list from largest to smallest.
+// This will allow the DFN gereration to start from largest to smallest
+// fractures.
+// Arg 1: vector<Shape> array of stochastic fracture families */
+pub fn sort_radii(shape_fam: &mut Vec<Shape>) {
+    for shape in shape_fam {
+        shape.radii_list.sort_by(|a, b| b.partial_cmp(a).unwrap())
+    }
+}
+
+// **********************************************************************
+// **********************************************************************
+// ***  Create Radii Lists for Shape Families When Using NPoly Option ***
+//     Estimates the number of fractures needed for each family and
+//     creates radii lists for each family based on their distribution.
+//     Arg 1: vector<Shape> array of stochastic fracture families
+//     Arg 2: Family probablity array ('famProb' in input file)
+//     Arg 3: Random number generator, see std <random> library
+//     Arg 4: Reference to Distributions class (used for exponential distribution)
+pub fn generate_radii_lists_n_poly_option(
+    input: &Input,
+    shape_families: &mut [Shape],
+    fam_prob: &[f64],
+    generator: Rc<RefCell<Mt19937GenRand64>>,
+    distributions: Rc<RefCell<Distributions>>,
+) {
+    println!("Building radii lists for nPoly option...");
+
+    if input.forceLargeFractures {
+        for shape in shape_families.iter_mut() {
+            let radius = get_largest_fracture_radius(shape);
+            shape.radii_list.push(radius);
+        }
+    }
+
+    for i in 0..shape_families.len() {
+        let amount_to_add = if input.forceLargeFractures {
+            (fam_prob[i] * (input.nPoly - shape_families.len()) as f64).ceil() as usize
+        } else {
+            (fam_prob[i] * input.nPoly as f64).ceil() as usize
+        };
+
+        add_radii(
+            input,
+            amount_to_add,
+            i as isize,
+            &mut shape_families[i],
+            generator.clone(),
+            distributions.clone(),
+        );
+    }
+
+    println!("Building radii lists for nPoly option Complete");
+}
+
+// **********************************************************************
+// ********************  Print Warining to User  ************************
+//     This function prints a warning to the user when the random generation
+//     of fracture radii lenths is continuously smaller than the minimum defined
+//     radii allowed (defined by user in the input file)
+//     Arg 1: Index to the family in vecotr<Shape> array the warning is refering to
+//     Arg 2: Shape structure the warning is refering to
+pub fn print_generating_fractures_less_than_hwarning(
+    input: &Input,
+    fam_index: isize,
+    shape_fam: &Shape,
+) {
+    println!("WARNING: {} Family {} is attepting to populate fracture radii lists, however many fractures are being generated with radii less than 3*h (Minimum radius). Consider adjusting distribution parameters.", shape_type(shape_fam), get_family_number(input, fam_index, shape_fam.shape_family));
+}
+
+// **********************************************************************
+// *********  Add Percentage More Radii To Radii Lists  *****************
+//     Function adds a percentage more radii to the fracture families
+//     radii lists based on each families distribution.
+//     This helps account for fracture rejections
+//     Arg 1: Percentage to increase the list by. eg .10 will add %10 more radii
+//     Arg 2: vector<Shape> array of stochastic fracture families
+//     Arg 3: Random number generator (see std <random> library)
+//     Arg 4: Distributions class (currently only used for exponential dist)
+pub fn add_radii_to_lists(
+    input: &Input,
+    percent: f64,
+    shape_families: &mut [Shape],
+    generator: Rc<RefCell<Mt19937GenRand64>>,
+    distributions: Rc<RefCell<Distributions>>,
+) {
+    for (i, shape) in shape_families.iter_mut().enumerate() {
+        let amount_to_add = (shape.radii_list.len() as f64 * percent).ceil() as usize;
+        add_radii(
+            input,
+            amount_to_add,
+            i as isize,
+            shape,
+            generator.clone(),
+            distributions.clone(),
+        );
+    }
+}
+
+// **********************************************************************
+// ************  Add Radii To Shape Families Radii List  ****************
+//     Adds 'amountToAdd' more radii to 'shapeFam's radii list
+//     Arg 1: Number of fractures to add to the list
+//     Arg 2: Family index to the global Shape structure array ('shapeFamilies' in main())
+//            which the radii are being added to
+//     Arg 3: The 'Shape' structure which the radii are being added to
+//     Arg 4: Random number generator (see std <random> library)
+//     Arg 5: Distributions class (currently only used for exponential dist)
+pub fn add_radii(
+    input: &Input,
+    amount_to_add: usize,
+    fam_idx: isize,
+    shape_fam: &mut Shape,
+    generator: Rc<RefCell<Mt19937GenRand64>>,
+    distributions: Rc<RefCell<Distributions>>,
+) {
+    let mut radius = 0.;
+    let min_radius = 3. * input.h;
+    let uniform_dist = Uniform::new(0., 1.);
+
+    match shape_fam.distribution_type {
+        // Lognormal
+        1 => {
+            let log_distribution = LogNormal::new(shape_fam.mean, shape_fam.sd).unwrap();
+
+            for _ in 0..amount_to_add {
+                let mut count = 0;
+
+                loop {
+                    let radius = generator.borrow_mut().sample(log_distribution);
+                    count += 1;
+
+                    if count % 1000 == 0 {
+                        print_generating_fractures_less_than_hwarning(input, fam_idx, shape_fam);
+                    }
+
+                    if radius > min_radius {
+                        break;
+                    }
+                }
+
+                shape_fam.radii_list.push(radius);
+            }
+        }
+
+        // Truncated power-law
+        2 => {
+            for _ in 0..amount_to_add {
+                let mut count = 0;
+
+                loop {
+                    radius = truncated_power_law(
+                        generator.borrow_mut().sample(uniform_dist),
+                        shape_fam.min,
+                        shape_fam.max,
+                        shape_fam.alpha,
+                    );
+                    count += 1;
+
+                    if count % 1000 == 0 {
+                        print_generating_fractures_less_than_hwarning(input, fam_idx, shape_fam);
+                    }
+
+                    if radius > min_radius {
+                        break;
+                    }
+                }
+
+                shape_fam.radii_list.push(radius);
+            }
+        }
+
+        // Exponential
+        3 => {
+            for _ in 0..amount_to_add {
+                let mut count = 0;
+
+                loop {
+                    let radius = distributions
+                        .clone()
+                        .borrow_mut()
+                        .exp_dist
+                        .get_value_by_min_max_val(
+                            shape_fam.exp_lambda,
+                            shape_fam.min_dist_input,
+                            shape_fam.max_dist_input,
+                        );
+                    count += 1;
+
+                    if count % 1000 == 0 {
+                        print_generating_fractures_less_than_hwarning(input, fam_idx, shape_fam);
+                    }
+
+                    if radius > min_radius {
+                        break;
+                    }
+                }
+
+                shape_fam.radii_list.push(radius);
+            }
+        }
+
+        _ => unreachable!(),
+    }
+}
+
+// **********************************************************************
+// ********  Estimate Number of Fractures When P32 Option is Used  ******
+//     Inserts fractures into domain with FRAM disabled
+//     Simply inserts and truncates fractures on the domain
+//     until reqired P32 is met.
+//     Used to estimate and generate radii lists for each fracture
+//     family.
+//     Arg 1: vector<Shape> array of stochastic fracture families
+//     Arg 2: The probabilities for each families insertion into domain
+//            (famProb) in input file
+//     Arg 3: Random number generator (see std <random> library)
+//     Arg 4: Distributions class (currently only used for exponential dist)
+pub fn dry_run(
+    input: &mut Input,
+    shape_families: &mut [Shape],
+    generator: Rc<RefCell<Mt19937GenRand64>>,
+    distributions: Rc<RefCell<Distributions>>,
+) {
+    println!("Estimating number of fractures per family for defined fracture intensities (P32)...");
+    let dom_vol = input.domainSize[0] * input.domainSize[1] * input.domainSize[2];
+    let total_families = shape_families.len();
+    let mut cdf_size = total_families; // This variable shrinks along with CDF when used with fracture intensity (P32) option
+                                       // Create a copy of the family probablity
+                                       // Algoithms used in this function modify this array,
+                                       // we need to keep the original in its original state
+    let mut fam_probability = Vec::with_capacity(total_families);
+    fam_probability.extend(input.famProb.iter());
+    // std::copy(shapeProb, shapeProb + totalFamilies, famProbability);
+    // Init uniform dist on [0,1)
+    let uniform_dist = Uniform::new(0., 1.);
+    /******  Convert famProb to CDF  *****/
+    let mut cdf = create_cdf(&fam_probability);
+    let mut family_index; // Holds index to shape family of fracture being generated
+    let mut force_large_fract_count = 0;
+
+    while !p32_complete(input, total_families) {
+        // Index to CDF array of current family being inserted
+        let mut cdf_idx = 0;
+        let mut reject_counter = 0;
+        let mut new_poly =
+            if (force_large_fract_count < shape_families.len()) && input.forceLargeFractures {
+                let radius = get_largest_fracture_radius(&shape_families[force_large_fract_count]);
+                family_index = force_large_fract_count;
+                cdf_idx = cdf_idx_from_fam_num(&input.p32Status, force_large_fract_count);
+                force_large_fract_count += 1;
+                generate_poly_with_radius(
+                    input,
+                    radius,
+                    &shape_families[force_large_fract_count - 1],
+                    generator.clone(),
+                    family_index as isize,
+                )
+            } else {
+                // Choose a family based on probabiliyis AND their target p32 completion status
+                // if a family has already met is fracture intinisty req. (p32) dont choose that family anymore
+                // Choose a family based on probabiliyis AND their target p32 completion status
+                // if a family has already met is fracture intinisty reqirement (p32) dont choose that family anymore
+                family_index = index_from_prob_and_p32_status(
+                    input,
+                    &cdf,
+                    generator.clone().borrow_mut().sample(uniform_dist),
+                    total_families,
+                    &mut cdf_idx,
+                );
+                generate_poly(
+                    input,
+                    &mut shape_families[family_index],
+                    generator.clone(),
+                    distributions.clone(),
+                    family_index as isize,
+                    false,
+                )
+            };
+
+        // Truncate poly if needed
+        // Returns 1 if poly is outside of domain or truncated to less than 3 vertices
+        // Vector for storing intersection boundaries
+        let mut reject = false;
+
+        while domain_truncation(input, &mut new_poly, &input.domainSize) {
+            // Poly is completely outside domain, or was truncated to
+            // less than 3 vertices due to vertices being too close together
+            reject_counter += 1; // Counter for re-trying a new translation
+
+            // Test if newPoly has reached its limit of insertion attempts
+            if reject_counter >= input.rejectsPerFracture {
+                new_poly.vertices.clear(); // Created with new, need to manually deallocate
+                reject = true;
+                break; // Reject poly, generate new polygon
+            } else {
+                // Retranslate poly and try again, preserving normal, size, and shape
+                re_translate_poly(
+                    input,
+                    &mut new_poly,
+                    &shape_families[family_index],
+                    generator.clone(),
+                );
+            }
+        }
+
+        if reject {
+            // Restart while loop
+            // Generate new fracture
+            continue;
+        }
+
+        // Calculate poly's area
+        new_poly.area = get_area(&new_poly);
+
+        // Update P32
+        if shape_families[family_index].layer == 0 && shape_families[family_index].region == 0 {
+            // Whole domain
+            shape_families[family_index].current_p32 += new_poly.area * 2. / dom_vol;
+        } else if shape_families[family_index].layer > 0 && shape_families[family_index].region == 0
+        {
+            // Layer
+            shape_families[family_index].current_p32 +=
+                new_poly.area * 2. / input.layerVol[shape_families[family_index].layer - 1];
+        } else if shape_families[family_index].layer == 0 && shape_families[family_index].region > 0
+        {
+            // Region
+            shape_families[family_index].current_p32 +=
+                new_poly.area * 2. / input.regionVol[shape_families[family_index].region - 1];
+        }
+
+        // Save radius for real DFN generation
+        shape_families[family_index]
+            .radii_list
+            .push(new_poly.xradius);
+
+        // If the last inserted polygon met the p32 requirement, set that family to no longer
+        // insert any more fractures. adjust the CDF and family probabilities
+        if shape_families[family_index].current_p32 >= shape_families[family_index].p32_target {
+            input.p32Status[family_index] = true; //mark family as having its p32 requirement met
+
+            // Adjust CDF, PDF, and reduce their size by 1. Keep probabilities proportional.
+            // Remove the completed families element in the CDF and famProb[]
+            // Distribute the removed family probability evenly among the others and rebuild the CDF
+            // familyIndex = index of family's probability
+            // cdfIdx = index of the family's correspongding cdf, (index to elmt to remove)
+            if cdf_size > 1 {
+                // If there are still more families to insert ( cdfSize = 0 means no more families to insert)
+                adjust_cdf_and_fam_prob(&mut cdf, &mut fam_probability, &mut cdf_size, cdf_idx);
+            }
+        }
+
+        // No need to save any polygons,
+        // We are just simulating dfn with no rejections
+        // to get an idea of how many fractures we will
+        // need for each family
+        new_poly.vertices.clear();
+    } // End while loop for inserting polyons
+
+    // Reset p32 to 0
+    for (i, shape) in shape_families.iter_mut().enumerate().take(total_families) {
+        input.p32Status[i] = false;
+        shape.current_p32 = 0.;
+    }
+}
