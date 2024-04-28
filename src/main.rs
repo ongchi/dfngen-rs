@@ -1,5 +1,6 @@
-use std::{cell::RefCell, env, fs::File, io::Write, rc::Rc, time::SystemTime};
+use std::{cell::RefCell, fs::File, io::Write, rc::Rc, time::SystemTime};
 
+use clap::Parser;
 use console::Term;
 use rand::{distributions::Uniform, Rng};
 use rand_mt::Mt19937GenRand64;
@@ -55,26 +56,20 @@ mod remove_fractures;
 mod structures;
 mod vector_functions;
 
+#[derive(Parser)]
+#[command(version, about, long_about = None)]
+struct Cli {
+    /// Path to input file
+    input_file: String,
+
+    /// Path to output folder
+    output_folder: String,
+}
+
 fn main() {
+    let cli = Cli::parse();
+
     println!("Starting DFNGen");
-
-    let args = env::args();
-    let argc = args.len();
-
-    // Error check on cmd line input:
-    // 1st argument = input file path
-    // 2nd argument = output folder path
-    if argc != 3 {
-        if argc == 1 {
-            panic!(
-                "Error: DFNWorks input and output file paths were not included on command line."
-            );
-        } else if argc == 2 {
-            panic!("Error: DFNWorks output file path was not included on command line.");
-        }
-    }
-
-    let argv: Vec<String> = args.into_iter().collect();
 
     /************* Initialize Arrays/Vectors and Structures **************/
     // Vector to store accepted polygons/fractures
@@ -91,7 +86,7 @@ fn main() {
     // *********************************************************************
     // Read Input File
     // Initialize input variables. Most input variables are global
-    let mut input = get_input(&argv[1], &mut shape_families);
+    let mut input = get_input(&cli.input_file, &mut shape_families);
     // Set epsilon
     input.eps = input.h * 1e-8;
     println!("h: {}", input.h);
@@ -316,8 +311,7 @@ fn main() {
         cdf = create_cdf(&input.famProb);
     }
 
-    let output = &argv[2];
-    let radii_folder = format!("{}/radii", output);
+    let radii_folder = format!("{}/radii", cli.output_folder);
     let mut radii_all = None;
 
     if input.outputAllRadii {
@@ -608,7 +602,7 @@ fn main() {
     //     assignPermeability(acceptedPoly[i]);
     // }
     // Copy end of DFN generation stats to file, as well as print to screen
-    let file_name = format!("{}/DFN_output.txt", output);
+    let file_name = format!("{}/DFN_output.txt", cli.output_folder);
     let mut file = File::open(file_name).unwrap();
     let now = SystemTime::now();
     log_msg(
@@ -1236,7 +1230,7 @@ fn main() {
     // Write all output files
     write_output(
         &input,
-        &argv[2],
+        &cli.output_folder,
         &mut accepted_poly,
         &mut int_pts,
         &mut triple_points,
