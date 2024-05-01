@@ -36,15 +36,20 @@ pub fn write_output(
 ) {
     let output = format!("{}/dfnGen_output", output_folder);
     println!("{}", output);
-    // Define Output Files:
-    // std::string permOutputFile = output + "/perm.dat";
-    // std::string aperture = output + "/aperture.dat";
-    let intersection_folder = format!("{}/../intersections", output);
+    let _ = std::fs::create_dir_all(&output);
+
+    let intersection_folder = format!("{}/intersections", output_folder);
+    let _ = std::fs::create_dir_all(&intersection_folder);
+
+    let poly_folder = format!("{}/polys", output_folder);
+    let _ = std::fs::create_dir_all(&poly_folder);
+
     let radii_folder = format!("{}/radii/", output);
+
     // Adjust Fracture numbering
     adjust_int_fract_ids(final_fractures, accepted_poly, int_pts);
     // Write out graph information
-    write_graph_data(input, final_fractures, accepted_poly, int_pts);
+    write_graph_data(input, final_fractures, accepted_poly, int_pts, &output);
     // Write polygon.dat file
     write_polys(final_fractures, accepted_poly, &output);
     // Write intersection files (must be first file written, rotates polys to x-y plane)
@@ -58,7 +63,7 @@ pub fn write_output(
         pstats,
     );
     // Write polys.inp
-    write_polys_inp(final_fractures, accepted_poly, &output);
+    write_polys_inp(final_fractures, accepted_poly, &poly_folder);
     // Write params.txt
     write_params_file(input, final_fractures, pstats, &output);
     // Write aperture file
@@ -94,8 +99,7 @@ pub fn write_output(
     // Write all accepted Surface Area
     write_final_poly_area(final_fractures, accepted_poly, &output);
     // Write out which fractures touch which boundaries
-    write_boundary_files(final_fractures, accepted_poly);
-
+    write_boundary_files(final_fractures, accepted_poly, &output);
     if input.outputAcceptedRadiiPerFamily {
         println!("Writing Accepted Radii Files Per Family");
         // Creates radii files per family, before isolated fracture removal.
@@ -315,7 +319,7 @@ fn write_intersection_files(
         let mut intersecting_fractures = Vec::new();
         // Make new intersection file in intersections folder
         let file = format!("{}/intersections_{}.inp", intersection_folder, i + 1);
-        let mut fract_int_file = File::open(file).unwrap();
+        let mut fract_int_file = File::create(file).unwrap();
         // Buffer first line to leave space to write header
         fract_int_file
             .write_all(
@@ -604,7 +608,7 @@ fn write_polys(final_fractures: &[usize], accepted_poly: &[Poly], output: &str) 
     println!("Writing Polygon Files");
     let poly_count = final_fractures.len();
     let poly_output_file = format!("{}/polygons.dat", output);
-    let mut poly_output = File::open(poly_output_file).unwrap();
+    let mut poly_output = File::create(poly_output_file).unwrap();
     poly_output
         .write_all(format!("nPolygons: {}\n", poly_count).as_bytes())
         .unwrap();
@@ -622,7 +626,7 @@ fn write_polys(final_fractures: &[usize], accepted_poly: &[Poly], output: &str) 
             poly_output
                 .write_all(
                     format!(
-                        "{{{:.12}, {:.12}, {:.12}}}",
+                        "{{{:.12}, {:.12}, {:.12}}} ",
                         accepted_poly[final_fractures[j]].vertices[idx],
                         accepted_poly[final_fractures[j]].vertices[idx + 1],
                         accepted_poly[final_fractures[j]].vertices[idx + 2],
@@ -648,8 +652,8 @@ fn write_polys_inp(final_fractures: &[usize], accepted_poly: &[Poly], output: &s
     let poly_count = final_fractures.len();
 
     for j in 0..poly_count {
-        let poly_output_file = format!("{}/../polys/poly_{}.inp", output, j + 1);
-        let mut poly_output = File::open(poly_output_file).unwrap();
+        let poly_output_file = format!("{}/poly_{}.inp", output, j + 1);
+        let mut poly_output = File::create(poly_output_file).unwrap();
         // Write header
         poly_output
             .write_all(
@@ -697,7 +701,7 @@ fn write_polys_inp(final_fractures: &[usize], accepted_poly: &[Poly], output: &s
 // Arg 4: Path to output folder
 fn write_params_file(input: &Input, final_fractures: &[usize], pstats: &Stats, output: &str) {
     let params_output_file = format!("{}/../params.txt", output);
-    let mut params = File::open(&params_output_file).unwrap();
+    let mut params = File::create(&params_output_file).unwrap();
     println!("Writing {}", &params_output_file);
     params
         .write_all(format!("{}\n", final_fractures.len()).as_bytes())
@@ -706,7 +710,7 @@ fn write_params_file(input: &Input, final_fractures: &[usize], pstats: &Stats, o
         .write_all(format!("{}\n", input.h).as_bytes())
         .unwrap();
     params
-        .write_all(format!("{}\n", input.visualizationMode).as_bytes())
+        .write_all(format!("{}\n", input.visualizationMode as u8).as_bytes())
         .unwrap(); // Production mode
     params
         .write_all(
@@ -736,7 +740,7 @@ fn write_params_file(input: &Input, final_fractures: &[usize], pstats: &Stats, o
 fn write_radii_file(final_fractures: &[usize], accepted_poly: &[Poly], output: &str) {
     println!("Writing Radii File (radii.dat)");
     let file = format!("{}/radii.dat", output);
-    let mut radii = File::open(file).unwrap();
+    let mut radii = File::create(file).unwrap();
     radii.write_all("Format: xRadius yRadius Family# Removed (-2 = userPolygon, -1 = userRectangle, 0 = userEllipse, > 0 is family in order of famProb)\n".as_bytes()).unwrap();
     let final_fract_limit = final_fractures.len() - 1;
     let size = accepted_poly.len();
@@ -777,7 +781,7 @@ fn write_radii_file(final_fractures: &[usize], accepted_poly: &[Poly], output: &
 fn write_fracture_translations(final_fractures: &[usize], accepted_poly: &[Poly], output: &str) {
     println!("Writing Fracture Translations File (translations.dat)");
     let file_path = format!("{}/translations.dat", output);
-    let mut file = File::open(file_path).unwrap();
+    let mut file = File::create(file_path).unwrap();
     file.write_all(
         "Format: x y z  (R = removed from domain due to fracture isolation)\n".as_bytes(),
     )
@@ -818,7 +822,7 @@ fn write_fracture_translations(final_fractures: &[usize], accepted_poly: &[Poly]
 // Arg 3: Path to output folder
 fn write_final_poly_radii(final_fractures: &[usize], accepted_poly: &[Poly], output: &str) {
     let file = format!("{}/radii_Final.dat", output);
-    let mut radii_final = File::open(file).unwrap();
+    let mut radii_final = File::create(file).unwrap();
     radii_final
         .write_all("Fracture Radii List After Isolated Fracture and Cluster Removal\n".as_bytes())
         .unwrap();
@@ -848,7 +852,7 @@ fn write_final_poly_radii(final_fractures: &[usize], accepted_poly: &[Poly], out
 // Arg 3: Path to output folder
 fn write_final_poly_area(final_fractures: &[usize], accepted_poly: &[Poly], output: &str) {
     let file = format!("{}/surface_area_Final.dat", output);
-    let mut area_final = File::open(file).unwrap();
+    let mut area_final = File::create(file).unwrap();
     area_final
         .write_all("Fracture Surface Area After Isolated Fracture and Cluster Removal\n".as_bytes())
         .unwrap();
@@ -1051,8 +1055,9 @@ fn write_triple_pts(
 // Arg 2: Path to output folder
 fn write_rejection_stats(pstats: &Stats, output: &str) {
     println!("Writing Rejection Statistics File (rejections.dat)");
+    let _ = std::fs::create_dir_all(output);
     let file_name = format!("{}/rejections.dat", output);
-    let mut file = File::open(file_name).unwrap();
+    let mut file = File::create(file_name).unwrap();
     file.write_all(
         format!(
             "Short Intersection: {}\n",
@@ -1135,7 +1140,7 @@ fn write_shape_fams(input: &Input, shape_families: &[Shape], output: &str) {
     let rad_to_deg = 180. / std::f64::consts::PI;
     println!("Writing Family Definitions File (families.dat)");
     let file_name = format!("{}/families.dat", output);
-    let mut file = File::open(file_name).unwrap();
+    let mut file = File::create(file_name).unwrap();
 
     //TODO: add stub code in families.dat for userDefined fractures, IF there are user defined fractures
 
@@ -1379,7 +1384,7 @@ fn write_connectivity(
 ) {
     println!("Writing Connectivity Data (connectivity.dat)");
     let file_name = format!("{}/connectivity.dat", output);
-    let mut file = File::open(file_name).unwrap();
+    let mut file = File::create(file_name).unwrap();
 
     // Format for connectivity: Line number = poly number, integers on line are intersecting fractures
     //  eg:
@@ -1427,7 +1432,7 @@ fn write_rotation_data(
     output: &str,
 ) {
     let file_output_file = format!("{}/../poly_info.dat", output);
-    let mut file = File::open(file_output_file).unwrap();
+    let mut file = File::create(file_output_file).unwrap();
     println!("Writing Rotation Data File (poly_info.dat)");
     let mut max_domain_size = input.domainSize[0];
 
@@ -1509,7 +1514,7 @@ fn write_rotation_data(
 // Arg 4: Path to output folder
 fn write_normal_vectors(accepted_poly: &[Poly], final_fractures: &[usize], output: &str) {
     let file_output_file = format!("{}/normal_vectors.dat", output);
-    let mut file = File::open(file_output_file).unwrap();
+    let mut file = File::create(file_output_file).unwrap();
     println!("Writing Normal Vectors into File (normal_vectors.dat)");
 
     for i in 0..final_fractures.len() {
@@ -1541,7 +1546,7 @@ fn write_normal_vectors(accepted_poly: &[Poly], final_fractures: &[usize], outpu
 // Arg 2: Path to output
 fn write_rejects_per_attempt(pstats: &Stats, output: &str) {
     let file_output_file = format!("{}/rejectsPerAttempt.dat", output);
-    let mut file = File::open(file_output_file).unwrap();
+    let mut file = File::create(file_output_file).unwrap();
     println!("Writing Rotation Data File (rejectsPerAttempt.dat)");
 
     for i in 0..pstats.rejects_per_attempt.len() {
@@ -1561,6 +1566,7 @@ fn write_graph_data(
     final_fractures: &[usize],
     accepted_poly: &[Poly],
     int_pts: &[IntPoints],
+    output: &str,
 ) {
     let domain_x = input.domainSize[0] * 0.5;
     let domain_y = input.domainSize[1] * 0.5;
@@ -1569,14 +1575,14 @@ fn write_graph_data(
     print!("\nWriting Graph Data Files\n");
     //adjustIntFractIDs(finalFractures,acceptedPoly, intPts);
     // Make new intersection file in intersections folder
-    let file = "dfnGen_output/intersection_list.dat";
-    let mut int_file = File::open(file).unwrap();
+    let file = format!("{}/intersection_list.dat", output);
+    let mut int_file = File::create(file).unwrap();
     int_file
         .write_all("f1 f2 x y z length\n".as_bytes())
         .unwrap();
     // Make new intersection file in intersections folder
-    let file2 = "dfnGen_output/fracture_info.dat";
-    let mut fract_file = File::open(file2).unwrap();
+    let file2 = format!("{}/fracture_info.dat", output);
+    let mut fract_file = File::create(file2).unwrap();
     fract_file
         .write_all("num_connections perm aperture\n".as_bytes())
         .unwrap();
@@ -1860,20 +1866,20 @@ fn write_mid_point(
 // Arg 1: std::vector array of indices to fractures (Arg 2) remaining after isolated
 //        fracture removal
 // Arg 2: std::vector array of all accepted fractures (before isolated fracture removal)
-fn write_boundary_files(final_fractures: &[usize], accepted_poly: &[Poly]) {
+fn write_boundary_files(final_fractures: &[usize], accepted_poly: &[Poly], output: &str) {
     println!("Writing Boundary Files");
-    let left_file_name = "dfnGen_output/left.dat";
-    let mut left_file = File::open(left_file_name).unwrap();
-    let right_file_name = "dfnGen_output/right.dat";
-    let mut right_file = File::open(right_file_name).unwrap();
-    let front_file_name = "dfnGen_output/front.dat";
-    let mut front_file = File::open(front_file_name).unwrap();
-    let back_file_name = "dfnGen_output/back.dat";
-    let mut back_file = File::open(back_file_name).unwrap();
-    let top_file_name = "dfnGen_output/top.dat";
-    let mut top_file = File::open(top_file_name).unwrap();
-    let bottom_file_name = "dfnGen_output/bottom.dat";
-    let mut bottom_file = File::open(bottom_file_name).unwrap();
+    let left_file_name = format!("{}/left.dat", output);
+    let mut left_file = File::create(left_file_name).unwrap();
+    let right_file_name = format!("{}/right.dat", output);
+    let mut right_file = File::create(right_file_name).unwrap();
+    let front_file_name = format!("{}/front.dat", output);
+    let mut front_file = File::create(front_file_name).unwrap();
+    let back_file_name = format!("{}/back.dat", output);
+    let mut back_file = File::create(back_file_name).unwrap();
+    let top_file_name = format!("{}/top.dat", output);
+    let mut top_file = File::create(top_file_name).unwrap();
+    let bottom_file_name = format!("{}/bottom.dat", output);
+    let mut bottom_file = File::create(bottom_file_name).unwrap();
 
     for i in 0..final_fractures.len() {
         // If touching X max

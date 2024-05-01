@@ -210,9 +210,9 @@ pub fn domain_truncation(input: &Input, new_poly: &mut Poly, domain_size: &[f64;
             // Copy new nodes back to newPoly
             for k in 0..n_nodes {
                 let idxx = k * 3;
-                new_poly.vertices[idxx] = points[idxx];
-                new_poly.vertices[idxx + 1] = points[idxx + 1];
-                new_poly.vertices[idxx + 2] = points[idxx + 2];
+                new_poly.vertices.push(points[idxx]);
+                new_poly.vertices.push(points[idxx + 1]);
+                new_poly.vertices.push(points[idxx + 2]);
             }
         }
     } // End main loop

@@ -107,7 +107,7 @@ pub fn get_area(poly: &Poly) -> f64 {
             poly.vertices[2] + (0.5 * (poly.vertices[idx_across + 2] - poly.vertices[2])),
         ];
 
-        for i in 0..poly.number_of_nodes {
+        for i in 0..poly.number_of_nodes - 1 {
             let idx = (i * 3) as usize;
             let v1 = [
                 poly.vertices[idx] - inside_pt[0],

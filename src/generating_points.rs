@@ -31,17 +31,17 @@ pub fn discretize_line_of_intersection(
     }
 
     let v = [pt2[0] - pt1[0], pt2[1] - pt1[1], pt2[2] - pt1[2]]; // {x2-x1, y2-y1, z2-z1};
-    let p = [pt1[0], pt1[1], pt1[2]]; // {x1, y1, z1};
-                                      //
+    let p = pt1.clone(); // {x1, y1, z1};
+
     let nprime = (2. * dist / input.h).ceil();
     let hprime = 1. / nprime;
     let nprime = nprime as usize;
     let mut xx = Vec::with_capacity(nprime + 1);
     let mut temp = 0.;
 
-    for x in xx.iter_mut().take(nprime) {
+    for _ in 0..nprime {
         // Array from 0 - 1 with step = hprime
-        *x = temp;
+        xx.push(temp);
         temp += hprime;
     }
 

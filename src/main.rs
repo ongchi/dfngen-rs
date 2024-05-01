@@ -1,7 +1,7 @@
-use std::{cell::RefCell, fs::File, io::Write, path::Path, rc::Rc, time::SystemTime};
+use std::{cell::RefCell, fs::File, io::Write, rc::Rc, time::SystemTime};
 
 use clap::Parser;
-use console::Term;
+// use console::Term;
 use rand::{distributions::Uniform, Rng};
 use rand_mt::Mt19937GenRand64;
 
@@ -178,10 +178,10 @@ fn main() {
         pstats.expected_from_fam.reserve(total_families);
 
         // Zero arrays, init expectedFromFam array
-        for (i, shape) in shape_families.iter().enumerate().take(total_families) {
-            pstats.accepted_from_fam[i] = 0;
-            pstats.rejected_from_fam[i] = 0;
-            pstats.expected_from_fam[i] = shape.radii_list.len();
+        for (_, shape) in shape_families.iter().enumerate().take(total_families) {
+            pstats.accepted_from_fam.push(0);
+            pstats.rejected_from_fam.push(0);
+            pstats.expected_from_fam.push(shape.radii_list.len());
         }
 
         // Init first rejects per insertion attempt counter
@@ -189,8 +189,8 @@ fn main() {
     }
 
     // *********** SETUP HOT KEY *************
-    let stdout = Term::buffered_stdout();
-    let mut key = '\0';
+    // let stdout = Term::buffered_stdout();
+    let key = '\0';
     #[cfg(feature = "testing")]
     {
         // Set custom terminal settings for hotkey functionality
@@ -389,9 +389,10 @@ fn main() {
             while reject_code != 0 {
                 // Loop used to reinsert same poly with different translation
                 // HOT KEY: check for keyboard input
-                if let Ok(key_stroke) = stdout.read_char() {
-                    key = key_stroke;
-                }
+                // FIXME: capture key stroke when running
+                // if let Ok(key_stroke) = stdout.read_char() {
+                //     key = key_stroke;
+                // }
 
                 // Truncate poly if needed
                 // 1 if poly is outside of domain or has less than 3 vertices
@@ -602,9 +603,8 @@ fn main() {
     //     assignPermeability(acceptedPoly[i]);
     // }
     // Copy end of DFN generation stats to file, as well as print to screen
+    let _ = std::fs::create_dir_all(&cli.output_folder);
     let file_name = format!("{}/DFN_output.txt", cli.output_folder);
-    let file_path = Path::new(&file_name);
-    let _ = std::fs::create_dir_all(file_path.parent().unwrap());
     let mut file = File::create(file_name).unwrap();
     let now = SystemTime::now();
     log_msg(
@@ -648,12 +648,7 @@ fn main() {
     let mut family_area = Vec::new();
 
     if total_families > 0 {
-        family_area = Vec::with_capacity(total_families); // Holds fracture area per family
-
-        // Zero array
-        for area in family_area.iter_mut().take(total_families) {
-            *area = 0.;
-        }
+        family_area = vec![0.; total_families]; // Holds fracture area per family
     }
 
     log_msg(
@@ -903,7 +898,7 @@ fn main() {
     let mut accepted_from_fam_counters = Vec::new();
 
     if total_families > 0 {
-        accepted_from_fam_counters = Vec::with_capacity(total_families);
+        accepted_from_fam_counters = vec![0; total_families];
 
         for counter in accepted_from_fam_counters.iter_mut().take(total_families) {
             // zero counters
