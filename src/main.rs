@@ -1,4 +1,4 @@
-use std::{cell::RefCell, fs::File, io::Write, rc::Rc, time::SystemTime};
+use std::{cell::RefCell, fs::File, io::Write, path::Path, rc::Rc, time::SystemTime};
 
 use clap::Parser;
 use console::Term;
@@ -603,7 +603,9 @@ fn main() {
     // }
     // Copy end of DFN generation stats to file, as well as print to screen
     let file_name = format!("{}/DFN_output.txt", cli.output_folder);
-    let mut file = File::open(file_name).unwrap();
+    let file_path = Path::new(&file_name);
+    let _ = std::fs::create_dir_all(file_path.parent().unwrap());
+    let mut file = File::create(file_name).unwrap();
     let now = SystemTime::now();
     log_msg(
         &mut file,
@@ -847,7 +849,7 @@ fn main() {
             &mut file,
             "Try increasing the fracture density, or shrinking the domain.\n",
         );
-        panic!("");
+        std::process::exit(0)
     }
 
     // ************************* Print Statistics to User ***********************************

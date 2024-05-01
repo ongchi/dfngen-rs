@@ -233,7 +233,7 @@ pub fn truncated_power_law(random_num: f64, min: f64, max: f64, alpha: f64) -> f
 // Arg 1: OUTPUT, Theta array used for ellipse generation
 // Arg 2: Aspect ratio of ellipse family
 // Arg 3: Number of points being used for ellipse family */
-pub fn generate_theta(theta_array: &mut [f64], aspect_ratio: f64, n_points: usize) {
+pub fn generate_theta(theta_array: &mut Vec<f64>, aspect_ratio: f64, n_points: usize) {
     let a = 1.;
     let b = aspect_ratio;
     let mut temp1 = (a - b) / (a + b);
@@ -241,18 +241,20 @@ pub fn generate_theta(theta_array: &mut [f64], aspect_ratio: f64, n_points: usiz
     let c = std::f64::consts::PI * (a + b) * (1. + (3. * temp1) / (10. + (4. - 3. * temp1).sqrt()));
     let del = c / (n_points as f64);
 
-    theta_array[0] = 0.;
+    theta_array.push(0.);
     for i in 1..n_points {
         let mut tmp =
             (b * theta_array[i - 1].cos()).powf(2.) + (a * theta_array[i - 1].sin()).powf(2.);
         let f_tmp = del / tmp.sqrt();
         tmp = theta_array[i - 1] + f_tmp;
-        theta_array[i] = theta_array[i - 1]
-            + 0.5
-                * del
-                * ((b * tmp.cos()).powf(2.) + (a * tmp.sin()).powf(2.))
-                    .sqrt()
-                    .powf(-1.)
-            + 0.5 * f_tmp;
+        theta_array.push(
+            theta_array[i - 1]
+                + 0.5
+                    * del
+                    * ((b * tmp.cos()).powf(2.) + (a * tmp.sin()).powf(2.))
+                        .sqrt()
+                        .powf(-1.)
+                + 0.5 * f_tmp,
+        );
     }
 }

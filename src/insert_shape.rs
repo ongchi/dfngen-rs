@@ -486,11 +486,10 @@ pub fn initialize_ell_vertices(
     new_poly.yradius = radius * aspect_ratio;
     new_poly.aspect_ratio = aspect_ratio;
 
-    for (i, theta) in theta_list.iter().enumerate().take(num_points) {
-        let idx = i * 3;
-        new_poly.vertices[idx] = radius * theta.cos();
-        new_poly.vertices[idx + 1] = radius * aspect_ratio * theta.sin();
-        new_poly.vertices[idx + 2] = 0.;
+    for (_, theta) in theta_list.iter().enumerate().take(num_points) {
+        new_poly.vertices.push(radius * theta.cos());
+        new_poly.vertices.push(radius * aspect_ratio * theta.sin());
+        new_poly.vertices.push(0.);
     }
 }
 

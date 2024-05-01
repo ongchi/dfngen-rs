@@ -6,7 +6,7 @@ use crate::{
     insert_shape::print_reject_reason,
     math_functions::get_area,
     read_input::Input,
-    read_input_functions::{read_var, search_var},
+    read_input_functions::{search_var, ReadFromTextFile},
     structures::{IntPoints, Point, Poly, RejectedUserFracture, Stats},
     vector_functions::{cross_product, euclidean_distance, magnitude, normalize},
 };
@@ -22,9 +22,11 @@ use crate::{
 fn get_poly_coords(stream: &mut File, out_ary: &mut [f64], n_vertices: usize) {
     for i in 0..n_vertices {
         let x = i * 3;
-        out_ary[x] = read_var(stream);
-        out_ary[x + 1] = read_var(stream);
-        out_ary[x + 2] = read_var(stream);
+        let mut tmp = [0., 0., 0.];
+        tmp.read_from_text(stream);
+        out_ary[x] = tmp[0];
+        out_ary[x + 1] = tmp[1];
+        out_ary[x + 2] = tmp[2];
     }
 }
 
@@ -45,7 +47,7 @@ pub fn insert_user_polygon_by_coord(
     pstats: &mut Stats,
     triple_points: &mut Vec<Point>,
 ) {
-    let mut n_poly_nodes: usize;
+    let mut n_poly_nodes: usize = 0;
     println!(
         "Domain Size {} {} {}",
         input.domainSize[0], input.domainSize[1], input.domainSize[2]
@@ -53,7 +55,8 @@ pub fn insert_user_polygon_by_coord(
     println!("Reading User Defined Polygons from {}", input.polygonFile);
     let mut file = File::open(&input.polygonFile).unwrap();
     search_var(&mut file, "nPolygons:");
-    let n_polygon_by_coord: usize = read_var(&mut file);
+    let mut n_polygon_by_coord: usize = 0;
+    n_polygon_by_coord.read_from_text(&mut file);
     println!("There are {} polygons", n_polygon_by_coord);
     accepted_poly.reserve(n_polygon_by_coord);
 
@@ -61,7 +64,7 @@ pub fn insert_user_polygon_by_coord(
         let mut new_poly = Poly::default();
         let mut rejected_user_fracture = RejectedUserFracture::default();
         new_poly.family_num = -3;
-        n_poly_nodes = read_var(&mut file);
+        n_poly_nodes.read_from_text(&mut file);
         new_poly.number_of_nodes = n_poly_nodes as isize;
         new_poly.vertices.reserve(3 * n_poly_nodes); // 3 * number of nodes
         get_poly_coords(&mut file, &mut new_poly.vertices, n_poly_nodes);

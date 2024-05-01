@@ -104,8 +104,8 @@ pub fn search_var(file: &mut File, search: &str) {
         if word == search {
             break;
         } else if word.is_empty() {
-            println!("Variable not found: {}", search);
-            panic!()
+            println!("Variable not found: {}", &search[..search.len() - 1]);
+            std::process::exit(1)
         }
     }
 }
@@ -231,50 +231,141 @@ pub fn read_domain_vertices(global: &mut Input, filename: &str) {
     println!("Reading in Vertices Complete");
 }
 
-pub fn read_var<T>(file: &mut File) -> T
+pub trait ReadFromTextFile {
+    fn read_from_text(&mut self, file: &mut File);
+}
+
+trait NotBool {}
+impl NotBool for u8 {}
+impl NotBool for u64 {}
+impl NotBool for usize {}
+impl NotBool for isize {}
+impl NotBool for f64 {}
+
+// trait IsBool {}
+// impl IsBool for bool {}
+
+// trait IsVec {}
+// impl<T> IsVec for Vec<T> {}
+
+impl ReadFromTextFile for String {
+    fn read_from_text(&mut self, file: &mut File) {
+        let mut bytes = file.bytes().map(|ch| ch.unwrap());
+        *self = read!("{}", bytes);
+    }
+}
+
+impl<T> ReadFromTextFile for T
 where
-    T: FromStr,
+    T: FromStr + NotBool,
     <T as FromStr>::Err: std::fmt::Debug,
 {
-    let mut bytes = file.bytes().map(|ch| ch.unwrap());
-    let tmp: String = read!("{}", bytes);
-    tmp.parse::<T>().unwrap()
+    fn read_from_text(&mut self, file: &mut File) {
+        let mut bytes = file.bytes().map(|ch| ch.unwrap());
+        let tmp: String = read!("{}", bytes);
+        *self = tmp.parse::<T>().unwrap()
+    }
 }
 
-pub fn read_vec<T>(file: &mut File) -> Vec<T>
+impl ReadFromTextFile for bool {
+    fn read_from_text(&mut self, file: &mut File) {
+        let mut tmp: u8 = 0;
+        tmp.read_from_text(file);
+        *self = tmp != 0;
+    }
+}
+
+impl<T> ReadFromTextFile for Vec<T>
 where
-    T: FromStr,
+    T: FromStr + NotBool,
     <T as FromStr>::Err: std::fmt::Debug,
 {
-    let mut bytes = file.bytes().map(|ch| ch.unwrap());
-    let tmp: String = read!("{}", bytes);
-    tmp.strip_prefix('{')
-        .map(|s| {
-            s.strip_suffix('}').map(|s| {
-                s.split(',')
-                    .map(|s| s.parse::<T>().unwrap())
-                    .collect::<Vec<T>>()
-            })
-        })
-        .unwrap()
-        .unwrap()
+    fn read_from_text(&mut self, file: &mut File) {
+        let mut bytes = file.bytes().map(|ch| ch.unwrap());
+        let tmp: String = read!("{}", bytes);
+        if tmp.len() > 2 {
+            self.extend(
+                tmp.strip_prefix('{')
+                    .map(|s| {
+                        s.strip_suffix('}').map(|s| {
+                            s.split(',')
+                                .map(|s| s.parse::<T>().unwrap())
+                                .collect::<Vec<T>>()
+                        })
+                    })
+                    .unwrap()
+                    .unwrap(),
+            );
+        }
+    }
 }
 
-pub fn read_bool(file: &mut File) -> bool {
-    read_var::<i8>(file) != 0
+impl ReadFromTextFile for Vec<bool> {
+    fn read_from_text(&mut self, file: &mut File) {
+        let mut tmp: Vec<u8> = Vec::new();
+        tmp.read_from_text(file);
+        self.extend(tmp.into_iter().map(|v| v != 0))
+    }
 }
 
-pub fn read_vec_bool(file: &mut File) -> Vec<bool> {
-    let mut bytes = file.bytes().map(|ch| ch.unwrap());
-    let tmp: String = read!("{}", bytes);
-    tmp.strip_prefix('{')
-        .map(|s| {
-            s.strip_suffix('}').map(|s| {
-                s.split(',')
-                    .map(|s| s.parse::<i8>().unwrap() != 0)
-                    .collect::<Vec<bool>>()
-            })
-        })
-        .unwrap()
-        .unwrap()
+impl<T> ReadFromTextFile for [T; 3]
+where
+    T: FromStr + NotBool,
+    <T as FromStr>::Err: std::fmt::Debug,
+{
+    fn read_from_text(&mut self, file: &mut File) {
+        let mut tmp = Vec::new();
+        tmp.read_from_text(file);
+        for (i, v) in tmp.into_iter().enumerate() {
+            self[i] = v;
+        }
+    }
 }
+
+// pub fn read_var<T>(file: &mut File) -> T
+// where
+//     T: FromStr,
+//     <T as FromStr>::Err: std::fmt::Debug,
+// {
+//     let mut bytes = file.bytes().map(|ch| ch.unwrap());
+//     let tmp: String = read!("{}", bytes);
+//     tmp.parse::<T>().unwrap()
+// }
+//
+// pub fn read_vec<T>(file: &mut File) -> Vec<T>
+// where
+//     T: FromStr,
+//     <T as FromStr>::Err: std::fmt::Debug,
+// {
+//     let mut bytes = file.bytes().map(|ch| ch.unwrap());
+//     let tmp: String = read!("{}", bytes);
+//     tmp.strip_prefix('{')
+//         .map(|s| {
+//             s.strip_suffix('}').map(|s| {
+//                 s.split(',')
+//                     .map(|s| s.parse::<T>().unwrap())
+//                     .collect::<Vec<T>>()
+//             })
+//         })
+//         .unwrap()
+//         .unwrap()
+// }
+//
+// pub fn read_bool(file: &mut File) -> bool {
+//     read_var::<i8>(file) != 0
+// }
+//
+// pub fn read_vec_bool(file: &mut File) -> Vec<bool> {
+//     let mut bytes = file.bytes().map(|ch| ch.unwrap());
+//     let tmp: String = read!("{}", bytes);
+//     tmp.strip_prefix('{')
+//         .map(|s| {
+//             s.strip_suffix('}').map(|s| {
+//                 s.split(',')
+//                     .map(|s| s.parse::<i8>().unwrap() != 0)
+//                     .collect::<Vec<bool>>()
+//             })
+//         })
+//         .unwrap()
+//         .unwrap()
+// }

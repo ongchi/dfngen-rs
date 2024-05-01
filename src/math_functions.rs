@@ -229,7 +229,7 @@ pub fn cdf_idx_from_fam_num(p32_status: &[bool], fam_idx: usize) -> usize {
 // Arg 1: Pointer to famProb array (see input file, and readInput())
 pub fn create_cdf(fam_prob: &[f64]) -> Vec<f64> {
     // Convert famProb to CDF
-    let mut cdf = Vec::with_capacity(fam_prob.len());
+    let mut cdf = vec![0.; fam_prob.len()];
     cdf[0] = fam_prob[0];
 
     for i in 1..fam_prob.len() {

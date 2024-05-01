@@ -253,8 +253,7 @@ pub fn dry_run(
                                        // Create a copy of the family probablity
                                        // Algoithms used in this function modify this array,
                                        // we need to keep the original in its original state
-    let mut fam_probability = Vec::with_capacity(total_families);
-    fam_probability.extend(input.famProb.iter());
+    let mut fam_probability = input.famProb.clone();
     // std::copy(shapeProb, shapeProb + totalFamilies, famProbability);
     // Init uniform dist on [0,1)
     let uniform_dist = Uniform::new(0., 1.);

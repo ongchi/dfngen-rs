@@ -3,8 +3,7 @@ use std::fs::File;
 use crate::{
     generating_points::generate_theta,
     read_input_functions::{
-        get_cords, get_rect_coords, read_bool, read_domain_vertices, read_var, read_vec,
-        read_vec_bool, search_var,
+        get_cords, get_rect_coords, read_domain_vertices, search_var, ReadFromTextFile,
     },
     structures::{Point, Shape},
 };
@@ -563,35 +562,41 @@ pub fn get_input(input: &str, shape_family: &mut Vec<Shape>) -> Input {
     macro_rules! input_var {
         ($var_name:ident) => {
             search_var(&mut input_file, &format!("{}:", stringify!($var_name)));
-            input_var.$var_name = read_var(&mut input_file);
+            input_var.$var_name.read_from_text(&mut input_file);
         };
 
         ($var_name:ident,$n:expr) => {
             search_var(&mut input_file, &format!("{}:", stringify!($var_name)));
-            let vec = read_vec(&mut input_file);
-            for (i, v) in vec.into_iter().enumerate() {
-                input_var.$var_name[i] = v;
+            let mut tmp: Vec<_> = Vec::new();
+            tmp.read_from_text(&mut input_file);
+            for i in 0..input_var.$var_name.len() {
+                input_var.$var_name[i] = tmp[i];
             }
         };
     }
 
-    macro_rules! input_bool {
-        ($var_name:ident) => {
-            search_var(&mut input_file, &format!("{}:", stringify!($var_name)));
-            input_var.$var_name = read_bool(&mut input_file);
-        };
-
-        ($var_name:ident,$n:expr) => {
-            search_var(&mut input_file, &format!("{}:", stringify!($var_name)));
-            let vec = read_vec_bool(&mut input_file);
-            for (i, v) in vec.into_iter().enumerate() {
-                input_var.$var_name[i] = v;
-            }
-        };
-    }
+    // macro_rules! input_bool {
+    //     ($var_name:ident) => {
+    //         search_var(&mut input_file, &format!("{}:", stringify!($var_name)));
+    //         let mut tmp: u8 = 0;
+    //         tmp.read_from_text(&mut input_file);
+    //         input_var.$var_name = tmp != 0;
+    //     };
+    //
+    //     ($var_name:ident,$n:expr) => {
+    //         search_var(&mut input_file, &format!("{}:", stringify!($var_name)));
+    //         // let mut tmp: Vec<u8> = Vec::new();
+    //         // tmp.read_from_text(&mut input_file);
+    //         // input_var.$var_name.extend(tmp.into_iter().map(|v| v != 0));
+    //         let vec = read_vec_bool(&mut input_file);
+    //         for (i, v) in vec.into_iter().enumerate() {
+    //             input_var.$var_name[i] = v;
+    //         }
+    //     };
+    // }
 
     input_var!(stopCondition);
-    input_bool!(printRejectReasons);
+    input_var!(printRejectReasons);
     input_var!(domainSize, 3);
     input_var!(numOfLayers);
 
@@ -602,9 +607,7 @@ pub fn get_input(input: &str, shape_family: &mut Vec<Shape>) -> Input {
         search_var(&mut input_file, "layers:");
         println!("Number of Layers: {}", input_var.numOfLayers);
 
-        for _ in 0..input_var.numOfLayers {
-            layers.extend(read_vec::<f64>(&mut input_file).into_iter());
-        }
+        layers.read_from_text(&mut input_file);
 
         for (i, vol) in layer_vol.iter_mut().enumerate().take(input_var.numOfLayers) {
             let idx = i * 2;
@@ -625,31 +628,24 @@ pub fn get_input(input: &str, shape_family: &mut Vec<Shape>) -> Input {
     input_var!(numOfRegions);
 
     if input_var.numOfRegions > 0 {
-        let mut regions: Vec<isize> = Vec::with_capacity(input_var.numOfRegions * 6); // Multiply by 6 xmin, xmax, ymin, ymax, zmin, zmax
-        let mut region_vol: Vec<isize> = Vec::with_capacity(input_var.numOfRegions);
         search_var(&mut input_file, "regions:");
+        let mut regions: Vec<isize> = Vec::with_capacity(input_var.numOfRegions * 6); // Multiply by 6 xmin, xmax, ymin, ymax, zmin, zmax
+        regions.read_from_text(&mut input_file);
+
         println!("Number of Regions: {}", input_var.numOfRegions);
 
-        for (i, vol) in region_vol
-            .iter_mut()
-            .enumerate()
-            .take(input_var.numOfRegions)
-        {
+        let mut region_vol: Vec<isize> = Vec::with_capacity(input_var.numOfRegions);
+        for i in 0..input_var.numOfRegions {
             let idx = i * 6;
-            regions[idx] = read_var(&mut input_file);
-            regions[idx + 1] = read_var(&mut input_file);
-            regions[idx + 2] = read_var(&mut input_file);
-            regions[idx + 3] = read_var(&mut input_file);
-            regions[idx + 4] = read_var(&mut input_file);
-            regions[idx + 5] = read_var(&mut input_file);
             println!(
                 " Region {}: {{-x,+x,-y,+y,-z,+z}}: {:?}",
                 i + 1,
                 &regions[idx..idx + 6]
             );
-            *vol = (regions[idx + 1] - regions[idx]).abs()
+            let vol = (regions[idx + 1] - regions[idx]).abs()
                 * (regions[idx + 3] - regions[idx + 2]).abs()
                 * (regions[idx + 5] - regions[idx + 4]).abs();
+            region_vol.push(vol);
             println!(" Volume: {} m^3", vol);
         }
 
@@ -657,35 +653,35 @@ pub fn get_input(input: &str, shape_family: &mut Vec<Shape>) -> Input {
     }
 
     input_var!(h);
-    input_bool!(disableFram);
+    input_var!(disableFram);
 
     if input_var.disableFram {
         println!("\nFRAM IS DISABLED");
     }
 
-    input_bool!(rFram);
+    input_var!(rFram);
 
     if input_var.rFram {
         println!("\nRunning with relaxed FRAM. Mesh may not be fully conforming");
     }
 
-    input_bool!(tripleIntersections);
-    input_bool!(forceLargeFractures);
-    input_bool!(visualizationMode);
+    input_var!(tripleIntersections);
+    input_var!(forceLargeFractures);
+    input_var!(visualizationMode);
 
     if input_var.disableFram {
         input_var.visualizationMode = true;
     }
 
-    input_bool!(outputAllRadii);
-    input_bool!(outputFinalRadiiPerFamily);
-    input_bool!(outputAcceptedRadiiPerFamily);
+    input_var!(outputAllRadii);
+    input_var!(outputFinalRadiiPerFamily);
+    input_var!(outputAcceptedRadiiPerFamily);
     input_var!(seed);
     input_var!(domainSizeIncrease, 3);
-    input_bool!(keepOnlyLargestCluster);
-    input_bool!(keepIsolatedFractures);
-    input_bool!(ignoreBoundaryFaces);
-    input_bool!(boundaryFaces, 6);
+    input_var!(keepOnlyLargestCluster);
+    input_var!(keepIsolatedFractures);
+    input_var!(ignoreBoundaryFaces);
+    input_var!(boundaryFaces, 6);
     input_var!(rejectsPerFracture);
     input_var!(nFamRect);
     input_var!(nFamEll);
@@ -700,12 +696,13 @@ pub fn get_input(input: &str, shape_family: &mut Vec<Shape>) -> Input {
         println!("Expecting Dip and Strike (RHR) for orientations");
     }
 
-    input_bool!(polygonBoundaryFlag);
+    input_var!(polygonBoundaryFlag);
 
     if input_var.polygonBoundaryFlag {
         println!("Expecting Polygon Boundary for domain edges");
         search_var(&mut input_file, "polygonBoundaryFile:");
-        let tempstring: String = read_var(&mut input_file);
+        let mut tempstring: String = String::new();
+        tempstring.read_from_text(&mut input_file);
         println!("Polygon Boundary File: {}", &tempstring);
         read_domain_vertices(&mut input_var, &tempstring);
         println!(
@@ -726,68 +723,56 @@ pub fn get_input(input: &str, shape_family: &mut Vec<Shape>) -> Input {
     }
 
     if input_var.nFamEll > 0 || input_var.nFamRect > 0 {
-        input_var!(famProb, input_var.nFamEll + input_var.nFamRect);
+        input_var!(famProb);
         input_var.famProbOriginal.extend(input_var.famProb.iter());
         input_var!(radiiListIncrease);
     }
 
     if input_var.nFamEll > 0 {
-        input_bool!(ebetaDistribution, input_var.nFamEll);
-        input_var!(eLayer, input_var.nFamEll);
-        input_var!(eRegion, input_var.nFamEll);
-        input_var!(edistr, input_var.nFamEll);
-        input_var!(easpect, input_var.nFamEll);
-        input_var!(enumPoints, input_var.nFamEll);
+        input_var!(ebetaDistribution);
+        input_var!(eLayer);
+        input_var!(eRegion);
+        input_var!(edistr);
+        input_var!(easpect);
+        input_var!(enumPoints);
         search_var(&mut input_file, "angleOption:"); // eAngleOption
-        input_var.eAngleOption = read_bool(&mut input_file);
+        input_var.eAngleOption.read_from_text(&mut input_file);
 
         if input_var.orientationOption == 0 {
             search_var(&mut input_file, "etheta:");
-            for i in 0..input_var.nFamEll {
-                input_var.eAngleOne[i] = read_var(&mut input_file);
-            }
+            input_var.eAngleOne.read_from_text(&mut input_file);
             search_var(&mut input_file, "ephi:");
-            for i in 0..input_var.nFamEll {
-                input_var.eAngleRwo[i] = read_var(&mut input_file);
-            }
+            input_var.eAngleRwo.read_from_text(&mut input_file);
         } else if input_var.orientationOption == 1 {
             search_var(&mut input_file, "etrend:");
-            for i in 0..input_var.nFamEll {
-                input_var.eAngleOne[i] = read_var(&mut input_file);
-            }
+            input_var.eAngleOne.read_from_text(&mut input_file);
             search_var(&mut input_file, "eplunge:");
-            for i in 0..input_var.nFamEll {
-                input_var.eAngleRwo[i] = read_var(&mut input_file);
-            }
+            input_var.eAngleRwo.read_from_text(&mut input_file);
         } else if input_var.orientationOption == 2 {
             search_var(&mut input_file, "edip:");
-            for i in 0..input_var.nFamEll {
-                input_var.eAngleOne[i] = read_var(&mut input_file);
-            }
+            input_var.eAngleOne.read_from_text(&mut input_file);
             search_var(&mut input_file, "estrike:");
-            for i in 0..input_var.nFamEll {
-                input_var.eAngleRwo[i] = read_var(&mut input_file);
-            }
+            input_var.eAngleRwo.read_from_text(&mut input_file);
         }
 
-        input_var!(ebeta, input_var.nFamEll);
-        input_var!(ekappa, input_var.nFamEll);
-        input_var!(eLogMean, input_var.nFamEll);
-        input_var!(esd, input_var.nFamEll);
-        input_var!(eExpMean, input_var.nFamEll);
-        input_var!(emin, input_var.nFamEll);
-        input_var!(emax, input_var.nFamEll);
-        input_var!(ealpha, input_var.nFamEll);
-        input_var!(econst, input_var.nFamEll);
-        input_var!(eLogMin, input_var.nFamEll);
-        input_var!(eLogMax, input_var.nFamEll);
-        input_var!(eExpMin, input_var.nFamEll);
-        input_var!(eExpMax, input_var.nFamEll);
+        input_var!(ebeta);
+        input_var!(ekappa);
+        input_var!(eLogMean);
+        input_var!(esd);
+        input_var!(eExpMean);
+        input_var!(emin);
+        input_var!(emax);
+        input_var!(ealpha);
+        input_var!(econst);
+        input_var!(eLogMin);
+        input_var!(eLogMax);
+        input_var!(eExpMin);
+        input_var!(eExpMax);
 
         if input_var.stopCondition == 1 {
             // Get temp array for ellipse p32 targets
             // Used to simplify initialization of shape family structures below
-            input_var!(e_p32Targets, input_var.nFamEll);
+            input_var!(e_p32Targets);
         }
     }
 
@@ -875,41 +860,29 @@ pub fn get_input(input: &str, shape_family: &mut Vec<Shape>) -> Input {
     }
 
     if input_var.nFamRect > 0 {
-        input_bool!(rbetaDistribution, input_var.nFamRect);
+        input_var!(rbetaDistribution, input_var.nFamRect);
         input_var!(rdistr, input_var.nFamRect);
         input_var!(rLayer, input_var.nFamRect);
         input_var!(rRegion, input_var.nFamRect);
         input_var!(raspect, input_var.nFamRect);
         search_var(&mut input_file, "angleOption:"); //rAngleOption
-        input_var.rAngleOption = read_bool(&mut input_file);
+        input_var.rAngleOption.read_from_text(&mut input_file);
 
         if input_var.orientationOption == 0 {
             search_var(&mut input_file, "rtheta:");
-            for i in 0..input_var.nFamRect {
-                input_var.rAngleOne[i] = read_var(&mut input_file);
-            }
+            input_var.rAngleOne.read_from_text(&mut input_file);
             search_var(&mut input_file, "rphi:");
-            for i in 0..input_var.nFamRect {
-                input_var.rAngleTwo[i] = read_var(&mut input_file);
-            }
+            input_var.rAngleTwo.read_from_text(&mut input_file);
         } else if input_var.orientationOption == 1 {
             search_var(&mut input_file, "rtrend:");
-            for i in 0..input_var.nFamRect {
-                input_var.rAngleOne[i] = read_var(&mut input_file);
-            }
+            input_var.rAngleOne.read_from_text(&mut input_file);
             search_var(&mut input_file, "rplunge:");
-            for i in 0..input_var.nFamRect {
-                input_var.rAngleTwo[i] = read_var(&mut input_file);
-            }
+            input_var.rAngleTwo.read_from_text(&mut input_file);
         } else if input_var.orientationOption == 2 {
             search_var(&mut input_file, "rdip:");
-            for i in 0..input_var.nFamRect {
-                input_var.rAngleOne[i] = read_var(&mut input_file);
-            }
+            input_var.rAngleOne.read_from_text(&mut input_file);
             search_var(&mut input_file, "rstrike:");
-            for i in 0..input_var.nFamRect {
-                input_var.rAngleTwo[i] = read_var(&mut input_file);
-            }
+            input_var.rAngleTwo.read_from_text(&mut input_file);
         }
 
         input_var!(rbeta, input_var.nFamRect);
@@ -941,7 +914,7 @@ pub fn get_input(input: &str, shape_family: &mut Vec<Shape>) -> Input {
         } else if input_var.stopCondition == 1 {
             // Stop program when p32 conditions per fracture family are met
             // Staus array for whether or not the family has reached its p32 requirement
-            input_bool!(p32Status, input_var.nFamRect + input_var.nFamEll);
+            input_var.p32Status = vec![false; input_var.nFamRect + input_var.nFamEll];
         }
     }
 
@@ -1023,37 +996,32 @@ pub fn get_input(input: &str, shape_family: &mut Vec<Shape>) -> Input {
         shape_family.push(new_shape_fam);
     }
 
-    input_bool!(userEllipsesOnOff);
+    input_var!(userEllipsesOnOff);
 
     if input_var.userEllipsesOnOff {
         search_var(&mut input_file, "UserEll_Input_File_Path:");
-        let tempstring: String = read_var(&mut input_file);
+        let mut tempstring: String = String::new();
+        tempstring.read_from_text(&mut input_file);
         let mut u_ell_file = File::open(&tempstring).unwrap();
 
         println!("User Defined Ellipses File: {}", &tempstring);
         search_var(&mut u_ell_file, "nUserEll:");
-        input_var.nUserEll = read_var(&mut u_ell_file);
+        input_var.nUserEll.read_from_text(&mut u_ell_file);
         search_var(&mut u_ell_file, "Radii:");
-        for i in 0..input_var.nUserEll {
-            input_var.ueRadii[i] = read_var(&mut u_ell_file);
-        }
+        input_var.ueRadii.read_from_text(&mut u_ell_file);
         search_var(&mut u_ell_file, "Aspect_Ratio:");
-        for i in 0..input_var.nUserEll {
-            input_var.ueaspect[i] = read_var(&mut u_ell_file);
-        }
+        input_var.ueaspect.read_from_text(&mut u_ell_file);
         search_var(&mut u_ell_file, "AngleOption:");
-        input_var.ueAngleOption = read_bool(&mut u_ell_file);
+        input_var.ueAngleOption.read_from_text(&mut u_ell_file);
         search_var(&mut u_ell_file, "Beta:");
-        for i in 0..input_var.nUserEll {
-            input_var.ueBeta[i] = read_var(&mut u_ell_file);
-        }
+        input_var.ueBeta.read_from_text(&mut u_ell_file);
         search_var(&mut u_ell_file, "Translation:");
-        for i in 0..input_var.nUserEll * 3 {
-            input_var.uetranslation[i] = read_var(&mut u_ell_file)
-        }
+        input_var.uetranslation.read_from_text(&mut u_ell_file);
         //
         search_var(&mut u_ell_file, "userOrientationOption:");
-        input_var.userEllOrientationOption = read_var(&mut u_ell_file);
+        input_var
+            .userEllOrientationOption
+            .read_from_text(&mut u_ell_file);
         println!(
             "userOrientationOption {}",
             input_var.userEllOrientationOption
@@ -1061,14 +1029,10 @@ pub fn get_input(input: &str, shape_family: &mut Vec<Shape>) -> Input {
 
         if input_var.userEllOrientationOption == 0 {
             search_var(&mut u_ell_file, "Normal:");
-            for i in 0..input_var.nUserEll * 3 {
-                input_var.uenormal[i] = read_var(&mut u_ell_file);
-            }
+            input_var.uenormal.read_from_text(&mut u_ell_file);
         } else if input_var.userEllOrientationOption == 1 {
             search_var(&mut u_ell_file, "Trend_Plunge:");
-            for i in 0..input_var.nUserEll * 2 {
-                input_var.ueTrendPlunge[i] = read_var(&mut u_ell_file);
-            }
+            input_var.ueTrendPlunge.read_from_text(&mut u_ell_file);
             // Convert Trend and Plunge into Dip and Strike
             let temp = std::f64::consts::PI / 180.;
 
@@ -1083,9 +1047,7 @@ pub fn get_input(input: &str, shape_family: &mut Vec<Shape>) -> Input {
             }
         } else if input_var.userEllOrientationOption == 2 {
             search_var(&mut u_ell_file, "Dip_Strike:");
-            for i in 0..input_var.nUserEll * 2 {
-                input_var.ueDipStrike[i] = read_var(&mut u_ell_file);
-            }
+            input_var.ueDipStrike.read_from_text(&mut u_ell_file);
             // Convert Trend and Plunge into Dip and Strike
             let temp = std::f64::consts::PI / 180.;
 
@@ -1102,55 +1064,42 @@ pub fn get_input(input: &str, shape_family: &mut Vec<Shape>) -> Input {
         }
 
         search_var(&mut u_ell_file, "Number_of_Vertices:");
-        for i in 0..input_var.nUserEll {
-            input_var.uenumPoints[i] = read_var(&mut u_ell_file);
-        }
+        input_var.uenumPoints.read_from_text(&mut u_ell_file);
     }
 
-    input_bool!(userRectanglesOnOff);
+    input_var!(userRectanglesOnOff);
 
-    if !input_var.userRectanglesOnOff {
+    if input_var.userRectanglesOnOff {
         search_var(&mut input_file, "UserRect_Input_File_Path:");
-        let tempstring: String = read_var(&mut input_file);
+        let mut tempstring: String = String::new();
+        tempstring.read_from_text(&mut input_file);
         let mut u_rect_file = File::open(&tempstring).unwrap();
         println!("User Defined Rectangles File: {}", &tempstring);
         search_var(&mut u_rect_file, "nUserRect:");
-        input_var.nUserRect = read_var(&mut u_rect_file);
+        input_var.nUserRect.read_from_text(&mut u_rect_file);
         search_var(&mut u_rect_file, "Radii:");
-        for i in 0..input_var.nUserRect {
-            input_var.urRadii[i] = read_var(&mut u_rect_file);
-        }
+        input_var.urRadii.read_from_text(&mut u_rect_file);
         search_var(&mut u_rect_file, "AngleOption:");
-        input_var.urAngleOption = read_bool(&mut u_rect_file);
+        input_var.urAngleOption.read_from_text(&mut u_rect_file);
         search_var(&mut u_rect_file, "Beta:");
-        for i in 0..input_var.nUserRect {
-            input_var.urBeta[i] = read_var(&mut u_rect_file);
-        }
+        input_var.urBeta.read_from_text(&mut u_rect_file);
         search_var(&mut u_rect_file, "Aspect_Ratio:");
-        for i in 0..input_var.nUserRect {
-            input_var.uraspect[i] = read_var(&mut u_rect_file);
-        }
+        input_var.uraspect.read_from_text(&mut u_rect_file);
         search_var(&mut u_rect_file, "Translation:");
-        for i in 0..input_var.nUserRect * 3 {
-            input_var.urtranslation[i] = read_var(&mut u_rect_file);
-        }
+        input_var.urtranslation.read_from_text(&mut u_rect_file);
         search_var(&mut u_rect_file, "userOrientationOption:");
-        input_var.userRectOrientationOption = read_var(&mut u_rect_file);
+        input_var
+            .userRectOrientationOption
+            .read_from_text(&mut u_rect_file);
 
         // std::cout << "userRectOrientationOption: " << userRectOrientationOption << " \n";
         if input_var.userRectOrientationOption == 0 {
             search_var(&mut u_rect_file, "Normal:");
-            for i in 0..input_var.nUserRect * 3 {
-                input_var.urnormal[i] = read_var(&mut u_rect_file);
-            }
+            input_var.urnormal.read_from_text(&mut u_rect_file);
         } else if input_var.userRectOrientationOption == 1 {
             search_var(&mut u_rect_file, "Trend_Plunge:");
-            for i in 0..input_var.nUserRect * 2 {
-                input_var.urTrendPlunge[i] = read_var(&mut u_rect_file);
-            }
-            for i in 0..input_var.nUserRect * 3 {
-                input_var.urnormal[i] = read_var(&mut u_rect_file);
-            }
+            input_var.urTrendPlunge.read_from_text(&mut u_rect_file);
+            input_var.urnormal.read_from_text(&mut u_rect_file);
             let temp = std::f64::consts::PI / 180.;
 
             // Convert Trend and Plunge into Dip and Strike
@@ -1167,9 +1116,7 @@ pub fn get_input(input: &str, shape_family: &mut Vec<Shape>) -> Input {
             }
         } else if input_var.userRectOrientationOption == 2 {
             search_var(&mut u_rect_file, "Dip_Strike:");
-            for i in 0..input_var.nUserRect * 2 {
-                input_var.urDipStrike[i] = read_var(&mut u_rect_file);
-            }
+            input_var.urDipStrike.read_from_text(&mut u_rect_file);
             // Convert Dip and Strike into normal vectors
             let temp = std::f64::consts::PI / 180.;
 
@@ -1187,32 +1134,33 @@ pub fn get_input(input: &str, shape_family: &mut Vec<Shape>) -> Input {
         }
     }
 
-    input_bool!(userEllByCoord);
-    input_bool!(userRecByCoord);
-    input_bool!(userPolygonByCoord);
+    input_var!(userEllByCoord);
+    input_var!(userRecByCoord);
+    input_var!(userPolygonByCoord);
 
     if (input_var.userRectanglesOnOff || input_var.userRecByCoord)
         && (input_var.userEllipsesOnOff || input_var.userEllByCoord)
     {
-        input_bool!(insertUserRectanglesFirst);
+        input_var!(insertUserRectanglesFirst);
     } else {
         input_var.insertUserRectanglesFirst = false;
     }
 
     if !input_var.userPolygonByCoord {
         search_var(&mut input_file, "PolygonByCoord_Input_File_Path:");
-        input_var.polygonFile = read_var(&mut input_file);
+        input_var.polygonFile.read_from_text(&mut input_file);
     }
 
-    if !input_var.userEllByCoord {
+    if input_var.userEllByCoord {
         search_var(&mut input_file, "EllByCoord_Input_File_Path:");
-        let tempstring: String = read_var(&mut input_file);
+        let mut tempstring: String = String::new();
+        tempstring.read_from_text(&mut input_file);
         let mut file = File::open(&tempstring).unwrap();
         println!("User Defined Ellipses by Coordinates File: {}", &tempstring);
         search_var(&mut file, "nEllipses:");
-        input_var.nEllByCoord = read_var(&mut file);
+        input_var.nEllByCoord.read_from_text(&mut file);
         search_var(&mut file, "nNodes:");
-        input_var.nEllNodes = read_var(&mut file);
+        input_var.nEllNodes.read_from_text(&mut file);
         search_var(&mut file, "Coordinates:");
         get_cords(
             &mut file,
@@ -1222,16 +1170,17 @@ pub fn get_input(input: &str, shape_family: &mut Vec<Shape>) -> Input {
         );
     }
 
-    if !input_var.userRecByCoord {
+    if input_var.userRecByCoord {
         search_var(&mut input_file, "RectByCoord_Input_File_Path:");
-        let tempstring: String = read_var(&mut input_file);
+        let mut tempstring: String = String::new();
+        tempstring.read_from_text(&mut input_file);
         let mut u_coord_file = File::open(&tempstring).unwrap();
         println!(
             "User Defined Rectangles by Coordinates File: {}",
             &tempstring
         );
         search_var(&mut u_coord_file, "nRectangles:");
-        input_var.nRectByCoord = read_var(&mut u_coord_file);
+        input_var.nRectByCoord.read_from_text(&mut u_coord_file);
         search_var(&mut u_coord_file, "Coordinates:");
         get_rect_coords(
             &mut u_coord_file,
