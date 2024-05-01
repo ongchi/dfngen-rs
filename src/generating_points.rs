@@ -205,11 +205,11 @@ pub fn random_translation(
     let distribution_y = Uniform::new(y_min, y_max);
     let distribution_z = Uniform::new(z_min, z_max);
 
-    [
-        rng.borrow_mut().sample(distribution_x),
-        rng.borrow_mut().sample(distribution_y),
-        rng.borrow_mut().sample(distribution_z),
-    ]
+    let x = rng.borrow_mut().sample(distribution_x);
+    let y = rng.borrow_mut().sample(distribution_y);
+    let z = rng.borrow_mut().sample(distribution_z);
+
+    [x, y, z]
 }
 
 // *******************  Truncated Power-Law  ********************************
