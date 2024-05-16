@@ -1,11 +1,13 @@
 use std::fs::File;
 
+use parry3d::na::Point3;
+
 use crate::{
     generating_points::generate_theta,
     read_input_functions::{
         get_cords, get_rect_coords, read_domain_vertices, search_var, ReadFromTextFile,
     },
-    structures::{Point, Shape},
+    structures::Shape,
 };
 
 #[allow(non_snake_case)]
@@ -530,7 +532,7 @@ pub struct Input {
     pub numOfDomainVertices: usize,
 
     // Vector of points defining the 2D boundary of the domain polygon
-    pub domainVertices: Vec<Point>,
+    pub domainVertices: Vec<Point3<f64>>,
 
     // Global boolean array. Used with stopCondition = 1, P32 option.
     // Number of elements is equal to the number of stochastic shape families.

@@ -1,3 +1,5 @@
+use parry3d::na::Point3;
+
 #[derive(Clone, Default)]
 // The Poly structre is used to create and store fracrures/polygons.
 pub struct Poly {
@@ -79,16 +81,6 @@ pub struct Poly {
     pub intersection_index: Vec<usize>,
 }
 
-// Structure for 3D points/vertices. Constructor is overloaded for either creating
-// a poing with uninitialized variables, or variables x, y, and z during object
-// creation.
-#[derive(Clone, Debug, Default)]
-pub struct Point {
-    pub x: f64,
-    pub y: f64,
-    pub z: f64,
-}
-
 #[derive(Default)]
 pub struct RejectedUserFracture {
     pub id: isize,
@@ -113,18 +105,11 @@ pub struct IntPoints {
     // intersection belongs to ('fract1' and 'fract2' are in no particular order).
     pub fract2: isize,
 
-    // Intersection endpoint 1, x position.
-    pub x1: f64,
-    // Intersection endpoint 1, y position.
-    pub y1: f64,
-    // Intersection endpoint 1, z position.
-    pub z1: f64,
-    // Intersection endpoint 2, x position.
-    pub x2: f64,
-    // Intersection endpoint 2, y position.
-    pub y2: f64,
-    // Intersection endpoint 2, z position.
-    pub z2: f64,
+    // Intersection endpoint 1
+    pub p1: Point3<f64>,
+    // Intersection endpoint 2
+    pub p2: Point3<f64>,
+
     // Triple intersection points/nodes on intersection.
     pub triple_points_idx: Vec<usize>,
 
@@ -147,7 +132,7 @@ pub struct IntPoints {
 // If the fracture is rejected, this data is discraded.
 pub struct TriplePtTempData {
     // Triple intersection point.
-    pub triple_point: Point,
+    pub triple_point: Point3<f64>,
     // Index to 'triplePoints' array in main() to where this point would be stored
     // if the FRAM checks pass.
     pub int_index: Vec<usize>,
@@ -455,16 +440,6 @@ impl IntPoints {
             fract2: -1,
             ..Default::default()
         }
-    }
-}
-
-impl Point {
-    pub fn new(x: f64, y: f64, z: f64) -> Self {
-        Self { x, y, z }
-    }
-
-    pub fn as_vector(&self) -> [f64; 3] {
-        [self.x, self.y, self.z]
     }
 }
 

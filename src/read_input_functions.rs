@@ -3,10 +3,10 @@ use std::io::{BufRead, BufReader, Read, Seek, SeekFrom};
 use std::str::FromStr;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use parry3d::na::Point3;
 use text_io::read;
 
 use crate::read_input::Input;
-use crate::structures::Point;
 
 // // /*****************************************************************/
 // // Gets multiple arrays from input/ Assumes arrays are format: {x,y,z}
@@ -221,11 +221,11 @@ pub fn read_domain_vertices(global: &mut Input, filename: &str) {
     for _ in 0..num_of_domain_vertices {
         let line = lines.next().unwrap().unwrap();
         let parsed_line = split_on_white_space(&line);
-        global.domainVertices.push(Point {
-            x: parsed_line[0].parse().unwrap(),
-            y: parsed_line[1].parse().unwrap(),
-            z: 0., // FIXME: uninitialized
-        });
+        global.domainVertices.push(Point3::new(
+            parsed_line[0].parse().unwrap(),
+            parsed_line[1].parse().unwrap(),
+            0., // FIXME: uninitialized
+        ));
     }
 
     println!("Reading in Vertices Complete");

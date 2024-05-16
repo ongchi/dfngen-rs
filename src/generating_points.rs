@@ -2,9 +2,9 @@ use std::{cell::RefCell, rc::Rc};
 
 use crate::{
     read_input::Input,
-    structures::Point,
     vector_functions::{cross_product, dot_product},
 };
+use parry3d::na::{Point3, Vector3};
 use rand::distributions::Uniform;
 use rand::Rng;
 use rand_mt::Mt19937GenRand64;
@@ -16,22 +16,22 @@ use rand_mt::Mt19937GenRand64;
 // Return: List of 3D points of the discretized nodes, including end points */
 pub fn discretize_line_of_intersection(
     input: &Input,
-    pt1: &[f64; 3],
-    pt2: &[f64; 3],
+    pt1: &Point3<f64>,
+    pt2: &Point3<f64>,
     dist: f64,
-) -> Vec<Point> {
+) -> Vec<Point3<f64>> {
     // If reduced mesh, just save endpoints
     if input.visualizationMode {
         let mut points_list = Vec::new();
-        let pt = Point::new(pt1[0], pt1[1], pt1[2]);
+        let pt = Point3::new(pt1[0], pt1[1], pt1[2]);
         points_list.push(pt);
-        let pt = Point::new(pt2[0], pt2[1], pt2[2]);
+        let pt = Point3::new(pt2[0], pt2[1], pt2[2]);
         points_list.push(pt);
         return points_list;
     }
 
-    let v = [pt2[0] - pt1[0], pt2[1] - pt1[1], pt2[2] - pt1[2]]; // {x2-x1, y2-y1, z2-z1};
-    let p = pt1.clone(); // {x1, y1, z1};
+    let v = pt2 - pt1;
+    let p = *pt1;
 
     let nprime = (2. * dist / input.h).ceil();
     let hprime = 1. / nprime;
@@ -63,8 +63,8 @@ pub fn discretize_line_of_intersection(
 // Arg 2: Array of three doubles {x, y, z}, end point on line
 // Arg 3: t, 0<= t <= 1
 // Return: Point on line
-pub fn line_function_3d(v: &[f64; 3], point: &[f64; 3], t: f64) -> Point {
-    Point::new(
+pub fn line_function_3d(v: &Vector3<f64>, point: &Point3<f64>, t: f64) -> Point3<f64> {
+    Point3::new(
         point[0] + v[0] * t,
         point[1] + v[1] * t,
         point[2] + v[2] * t,

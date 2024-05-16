@@ -1,6 +1,7 @@
 use std::{cell::RefCell, fs::File, io::Write, rc::Rc, time::SystemTime};
 
 use clap::Parser;
+use parry3d::na::Point3;
 // use console::Term;
 use rand::{distributions::Uniform, Rng};
 use rand_mt::Mt19937GenRand64;
@@ -31,7 +32,7 @@ use crate::{
     read_input::get_input,
     read_input_functions::get_time_based_seed,
     remove_fractures::remove_fractures,
-    structures::{IntPoints, Point, Poly, Shape, Stats},
+    structures::{IntPoints, Poly, Shape, Stats},
 };
 
 mod cluster_groups;
@@ -77,7 +78,7 @@ fn main() {
     // Vector for storing intersections
     let mut int_pts: Vec<IntPoints> = Vec::new();
     // Vector for storing triple intersection points
-    let mut triple_points: Vec<Point> = Vec::new();
+    let mut triple_points: Vec<Point3<f64>> = Vec::new();
     // Vector for shape families/ stochastic families
     let mut shape_families: Vec<Shape> = Vec::new();
     // Statistics structure:

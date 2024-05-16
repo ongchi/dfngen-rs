@@ -1,5 +1,7 @@
 use std::fs::File;
 
+use parry3d::na::Point3;
+
 use crate::{
     computational_geometry::{create_bounding_box, intersection_checking},
     domain::domain_truncation,
@@ -7,7 +9,7 @@ use crate::{
     math_functions::get_area,
     read_input::Input,
     read_input_functions::{search_var, ReadFromTextFile},
-    structures::{IntPoints, Point, Poly, RejectedUserFracture, Stats},
+    structures::{IntPoints, Poly, RejectedUserFracture, Stats},
     vector_functions::{cross_product, euclidean_distance, magnitude, normalize},
 };
 
@@ -45,7 +47,7 @@ pub fn insert_user_polygon_by_coord(
     accepted_poly: &mut Vec<Poly>,
     intpts: &mut Vec<IntPoints>,
     pstats: &mut Stats,
-    triple_points: &mut Vec<Point>,
+    triple_points: &mut Vec<Point3<f64>>,
 ) {
     let mut n_poly_nodes: usize = 0;
     println!(

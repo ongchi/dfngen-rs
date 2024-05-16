@@ -3,14 +3,16 @@ use std::{
     io::{Seek, Write},
 };
 
+use parry3d::na::{distance, Point3};
+
 use crate::{
     computational_geometry::poly_and_intersection_rotation_to_xy,
     generating_points::discretize_line_of_intersection,
     insert_shape::{get_family_number, shape_type},
     math_functions::sorted_index,
     read_input::Input,
-    structures::{IntPoints, Point, Poly, Shape, Stats},
-    vector_functions::{cross_product, dot_product, euclidean_distance, normalize},
+    structures::{IntPoints, Poly, Shape, Stats},
+    vector_functions::{cross_product, dot_product, normalize},
 };
 
 // void writeOutput() ************************************************************************
@@ -29,7 +31,7 @@ pub fn write_output(
     output_folder: &str,
     accepted_poly: &mut [Poly],
     int_pts: &mut [IntPoints],
-    triple_points: &mut [Point],
+    triple_points: &mut [Point3<f64>],
     pstats: &mut Stats,
     final_fractures: &[usize],
     shape_families: &[Shape],
@@ -171,7 +173,7 @@ pub fn write_output(
 //        array will be the same as the first point in the second array. In this situation, you
 //        would set start = 1 while writing the second array to avoid duplicate points in the output
 // Arg 4: Counter of poitns written. Used to rember at which node a new intersection starts
-fn write_points(output: &mut File, points: &[Point], start: usize, count: &mut usize) {
+fn write_points(output: &mut File, points: &[Point3<f64>], start: usize, count: &mut usize) {
     let n = points.len();
 
     for point in points.iter().take(n).skip(start) {
@@ -297,13 +299,13 @@ fn write_intersection_files(
     final_fractures: &[usize],
     accepted_poly: &mut [Poly],
     int_pts: &[IntPoints],
-    triple_points: &mut [Point],
+    triple_points: &mut [Point3<f64>],
     intersection_folder: &str,
     pstats: &mut Stats,
 ) {
     // Keeps track of current un-rotated points we are working with
-    let mut temp_point1 = Point::default();
-    let mut temp_point2 = Point::default();
+    let mut temp_point1;
+    let mut temp_point2;
     println!("Writing Intersection Files");
     // let mut fractIntFile = File::open();
 
@@ -373,20 +375,13 @@ fn write_intersection_files(
                     pstats.triple_node_count += triple_pts_size;
                     // Order the triple points by distances to know to discretize from point to next closest point
                     let mut distances = Vec::with_capacity(triple_pts_size);
-                    let mut pt1 = [
-                        temp_intersection.x1,
-                        temp_intersection.y1,
-                        temp_intersection.z1,
-                    ];
-                    temp_point1.x = int_pts[poly_int_idx].x1;
-                    temp_point1.y = int_pts[poly_int_idx].y1;
-                    temp_point1.z = int_pts[poly_int_idx].z1;
+                    let mut pt1 = temp_intersection.p1;
+                    temp_point1 = int_pts[poly_int_idx].p1;
 
                     // Create array of distances first end point to triple points
                     for k in 0..triple_pts_size {
                         //loop through triple points on  intersection i
-                        let point = [temp_trip_pts[k].x, temp_trip_pts[k].y, temp_trip_pts[k].z]; //triple pt
-                        distances[k] = euclidean_distance(&pt1, &point); //create array of distances
+                        distances[k] = distance(&pt1, &temp_trip_pts[k]); //create array of distances
                     }
 
                     // Order the indices of the distances array shortest to largest distance
@@ -394,15 +389,9 @@ fn write_intersection_files(
                     let s = sorted_index(&distances);
                     // Discretize from end point1 to first triple pt
                     // pt1 already = enpoint1
-                    let mut pt2 = [
-                        temp_trip_pts[s[0]].x,
-                        temp_trip_pts[s[0]].y,
-                        temp_trip_pts[s[0]].z,
-                    ];
-                    temp_point2 =
-                        triple_points[int_pts[poly_int_idx].triple_points_idx[s[0]]].clone();
-                    cur_length =
-                        euclidean_distance(&temp_point1.as_vector(), &temp_point2.as_vector());
+                    let mut pt2 = temp_trip_pts[s[0]];
+                    temp_point2 = triple_points[int_pts[poly_int_idx].triple_points_idx[s[0]]];
+                    cur_length = distance(&temp_point1, &temp_point2);
                     let mut points = discretize_line_of_intersection(input, &pt1, &pt2, cur_length);
                     // Write points to file
                     num_int_pts += points.len();
@@ -410,16 +399,10 @@ fn write_intersection_files(
 
                     // If one trip pt, set up points to discretize from only triple pt to other end point
                     if triple_pts_size == 1 {
-                        pt1[0] = pt2[0];
-                        pt1[1] = pt2[1];
-                        pt1[2] = pt2[2];
-                        pt2[0] = temp_intersection.x2;
-                        pt2[1] = temp_intersection.y2;
-                        pt2[2] = temp_intersection.z2;
-                        temp_point1 = temp_point2.clone();
-                        temp_point2.x = int_pts[poly_int_idx].x2;
-                        temp_point2.y = int_pts[poly_int_idx].y2;
-                        temp_point2.z = int_pts[poly_int_idx].z2;
+                        pt1 = pt2;
+                        pt2 = temp_intersection.p2;
+                        temp_point1 = temp_point2;
+                        temp_point2 = int_pts[poly_int_idx].p2;
                     } else {
                         // More than 1 triple point
                         for jj in 0..triple_pts_size - 1 {
@@ -429,16 +412,11 @@ fn write_intersection_files(
                             pt2[0] = temp_trip_pts[s[jj + 1]].x;
                             pt2[1] = temp_trip_pts[s[jj + 1]].y;
                             pt2[2] = temp_trip_pts[s[jj + 1]].z;
-                            temp_point1 = triple_points
-                                [int_pts[poly_int_idx].triple_points_idx[s[jj]]]
-                                .clone();
-                            temp_point2 = triple_points
-                                [int_pts[poly_int_idx].triple_points_idx[s[jj + 1]]]
-                                .clone();
-                            cur_length = euclidean_distance(
-                                &temp_point1.as_vector(),
-                                &temp_point2.as_vector(),
-                            );
+                            temp_point1 =
+                                triple_points[int_pts[poly_int_idx].triple_points_idx[s[jj]]];
+                            temp_point2 =
+                                triple_points[int_pts[poly_int_idx].triple_points_idx[s[jj + 1]]];
+                            cur_length = distance(&temp_point1, &temp_point2);
                             points = discretize_line_of_intersection(input, &pt1, &pt2, cur_length);
                             // Write points for first fracture to file, save second set of points to temp
                             num_int_pts += points.len() - 1;
@@ -446,43 +424,23 @@ fn write_intersection_files(
                         }
 
                         // Set up points to go from last triple point to last endpoint
-                        pt1[0] = pt2[0];
-                        pt1[1] = pt2[1];
-                        pt1[2] = pt2[2];
-                        pt2[0] = temp_intersection.x2;
-                        pt2[1] = temp_intersection.y2;
-                        pt2[2] = temp_intersection.z2;
-                        temp_point1 = temp_point2.clone();
-                        temp_point2.x = int_pts[poly_int_idx].x2;
-                        temp_point2.y = int_pts[poly_int_idx].y2;
-                        temp_point2.z = int_pts[poly_int_idx].z2;
+                        pt1 = pt2;
+                        pt2 = temp_intersection.p2;
+                        temp_point1 = temp_point2;
+                        temp_point2 = int_pts[poly_int_idx].p2;
                     }
 
-                    cur_length =
-                        euclidean_distance(&temp_point1.as_vector(), &temp_point2.as_vector());
+                    cur_length = distance(&temp_point1, &temp_point2);
                     points = discretize_line_of_intersection(input, &pt1, &pt2, cur_length);
                     num_int_pts += points.len() - 1;
                     write_points(&mut fract_int_file, &points, 1, &mut count);
                 } else {
                     // No triple intersection points on intersection line
-                    let pt1 = [
-                        temp_intersection.x1,
-                        temp_intersection.y1,
-                        temp_intersection.z1,
-                    ];
-                    let pt2 = [
-                        temp_intersection.x2,
-                        temp_intersection.y2,
-                        temp_intersection.z2,
-                    ];
-                    temp_point1.x = int_pts[poly_int_idx].x1;
-                    temp_point1.y = int_pts[poly_int_idx].y1;
-                    temp_point1.z = int_pts[poly_int_idx].z1;
-                    temp_point2.x = int_pts[poly_int_idx].x2;
-                    temp_point2.y = int_pts[poly_int_idx].y2;
-                    temp_point2.z = int_pts[poly_int_idx].z2;
-                    cur_length =
-                        euclidean_distance(&temp_point1.as_vector(), &temp_point2.as_vector());
+                    let pt1 = temp_intersection.p1;
+                    let pt2 = temp_intersection.p2;
+                    temp_point1 = int_pts[poly_int_idx].p1;
+                    temp_point2 = int_pts[poly_int_idx].p2;
+                    cur_length = distance(&temp_point1, &temp_point2);
                     let points = discretize_line_of_intersection(input, &pt1, &pt2, cur_length);
                     num_int_pts += points.len();
                     write_points(&mut fract_int_file, &points, 0, &mut count);
@@ -981,7 +939,7 @@ fn write_final_radii_of_family(
 // Arg 4: std::vector array of all intersections
 // Arg 5: Path to output folder
 fn write_triple_pts(
-    triple_points: &[Point],
+    triple_points: &[Point3<f64>],
     final_fractures: &[usize],
     accepted_poly: &[Poly],
     int_pts: &[IntPoints],
@@ -1616,12 +1574,12 @@ fn write_graph_data(
                     &mut int_file,
                     fract1,
                     fract2,
-                    int_pts[poly_int_idx].x1,
-                    int_pts[poly_int_idx].y1,
-                    int_pts[poly_int_idx].z1,
-                    int_pts[poly_int_idx].x2,
-                    int_pts[poly_int_idx].y2,
-                    int_pts[poly_int_idx].z2,
+                    int_pts[poly_int_idx].p1.x,
+                    int_pts[poly_int_idx].p1.y,
+                    int_pts[poly_int_idx].p1.z,
+                    int_pts[poly_int_idx].p2.x,
+                    int_pts[poly_int_idx].p2.y,
+                    int_pts[poly_int_idx].p2.z,
                 );
                 num_conn += 1;
             }
@@ -1838,19 +1796,14 @@ fn write_mid_point(
     z2: f64,
 ) {
     // Keeps track of current un-rotated points we are working with
-    let mut temp_point1 = Point::default();
-    let mut temp_point2 = Point::default();
-    let mut temp_point3 = Point::default();
-    temp_point1.x = x1;
-    temp_point1.y = y1;
-    temp_point1.z = z1;
-    temp_point2.x = x2;
-    temp_point2.y = y2;
-    temp_point2.z = z2;
-    temp_point3.x = 0.5 * (temp_point1.x + temp_point2.x);
-    temp_point3.y = 0.5 * (temp_point1.y + temp_point2.y);
-    temp_point3.z = 0.5 * (temp_point1.z + temp_point2.z);
-    let cur_length = euclidean_distance(&temp_point1.as_vector(), &temp_point2.as_vector());
+    let temp_point1 = Point3::new(x1, y1, z1);
+    let temp_point2 = Point3::new(x2, y2, z2);
+    let temp_point3 = Point3::new(
+        0.5 * (temp_point1.x + temp_point2.x),
+        0.5 * (temp_point1.y + temp_point2.y),
+        0.5 * (temp_point1.z + temp_point2.z),
+    );
+    let cur_length = distance(&temp_point1, &temp_point2);
     fp.write_all(
         format!(
             "{} {} {:.10} {:.10} {:.10} {:.10}\n",

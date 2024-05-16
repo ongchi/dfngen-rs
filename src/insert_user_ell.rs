@@ -1,3 +1,5 @@
+use parry3d::na::Point3;
+
 use crate::{
     computational_geometry::{
         apply_rotation2_d, apply_rotation3_d, create_bounding_box, intersection_checking, translate,
@@ -7,7 +9,7 @@ use crate::{
     insert_shape::{initialize_ell_vertices, print_reject_reason},
     math_functions::get_area,
     read_input::Input,
-    structures::{IntPoints, Point, Poly, RejectedUserFracture, Stats},
+    structures::{IntPoints, Poly, RejectedUserFracture, Stats},
     vector_functions::normalize,
 };
 
@@ -25,7 +27,7 @@ pub fn insert_user_ell(
     accepted_poly: &mut Vec<Poly>,
     intpts: &mut Vec<IntPoints>,
     pstats: &mut Stats,
-    triple_points: &mut Vec<Point>,
+    triple_points: &mut Vec<Point3<f64>>,
 ) {
     println!("\n{} User Ellipses Defined\n", input.nUserEll);
 

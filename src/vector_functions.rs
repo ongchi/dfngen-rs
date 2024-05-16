@@ -1,5 +1,7 @@
 use core::panic;
 
+use parry3d::na::Vector3;
+
 use crate::read_input::Input;
 
 // Calculates crossproduct of v1 and v2
@@ -55,24 +57,15 @@ pub fn magnitude(x: f64, y: f64, z: f64) -> f64 {
     ((x * x) + (y * y) + (z * z)).sqrt()
 }
 
-// Calculates the square magnitude of a vector
-// Arg 1: x
-// Arg 2: y
-// Arg 3: z
-// Return: Square magnitude of {x,y,z}
-pub fn sqr_magnitude(x: f64, y: f64, z: f64) -> f64 {
-    (x * x) + (y * y) + (z * z)
-}
-
 // Check if two vectors are parallel
 // Arg 1: Pointer to vector 1, array of three doubles
 // Arg 2: Pointer to vector 2, array of three doubles
 // Output: True if vectors are parallel
 //         False otherwise
-pub fn parallel(input: &Input, v1: &mut [f64; 3], v2: &mut [f64; 3]) -> bool {
-    normalize(v1);
-    normalize(v2);
-    let dot_prod = dot_product(v1, v2);
+pub fn parallel(input: &Input, v1: &mut Vector3<f64>, v2: &mut Vector3<f64>) -> bool {
+    *v1 = v1.normalize();
+    *v2 = v2.normalize();
+    let dot_prod = v1.dot(v2);
 
     1. - input.eps < dot_prod && dot_prod < 1. + input.eps
 }
