@@ -1,6 +1,6 @@
 use crate::{
+    io::input::Input,
     math_functions::or,
-    read_input::Input,
     structures::{FractureGroups, GroupData, Poly, Stats},
 };
 

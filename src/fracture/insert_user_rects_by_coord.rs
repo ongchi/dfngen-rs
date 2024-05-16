@@ -1,12 +1,13 @@
 use parry3d::na::{Point3, Vector3};
 
+use super::domain::domain_truncation;
+use super::insert_shape::print_reject_reason;
+
 use crate::{
     computational_geometry::{create_bounding_box, intersection_checking},
-    domain::domain_truncation,
-    insert_shape::print_reject_reason,
+    io::input::Input,
     math_functions::get_area,
-    read_input::Input,
-    structures::{IntPoints, Poly, RejectedUserFracture, Stats},
+    structures::{IntersectionPoints, Poly, RejectedUserFracture, Stats},
 };
 
 // *************************************************************
@@ -22,7 +23,7 @@ use crate::{
 pub fn insert_user_rects_by_coord(
     input: &mut Input,
     accepted_poly: &mut Vec<Poly>,
-    intpts: &mut Vec<IntPoints>,
+    intpts: &mut Vec<IntersectionPoints>,
     pstats: &mut Stats,
     triple_points: &mut Vec<Point3<f64>>,
 ) {

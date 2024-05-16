@@ -2,13 +2,11 @@ use std::fs::File;
 
 use parry3d::na::Point3;
 
-use crate::{
-    generating_points::generate_theta,
-    read_input_functions::{
-        get_cords, get_rect_coords, read_domain_vertices, search_var, ReadFromTextFile,
-    },
-    structures::Shape,
+use super::read_input_functions::{
+    get_cords, get_rect_coords, read_domain_vertices, search_var, ReadFromTextFile,
 };
+
+use crate::{distribution::generating_points::generate_theta, structures::Shape};
 
 #[allow(non_snake_case)]
 #[derive(Default, Debug)]
@@ -555,7 +553,7 @@ pub struct Input {
 //
 // Arg 1: Path to input file
 // Arg 2: OUTPUT, Shape array to store stochastic families
-pub fn get_input(input: &str, shape_family: &mut Vec<Shape>) -> Input {
+pub fn read_input(input: &str, shape_family: &mut Vec<Shape>) -> Input {
     let mut input_var = Input::default();
 
     println!("DFN Generator Input File: {}\n", input);
@@ -576,26 +574,6 @@ pub fn get_input(input: &str, shape_family: &mut Vec<Shape>) -> Input {
             }
         };
     }
-
-    // macro_rules! input_bool {
-    //     ($var_name:ident) => {
-    //         search_var(&mut input_file, &format!("{}:", stringify!($var_name)));
-    //         let mut tmp: u8 = 0;
-    //         tmp.read_from_text(&mut input_file);
-    //         input_var.$var_name = tmp != 0;
-    //     };
-    //
-    //     ($var_name:ident,$n:expr) => {
-    //         search_var(&mut input_file, &format!("{}:", stringify!($var_name)));
-    //         // let mut tmp: Vec<u8> = Vec::new();
-    //         // tmp.read_from_text(&mut input_file);
-    //         // input_var.$var_name.extend(tmp.into_iter().map(|v| v != 0));
-    //         let vec = read_vec_bool(&mut input_file);
-    //         for (i, v) in vec.into_iter().enumerate() {
-    //             input_var.$var_name[i] = v;
-    //         }
-    //     };
-    // }
 
     input_var!(stopCondition);
     input_var!(printRejectReasons);
@@ -655,6 +633,10 @@ pub fn get_input(input: &str, shape_family: &mut Vec<Shape>) -> Input {
     }
 
     input_var!(h);
+
+    // Set epsilon
+    input_var.eps = input_var.h * 1e-8;
+
     input_var!(disableFram);
 
     if input_var.disableFram {
@@ -1236,7 +1218,3 @@ pub fn get_input(input: &str, shape_family: &mut Vec<Shape>) -> Input {
 
     input_var
 }
-
-// fn printInputVars(input: &Input) {
-//     println!("{:?}", input);
-// }

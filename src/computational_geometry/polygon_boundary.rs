@@ -2,8 +2,8 @@ use parry3d::na::Point3;
 
 use crate::{
     computational_geometry::intersection_checking,
-    read_input::Input,
-    structures::{IntPoints, Poly, Stats},
+    io::input::Input,
+    structures::{IntersectionPoints, Poly, Stats},
 };
 
 fn in_polygon_boundary(input: &Input, x: f64, y: f64) -> bool {
@@ -85,7 +85,7 @@ fn in_polygon_boundary(input: &Input, x: f64, y: f64) -> bool {
 pub fn polygon_boundary(
     input: &Input,
     accepted_polys: &mut Vec<Poly>,
-    int_pts: &mut Vec<IntPoints>,
+    int_pts: &mut Vec<IntersectionPoints>,
     triple_points: &mut Vec<Point3<f64>>,
     pstats: &mut Stats,
 ) {

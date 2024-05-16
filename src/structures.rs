@@ -96,7 +96,7 @@ pub struct RejectedUserFracture {
 // the intersection has been shortened by shrinkIntersection()
 // during FRAM.
 #[derive(Clone, Default)]
-pub struct IntPoints {
+pub struct IntersectionPoints {
     // Fracture 1, index of fracture in the accpeted polygons list that this
     // intersection belongs to ('fract1' and 'fract2' are in no particular order).
     pub fract1: isize,
@@ -431,7 +431,7 @@ pub struct Shape {
     pub alpha: f64,
 }
 
-impl IntPoints {
+impl IntersectionPoints {
     // Initializes fract1 and fract2 to -1.
     // Sets intersectionShortened to false;
     pub fn new() -> Self {

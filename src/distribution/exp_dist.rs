@@ -37,26 +37,6 @@ impl ExpDist {
         self.generator.borrow_mut().sample(distribution)
     }
 
-    // // Returns a random number from the distribution with a random variable
-    // // given as an argument.
-    // // Arg 1: Lambda
-    // // Arg 2: Random variable between 0 and 1
-    // // Return: Random number from exponential distribution described by 'lambda' */
-    // pub fn getValue(&self, lambda: f64, rv: f64) -> f64 {
-    //     if rv > 1. {
-    //         panic!(
-    //         "ERROR: Attempted to input random value of greater than 1 to the exponential distribution class's getValue() function. Input must be on [0,1] interval."
-    //         )
-    //     }
-    //
-    //     // Using inverse CDF
-    //     if rv != 1. {
-    //         -(1. - rv).ln() / lambda
-    //     } else {
-    //         -(1. - self.maxInput).ln() / lambda
-    //     }
-    // }
-
     // Generates a random value from the exponental distribution between the user's
     // defined minimum and maximum range.
     //

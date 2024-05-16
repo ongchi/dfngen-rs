@@ -2,8 +2,8 @@ use parry3d::na::Point3;
 
 use crate::{
     computational_geometry::intersection_checking,
-    read_input::Input,
-    structures::{IntPoints, Poly, Stats},
+    io::input::Input,
+    structures::{IntersectionPoints, Poly, Stats},
 };
 
 // ***********************************************************************
@@ -32,7 +32,7 @@ pub fn remove_fractures(
     input: &Input,
     min_size: f64,
     accepted_polys: &mut Vec<Poly>,
-    int_pts: &mut Vec<IntPoints>,
+    int_pts: &mut Vec<IntersectionPoints>,
     triple_points: &mut Vec<Point3<f64>>,
     pstats: &mut Stats,
 ) {

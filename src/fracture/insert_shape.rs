@@ -1,18 +1,19 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use crate::distributions::Distributions;
-use crate::generating_points::truncated_power_law;
-use crate::read_input::Input;
-use crate::{
-    computational_geometry::{apply_rotation2_d, apply_rotation3_d, translate},
-    generating_points::{fisher_distribution, random_translation},
-    structures::{Poly, Shape},
-};
 use rand::distributions::Uniform;
 use rand::Rng;
 use rand_distr::LogNormal;
 use rand_mt::Mt19937GenRand64;
+
+use crate::distribution::Distribution;
+use crate::distribution::generating_points::truncated_power_law;
+use crate::io::input::Input;
+use crate::{
+    computational_geometry::{apply_rotation2_d, apply_rotation3_d, translate},
+    distribution::generating_points::{fisher_distribution, random_translation},
+    structures::{Poly, Shape},
+};
 
 // **************************************************************************
 // *****************  Generate Polygon/Fracture  ****************************
@@ -32,7 +33,7 @@ pub fn generate_poly(
     global: &Input,
     shape_fam: &mut Shape,
     generator: Rc<RefCell<Mt19937GenRand64>>,
-    distributions: Rc<RefCell<Distributions>>,
+    distributions: Rc<RefCell<Distribution>>,
     family_index: isize,
     use_list: bool,
 ) -> Poly {

@@ -1,10 +1,14 @@
-use crate::insert_shape::{get_family_number, shape_type};
-use crate::read_input::Input;
-use crate::{exp_dist::ExpDist, structures::Shape};
+use crate::fracture::insert_shape::{get_family_number, shape_type};
+use crate::io::input::Input;
+use crate::structures::Shape;
+use exp_dist::ExpDist;
 use rand_mt::Mt19937GenRand64;
 use std::cell::RefCell;
 use std::io::Read;
 use std::rc::Rc;
+
+pub mod exp_dist;
+pub mod generating_points;
 
 // The Distributions class is used to hold all the custom distribution classes
 // that are used by DFNgen. As of now, the only distribution we have completely customized
@@ -12,7 +16,7 @@ use std::rc::Rc;
 // to limit the range of numbers the distribution is able to produce. This allows
 // the user to define the minimum and maximum size fractures they want from the
 // distribution.
-pub struct Distributions {
+pub struct Distribution {
     pub max_input: f64,
     pub exp_dist: ExpDist,
 }
@@ -28,7 +32,7 @@ pub struct Distributions {
 //
 // Currently, exponential distribution is the only
 // distribution contained in the Distributions class.
-impl Distributions {
+impl Distribution {
     // Initialize maxInput. maxInput is the maximum double
     // less than 1. (0.9999... before being recognized as 1)
     //

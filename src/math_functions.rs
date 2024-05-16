@@ -1,6 +1,6 @@
 use parry3d::na::Vector3;
 
-use crate::read_input::Input;
+use crate::io::input::Input;
 use crate::structures::Poly;
 
 // Used for ORing arrays of bool for boundary face codes

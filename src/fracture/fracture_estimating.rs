@@ -4,19 +4,19 @@ use rand::{distributions::Uniform, Rng};
 use rand_distr::LogNormal;
 use rand_mt::Mt19937GenRand64;
 
+use super::domain::domain_truncation;
 use crate::{
-    distributions::Distributions,
-    domain::domain_truncation,
-    generating_points::truncated_power_law,
-    insert_shape::{
+    distribution::generating_points::truncated_power_law,
+    distribution::Distribution,
+    fracture::insert_shape::{
         generate_poly, generate_poly_with_radius, get_family_number, get_largest_fracture_radius,
         p32_complete, re_translate_poly, shape_type,
     },
+    io::input::Input,
     math_functions::{
         adjust_cdf_and_fam_prob, cdf_idx_from_fam_num, create_cdf, get_area,
         index_from_prob_and_p32_status,
     },
-    read_input::Input,
     structures::Shape,
 };
 
@@ -46,7 +46,7 @@ pub fn generate_radii_lists_n_poly_option(
     shape_families: &mut [Shape],
     fam_prob: &[f64],
     generator: Rc<RefCell<Mt19937GenRand64>>,
-    distributions: Rc<RefCell<Distributions>>,
+    distributions: Rc<RefCell<Distribution>>,
 ) {
     println!("Building radii lists for nPoly option...");
 
@@ -106,7 +106,7 @@ pub fn add_radii_to_lists(
     percent: f64,
     shape_families: &mut [Shape],
     generator: Rc<RefCell<Mt19937GenRand64>>,
-    distributions: Rc<RefCell<Distributions>>,
+    distributions: Rc<RefCell<Distribution>>,
 ) {
     for (i, shape) in shape_families.iter_mut().enumerate() {
         let amount_to_add = (shape.radii_list.len() as f64 * percent).ceil() as usize;
@@ -136,7 +136,7 @@ pub fn add_radii(
     fam_idx: isize,
     shape_fam: &mut Shape,
     generator: Rc<RefCell<Mt19937GenRand64>>,
-    distributions: Rc<RefCell<Distributions>>,
+    distributions: Rc<RefCell<Distribution>>,
 ) {
     let mut radius = 0.;
     let min_radius = 3. * input.h;
@@ -244,7 +244,7 @@ pub fn dry_run(
     input: &mut Input,
     shape_families: &mut [Shape],
     generator: Rc<RefCell<Mt19937GenRand64>>,
-    distributions: Rc<RefCell<Distributions>>,
+    distributions: Rc<RefCell<Distribution>>,
 ) {
     println!("Estimating number of fractures per family for defined fracture intensities (P32)...");
     let dom_vol = input.domainSize[0] * input.domainSize[1] * input.domainSize[2];

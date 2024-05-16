@@ -1,12 +1,14 @@
 use parry3d::na::{distance, Point3, Translation3, Vector3};
 
 use crate::{
-    cluster_groups::{assign_group, update_groups},
-    generating_points::line_function_3d,
+    distribution::generating_points::line_function_3d,
+    fracture::cluster_groups::{assign_group, update_groups},
+    io::input::Input,
     math_functions::{max_elmt_idx, sorted_index, sum_dev_ary3},
-    read_input::Input,
-    structures::{IntPoints, Poly, Stats, TriplePtTempData},
+    structures::{IntersectionPoints, Poly, Stats, TriplePtTempData},
 };
+
+pub mod polygon_boundary;
 
 // Check if two vectors are parallel
 // Arg 1: Pointer to vector 1, array of three doubles
@@ -166,16 +168,16 @@ pub fn apply_rotation3_d(input: &Input, new_poly: &mut Poly, normal_b: &Vector3<
 //    Return: Rotated version of intersection passed in arg 1 */
 pub fn poly_and_intersection_rotation_to_xy(
     input: &Input,
-    intersection: &IntPoints,
+    intersection: &IntersectionPoints,
     new_poly: &mut Poly,
     triple_points: &[Point3<f64>],
     temp_trip_pts: &mut Vec<Point3<f64>>,
-) -> IntPoints {
+) -> IntersectionPoints {
     // newPoly.normal = newPoly's current normal, should already be normalized
     // normalB = target normal
     let normal_a = Vector3::from_iterator(new_poly.normal.iter().cloned());
     let normal_b = Vector3::new(0., 0., 1.);
-    let mut temp_intpts = IntPoints::new();
+    let mut temp_intpts = IntersectionPoints::new();
 
     if !parallel(input, &normal_a, &normal_b) {
         // rotationMatrix() requires normals to be normalized
@@ -302,25 +304,6 @@ pub fn create_bounding_box(new_poly: &mut Poly) {
     new_poly.bounding_box[5] = max_z;
 }
 
-// // **********************************************************************
-// // Bounding box print out to std out.
-// // Arg 1: Poly whos bounding box to print to screen. */
-// pub fn printBoundingBox(new_poly: &Poly) {
-//     println!("Bounding Box:");
-//     println!(
-//         "MinX = {}    MaxX = {}",
-//         new_poly.bounding_box[1], new_poly.bounding_box[0]
-//     );
-//     println!(
-//         "MinY = {}    MaxY = {}",
-//         new_poly.bounding_box[3], new_poly.bounding_box[2]
-//     );
-//     println!(
-//         "MinZ = {}    MaxZ = {}",
-//         new_poly.bounding_box[5], new_poly.bounding_box[4]
-//     );
-// }
-
 // *********************** Check Bounding Box ***************************
 // Compares two polygons' bounding boxes, returns 1 if bounding boxes intersect
 // Arg 1: Poly 1
@@ -361,7 +344,12 @@ fn check_bounding_box(poly1: &Poly, poly2: &Poly) -> bool {
 // Arg 2: Poly 1
 // Arg 3: Poly 2
 // Return: Intersection end points, Valid only if flag != 0 */
-fn find_intersections(input: &Input, flag: &mut i32, poly1: &Poly, poly2: &Poly) -> IntPoints {
+fn find_intersections(
+    input: &Input,
+    flag: &mut i32,
+    poly1: &Poly,
+    poly2: &Poly,
+) -> IntersectionPoints {
     /* FLAGS: 0 = no intersection
        NOTE: The only flag which is currently used is '0'
              1 = intersection is completely inside poly 1 (new fracture)/poly)
@@ -373,7 +361,7 @@ fn find_intersections(input: &Input, flag: &mut i32, poly1: &Poly, poly2: &Poly)
     // This code is mostly converted directly from the mathematica version.
     // Re-write may be worth doing for increased performance and code clarity
     *flag = 0;
-    let mut int_pts = IntPoints::new(); // Final intersection points
+    let mut int_pts = IntersectionPoints::new(); // Final intersection points
     let mut count = 0;
     let mut f1; // Fracture 1
     let mut f2; // Fracture 2
@@ -561,15 +549,15 @@ fn find_intersections(input: &Input, flag: &mut i32, poly1: &Poly, poly2: &Poly)
 #[allow(clippy::too_many_arguments)]
 fn fram(
     input: &Input,
-    int_pts: &mut IntPoints,
+    int_pts: &mut IntersectionPoints,
     count: usize,
-    int_pts_list: &[IntPoints],
+    int_pts_list: &[IntersectionPoints],
     new_poly: &Poly,
     poly2: &Poly,
     pstats: &mut Stats,
     temp_data: &mut Vec<TriplePtTempData>,
     triple_points: &[Point3<f64>],
-    temp_int_pts: &[IntPoints],
+    temp_int_pts: &[IntersectionPoints],
 ) -> i32 {
     if !input.disableFram {
         /******* Check for intersection of length less than h *******/
@@ -656,8 +644,8 @@ fn fram(
 //         1 Otherwise
 fn check_dist_to_old_intersections(
     input: &Input,
-    int_pts_list: &[IntPoints],
-    int_pts: &IntPoints,
+    int_pts_list: &[IntersectionPoints],
+    int_pts: &IntersectionPoints,
     poly2: &Poly,
     min_distance: f64,
 ) -> bool {
@@ -694,8 +682,8 @@ fn check_dist_to_old_intersections(
 //       to exist on only one fracture. This check resolves this issue. */
 fn check_dist_to_new_intersections(
     input: &Input,
-    temp_int_pts: &[IntPoints],
-    int_pts: &IntPoints,
+    temp_int_pts: &[IntersectionPoints],
+    int_pts: &IntersectionPoints,
     temp_tri_pts: &[TriplePtTempData],
     min_distance: f64,
 ) -> bool {
@@ -754,7 +742,7 @@ fn check_dist_to_new_intersections(
 //         1 If intersection length shrinks to less than shrinkLimit
 fn shrink_intersection(
     input: &Input,
-    int_pts: &mut IntPoints,
+    int_pts: &mut IntersectionPoints,
     edge: &[Point3<f64>; 2],
     shrink_limit: f64,
     first_node_min_dist: f64,
@@ -849,7 +837,7 @@ pub fn intersection_checking(
     input: &Input,
     new_poly: &mut Poly,
     accepted_poly: &mut [Poly],
-    int_pts_list: &mut Vec<IntPoints>,
+    int_pts_list: &mut Vec<IntersectionPoints>,
     pstats: &mut Stats,
     triple_points: &mut Vec<Point3<f64>>,
 ) -> i32 {
@@ -1012,7 +1000,7 @@ pub fn intersection_checking(
 fn check_distance_from_nodes(
     input: &Input,
     poly: &Poly,
-    int_pts: &IntPoints,
+    int_pts: &IntersectionPoints,
     min_dist: f64,
     pstats: &mut Stats,
 ) -> bool {
@@ -1107,7 +1095,7 @@ fn point_on_line_seg(input: &Input, pt: &Point3<f64>, line: &[Point3<f64>; 2]) -
 fn check_close_edge(
     input: &Input,
     poly1: &Poly,
-    int_pts: &mut IntPoints,
+    int_pts: &mut IntersectionPoints,
     shrink_limit: f64,
     pstats: &mut Stats,
 ) -> bool {
@@ -1320,9 +1308,9 @@ fn line_seg_to_line_seg_sep(
 //     -14 = triple_closeToTriplePt  (new triple point too close to previous triple point) */
 fn check_for_triple_intersections(
     input: &Input,
-    int_pts: &IntPoints,
+    int_pts: &IntersectionPoints,
     count: usize,
-    int_pts_list: &[IntPoints],
+    int_pts_list: &[IntersectionPoints],
     poly2: &Poly,
     temp_data: &mut Vec<TriplePtTempData>,
     triple_points: &[Point3<f64>],

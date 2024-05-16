@@ -2,58 +2,43 @@ use std::{cell::RefCell, fs::File, io::Write, rc::Rc, time::SystemTime};
 
 use clap::Parser;
 use parry3d::na::Point3;
-// use console::Term;
 use rand::{distributions::Uniform, Rng};
 use rand_mt::Mt19937GenRand64;
 
 use crate::{
-    cluster_groups::get_cluster,
+    computational_geometry::polygon_boundary::polygon_boundary,
     computational_geometry::{create_bounding_box, intersection_checking},
-    distributions::Distributions,
-    domain::domain_truncation,
-    fracture_estimating::{
+    distribution::Distribution,
+    fracture::cluster_groups::get_cluster,
+    fracture::domain::domain_truncation,
+    fracture::fracture_estimating::{
         add_radii_to_lists, dry_run, generate_radii_lists_n_poly_option, sort_radii,
     },
-    insert_shape::{
+    fracture::insert_shape::{
         generate_poly, get_family_number, p32_complete, print_reject_reason, re_translate_poly,
         shape_type,
     },
-    insert_user_ell::insert_user_ell,
-    insert_user_ell_by_coord::insert_user_ell_by_coord,
-    insert_user_polygon_by_coord::insert_user_polygon_by_coord,
-    insert_user_rects::insert_user_rects,
-    insert_user_rects_by_coord::insert_user_rects_by_coord,
+    fracture::insert_user_ell::insert_user_ell,
+    fracture::insert_user_ell_by_coord::insert_user_ell_by_coord,
+    fracture::insert_user_polygon_by_coord::insert_user_polygon_by_coord,
+    fracture::insert_user_rects::insert_user_rects,
+    fracture::insert_user_rects_by_coord::insert_user_rects_by_coord,
+    fracture::remove_fractures::remove_fractures,
+    io::input::read_input,
+    io::output::write_output,
+    io::read_input_functions::get_time_based_seed,
     math_functions::{
         adjust_cdf_and_fam_prob, create_cdf, get_area, index_from_prob,
         index_from_prob_and_p32_status,
     },
-    output::write_output,
-    polygon_boundary::polygon_boundary,
-    read_input::get_input,
-    read_input_functions::get_time_based_seed,
-    remove_fractures::remove_fractures,
-    structures::{IntPoints, Poly, Shape, Stats},
+    structures::{IntersectionPoints, Poly, Shape, Stats},
 };
 
-mod cluster_groups;
 mod computational_geometry;
-mod distributions;
-mod domain;
-mod exp_dist;
-mod fracture_estimating;
-mod generating_points;
-mod insert_shape;
-mod insert_user_ell;
-mod insert_user_ell_by_coord;
-mod insert_user_polygon_by_coord;
-mod insert_user_rects;
-mod insert_user_rects_by_coord;
+mod distribution;
+mod fracture;
+mod io;
 mod math_functions;
-mod output;
-mod polygon_boundary;
-mod read_input;
-mod read_input_functions;
-mod remove_fractures;
 mod structures;
 
 #[derive(Parser)]
@@ -75,7 +60,7 @@ fn main() {
     // Vector to store accepted polygons/fractures
     let mut accepted_poly: Vec<Poly> = Vec::new();
     // Vector for storing intersections
-    let mut int_pts: Vec<IntPoints> = Vec::new();
+    let mut intersection_pts: Vec<IntersectionPoints> = Vec::new();
     // Vector for storing triple intersection points
     let mut triple_points: Vec<Point3<f64>> = Vec::new();
     // Vector for shape families/ stochastic families
@@ -86,9 +71,7 @@ fn main() {
     // *********************************************************************
     // Read Input File
     // Initialize input variables. Most input variables are global
-    let mut input = get_input(&cli.input_file, &mut shape_families);
-    // Set epsilon
-    input.eps = input.h * 1e-8;
+    let mut input = read_input(&cli.input_file, &mut shape_families);
     println!("h: {}", input.h);
     let total_families = input.nFamEll + input.nFamRect;
 
@@ -104,7 +87,7 @@ fn main() {
     }
 
     let generator = Rc::new(RefCell::new(Mt19937GenRand64::new(input.seed)));
-    let distributions = Rc::new(RefCell::new(Distributions::new(
+    let distributions = Rc::new(RefCell::new(Distribution::new(
         &input,
         generator.clone(),
         &mut shape_families,
@@ -205,7 +188,7 @@ fn main() {
         insert_user_polygon_by_coord(
             &input,
             &mut accepted_poly,
-            &mut int_pts,
+            &mut intersection_pts,
             &mut pstats,
             &mut triple_points,
         );
@@ -217,7 +200,7 @@ fn main() {
             insert_user_rects(
                 &mut input,
                 &mut accepted_poly,
-                &mut int_pts,
+                &mut intersection_pts,
                 &mut pstats,
                 &mut triple_points,
             );
@@ -228,7 +211,7 @@ fn main() {
             insert_user_rects_by_coord(
                 &mut input,
                 &mut accepted_poly,
-                &mut int_pts,
+                &mut intersection_pts,
                 &mut pstats,
                 &mut triple_points,
             );
@@ -239,7 +222,7 @@ fn main() {
             insert_user_ell(
                 &mut input,
                 &mut accepted_poly,
-                &mut int_pts,
+                &mut intersection_pts,
                 &mut pstats,
                 &mut triple_points,
             );
@@ -250,7 +233,7 @@ fn main() {
             insert_user_ell_by_coord(
                 &mut input,
                 &mut accepted_poly,
-                &mut int_pts,
+                &mut intersection_pts,
                 &mut pstats,
                 &mut triple_points,
             );
@@ -261,7 +244,7 @@ fn main() {
             insert_user_ell(
                 &mut input,
                 &mut accepted_poly,
-                &mut int_pts,
+                &mut intersection_pts,
                 &mut pstats,
                 &mut triple_points,
             );
@@ -272,7 +255,7 @@ fn main() {
             insert_user_ell_by_coord(
                 &mut input,
                 &mut accepted_poly,
-                &mut int_pts,
+                &mut intersection_pts,
                 &mut pstats,
                 &mut triple_points,
             );
@@ -283,7 +266,7 @@ fn main() {
             insert_user_rects(
                 &mut input,
                 &mut accepted_poly,
-                &mut int_pts,
+                &mut intersection_pts,
                 &mut pstats,
                 &mut triple_points,
             );
@@ -294,7 +277,7 @@ fn main() {
             insert_user_rects_by_coord(
                 &mut input,
                 &mut accepted_poly,
-                &mut int_pts,
+                &mut intersection_pts,
                 &mut pstats,
                 &mut triple_points,
             );
@@ -429,7 +412,7 @@ fn main() {
                     &input,
                     &mut new_poly,
                     &mut accepted_poly,
-                    &mut int_pts,
+                    &mut intersection_pts,
                     &mut pstats,
                     &mut triple_points,
                 );
@@ -591,10 +574,6 @@ fn main() {
 
     #[cfg(feature = "testing")]
     reset_terminal_mode();
-
-    if input.outputAllRadii {
-        // drop(radiiAll);
-    }
 
     // // Assign apertures and permiability to accepted polygons
     // for (unsigned int i = 0; i < acceptedPoly.size(); i++) {
@@ -781,7 +760,7 @@ fn main() {
             &input,
             input.removeFracturesLessThan,
             &mut accepted_poly,
-            &mut int_pts,
+            &mut intersection_pts,
             &mut triple_points,
             &mut pstats,
         );
@@ -804,7 +783,7 @@ fn main() {
         polygon_boundary(
             &input,
             &mut accepted_poly,
-            &mut int_pts,
+            &mut intersection_pts,
             &mut triple_points,
             &mut pstats,
         );
@@ -1091,7 +1070,7 @@ fn main() {
     log_msg(&mut file, "\nIntersection Statistics:\n");
     log_msg(
         &mut file,
-        &format!("    Number of Intersections: {} \n", int_pts.len()),
+        &format!("    Number of Intersections: {} \n", intersection_pts.len()),
     );
     log_msg(
         &mut file,
@@ -1229,7 +1208,7 @@ fn main() {
         &input,
         &cli.output_folder,
         &mut accepted_poly,
-        &mut int_pts,
+        &mut intersection_pts,
         &mut triple_points,
         &mut pstats,
         &final_fractures,

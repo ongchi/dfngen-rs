@@ -1,6 +1,6 @@
 use parry3d::na::Vector3;
 
-use crate::{read_input::Input, structures::Poly};
+use crate::{io::input::Input, structures::Poly};
 
 /******************************************************************************/
 /***********************  Domain Truncation  **********************************/

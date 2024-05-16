@@ -1,6 +1,6 @@
 use std::{cell::RefCell, rc::Rc};
 
-use crate::read_input::Input;
+use crate::io::input::Input;
 use parry3d::na::{Point3, Vector3};
 use rand::distributions::Uniform;
 use rand::Rng;

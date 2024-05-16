@@ -2,14 +2,17 @@ use std::fs::File;
 
 use parry3d::na::{distance, Point3, Vector3};
 
+use super::domain::domain_truncation;
+use super::insert_shape::print_reject_reason;
+
 use crate::{
     computational_geometry::{create_bounding_box, intersection_checking},
-    domain::domain_truncation,
-    insert_shape::print_reject_reason,
+    io::{
+        input::Input,
+        read_input_functions::{search_var, ReadFromTextFile},
+    },
     math_functions::get_area,
-    read_input::Input,
-    read_input_functions::{search_var, ReadFromTextFile},
-    structures::{IntPoints, Poly, RejectedUserFracture, Stats},
+    structures::{IntersectionPoints, Poly, RejectedUserFracture, Stats},
 };
 
 // **********************************************************************
@@ -44,7 +47,7 @@ fn get_poly_coords(stream: &mut File, out_ary: &mut [f64], n_vertices: usize) {
 pub fn insert_user_polygon_by_coord(
     input: &Input,
     accepted_poly: &mut Vec<Poly>,
-    intpts: &mut Vec<IntPoints>,
+    intpts: &mut Vec<IntersectionPoints>,
     pstats: &mut Stats,
     triple_points: &mut Vec<Point3<f64>>,
 ) {
