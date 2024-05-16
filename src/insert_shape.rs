@@ -8,7 +8,6 @@ use crate::{
     computational_geometry::{apply_rotation2_d, apply_rotation3_d, translate},
     generating_points::{fisher_distribution, random_translation},
     structures::{Poly, Shape},
-    vector_functions::{magnitude, normalize},
 };
 use rand::distributions::Uniform;
 use rand::Rng;
@@ -239,10 +238,10 @@ pub fn generate_poly(
         shape_fam.kappa,
         generator.clone(),
     );
-    let mag = magnitude(norm[0], norm[1], norm[2]);
+    let mag = norm.magnitude();
 
     if mag < 1. - global.eps || mag > 1. + global.eps {
-        normalize(&mut norm); // Ensure norm is normalized
+        norm = norm.normalize(); // Ensure norm is normalized
     }
 
     apply_rotation3_d(global, &mut new_poly, &norm); // Rotate vertices to norm (new normal)
@@ -375,10 +374,10 @@ pub fn generate_poly_with_radius(
         shape_fam.kappa,
         generator.clone(),
     );
-    let mag = magnitude(norm[0], norm[1], norm[2]);
+    let mag = norm.magnitude();
 
     if mag < 1. - global.eps || mag > 1. + global.eps {
-        normalize(&mut norm); //ensure norm is normalized
+        norm = norm.normalize(); //ensure norm is normalized
     }
 
     apply_rotation3_d(global, &mut new_poly, &norm); // Rotate vertices to norm (new normal)
@@ -617,10 +616,10 @@ pub fn re_translate_poly(
         }
 
         // Save newPoly's previous normal vector and then reset poly normal to {0,0,1} for applyRotation3D function
-        let normal_b = [new_poly.normal[0], new_poly.normal[1], new_poly.normal[2]];
-        new_poly.normal[0] = 0.; //x
-        new_poly.normal[1] = 0.; //y
-        new_poly.normal[2] = 1.; //z
+        let normal_b = new_poly.normal;
+        new_poly.normal.x = 0.;
+        new_poly.normal.y = 0.;
+        new_poly.normal.z = 1.;
 
         // Initialize beta based on distrubution type: 0 = unifrom on [0,2PI], 1 = constant
         let beta = if !shape_fam.beta_distribution {
@@ -638,9 +637,7 @@ pub fn re_translate_poly(
         apply_rotation2_d(new_poly, beta);
         // Rotates poly from {0,0,1} to normalB, NEED to save normalB to newPoly.normal afterwards
         apply_rotation3_d(global, new_poly, &normal_b);
-        new_poly.normal[0] = normal_b[0];
-        new_poly.normal[1] = normal_b[1];
-        new_poly.normal[2] = normal_b[2];
+        new_poly.normal = normal_b;
         // Translate to new position
         // Translate() will also set translation vector in poly structure
         let t;

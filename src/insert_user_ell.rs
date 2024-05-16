@@ -1,4 +1,4 @@
-use parry3d::na::Point3;
+use parry3d::na::{Point3, Vector3};
 
 use crate::{
     computational_geometry::{
@@ -10,7 +10,6 @@ use crate::{
     math_functions::get_area,
     read_input::Input,
     structures::{IntPoints, Poly, RejectedUserFracture, Stats},
-    vector_functions::normalize,
 };
 
 // ***********************************************************************
@@ -70,13 +69,18 @@ pub fn insert_user_ell(
                                  // Angle must be in rad
         apply_rotation2_d(&mut new_poly, angle);
         // Normalize user denined normal vector
-        let mut tmp_uenormal = input.uenormal[index..index + 3].try_into().unwrap();
-        normalize(&mut tmp_uenormal);
-        for (i, j) in (index..index + 3).enumerate() {
-            input.uenormal[j] = tmp_uenormal[i];
-        }
+        let tmp_uenormal =
+            Vector3::from_iterator(input.uenormal[index..index + 3].iter().cloned()).normalize();
+        input.uenormal[index] = tmp_uenormal.x;
+        input.uenormal[index + 1] = tmp_uenormal.y;
+        input.uenormal[index + 2] = tmp_uenormal.z;
+
         // Rotate vertices to uenormal[index] (new normal)
-        apply_rotation3_d(input, &mut new_poly, &tmp_uenormal);
+        apply_rotation3_d(
+            input,
+            &mut new_poly,
+            &Vector3::from_iterator(input.urnormal[index..index + 3].iter().cloned()),
+        );
         // Save newPoly's new normal vector
         new_poly.normal[0] = input.uenormal[index];
         new_poly.normal[1] = input.uenormal[index + 1];

@@ -1,8 +1,6 @@
-use crate::{
-    read_input::Input,
-    structures::Poly,
-    vector_functions::{dot_product, magnitude},
-};
+use parry3d::na::Vector3;
+
+use crate::{read_input::Input, structures::Poly};
 
 /******************************************************************************/
 /***********************  Domain Truncation  **********************************/
@@ -49,8 +47,8 @@ pub fn domain_truncation(input: &Input, new_poly: &mut Poly, domain_size: &[f64;
     // If code does not return above, truncation is needed/
     new_poly.truncated = true; // Mark poly as truncated
     let mut n_vertices; // Same as newPoly.numberOfNodes;
-    let mut ntmp = [0., 0., 0.]; // Normal of domain side
-    let mut pttmp = [0., 0., 0.]; // Center point on domain side
+    let mut ntmp = Vector3::new(0., 0., 0.); // Normal of domain side
+    let mut pttmp = Vector3::new(0., 0., 0.); // Center point on domain side
 
     // Check against the all the walls of the domain
     for j in 0..6 {
@@ -120,24 +118,24 @@ pub fn domain_truncation(input: &Input, new_poly: &mut Poly, domain_size: &[f64;
         n_nodes = 0; // Counter for final number of nodes
         points.clear(); // Clear any points from last iteration
         let last = ((n_vertices - 1) * 3) as usize; // Index to last node starting position in array
-        let mut temp = [
+        let mut temp = Vector3::new(
             new_poly.vertices[last] - pttmp[0],
             new_poly.vertices[last + 1] - pttmp[1],
             new_poly.vertices[last + 2] - pttmp[2],
-        ];
+        );
         // Previous distance - the dot product of the domain side normal
         // and the distance between vertex number nVertices and the temp point on the
         // domain side.
-        let mut prevdist = dot_product(&temp, &ntmp);
+        let mut prevdist = temp.dot(&ntmp);
 
         for i in 0..n_vertices {
             let index = (i * 3) as usize;
-            temp[0] = new_poly.vertices[index] - pttmp[0];
-            temp[1] = new_poly.vertices[index + 1] - pttmp[1];
-            temp[2] = new_poly.vertices[index + 2] - pttmp[2];
+            temp.x = new_poly.vertices[index] - pttmp.x;
+            temp.y = new_poly.vertices[index + 1] - pttmp.y;
+            temp.z = new_poly.vertices[index + 2] - pttmp.z;
             // Current distance, the dot product of domain side normal and
             // the distance between the ii'th vertex and the temporary point
-            let currdist = dot_product(&temp, &ntmp);
+            let currdist = temp.dot(&ntmp);
 
             if currdist <= 0. {
                 // if vertex is towards the domain relative to the domain side
@@ -229,13 +227,13 @@ pub fn domain_truncation(input: &Input, new_poly: &mut Poly, domain_size: &[f64;
             (i + 1) * 3
         };
 
-        let temp = [
+        let temp = Vector3::new(
             new_poly.vertices[idx] - new_poly.vertices[next],
             new_poly.vertices[idx + 1] - new_poly.vertices[next + 1],
             new_poly.vertices[idx + 2] - new_poly.vertices[next + 2],
-        ];
+        );
 
-        if magnitude(temp[0], temp[1], temp[2]) < (2. * input.h) {
+        if temp.magnitude() < (2. * input.h) {
             // If distance between current and next vertex < h
             // If point is NOT on a boundary, delete current indexed point, ELSE delete next point
             if (new_poly.vertices[idx].abs() - domain_x).abs() > input.eps

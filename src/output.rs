@@ -3,7 +3,7 @@ use std::{
     io::{Seek, Write},
 };
 
-use parry3d::na::{distance, Point3};
+use parry3d::na::{distance, Point3, Vector3};
 
 use crate::{
     computational_geometry::poly_and_intersection_rotation_to_xy,
@@ -12,7 +12,6 @@ use crate::{
     math_functions::sorted_index,
     read_input::Input,
     structures::{IntPoints, Poly, Shape, Stats},
-    vector_functions::{cross_product, dot_product, normalize},
 };
 
 // void writeOutput() ************************************************************************
@@ -1406,22 +1405,18 @@ fn write_rotation_data(
 
     for i in 0..final_fractures.len() {
         // poly's normal is already normalized at this point
-        let normal = [
-            accepted_poly[final_fractures[i]].normal[0],
-            accepted_poly[final_fractures[i]].normal[1],
-            accepted_poly[final_fractures[i]].normal[2],
-        ];
-        let e3 = [0., 0., 1.];
+        let normal = accepted_poly[final_fractures[i]].normal;
+        let e3 = Vector3::new(0., 0., 1.);
         // Rotation angle in radians
-        let mut theta = dot_product(&normal, &e3).acos();
+        let mut theta = normal.dot(&e3).acos();
         // rad to deg
         theta *= 180.0 / std::f64::consts::PI;
         // Rotation into xy plane
-        let mut v = cross_product(&e3, &normal);
+        let mut v = e3.cross(&normal);
 
         if !(v[0].abs() < input.eps && v[1].abs() < input.eps && v[2].abs() < input.eps) {
             //if not zero vector
-            normalize(&mut v);
+            v = v.normalize();
         }
 
         let x0 = 1.1 * (-max_domain_size * v[0]);

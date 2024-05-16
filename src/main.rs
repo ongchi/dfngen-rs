@@ -55,7 +55,6 @@ mod read_input;
 mod read_input_functions;
 mod remove_fractures;
 mod structures;
-mod vector_functions;
 
 #[derive(Parser)]
 #[command(version, about, long_about = None)]

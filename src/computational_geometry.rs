@@ -1,4 +1,4 @@
-use parry3d::na::{distance, Point3, Translation3};
+use parry3d::na::{distance, Point3, Translation3, Vector3};
 
 use crate::{
     cluster_groups::{assign_group, update_groups},
@@ -6,8 +6,17 @@ use crate::{
     math_functions::{max_elmt_idx, sorted_index, sum_dev_ary3},
     read_input::Input,
     structures::{IntPoints, Poly, Stats, TriplePtTempData},
-    vector_functions::{cross_product, dot_product, parallel},
 };
+
+// Check if two vectors are parallel
+// Arg 1: Pointer to vector 1, array of three doubles
+// Arg 2: Pointer to vector 2, array of three doubles
+// Output: True if vectors are parallel
+//         False otherwise
+pub fn parallel(input: &Input, v1: &Vector3<f64>, v2: &Vector3<f64>) -> bool {
+    let dot_prod = v1.dot(v2);
+    1. - input.eps < dot_prod && dot_prod < 1. + input.eps
+}
 
 // *********************** 2D rotation matrix ***************************
 // Rotates poly around its normal vecotor on x-y plane
@@ -49,67 +58,7 @@ pub fn translate(new_poly: &mut Poly, translation: &[f64; 3]) {
     }
 }
 
-// // ******************** Build Rotation Ratrix **************************
-// // Returns rotation matrix (double, 3x3) of rotation from normalA to normalB
-// // Requires normals to be normalized
-// //
-// // Expects normalA and normalB to be normalized.
-// //
-// // Arg1: double pointer to normalA, array of 3 doubles
-// // Arg2: double pointer to normalB, array of 3 doubles
-// // Return: pointer to 3x3 rotation matrix array
-// // NOTE: Must manually delete reurn pointer with delete[]
-// pub fn rotationMatrix2(input: &Input, normal_a: &[f64; 3], normal_b: &[f64; 3]) -> [f64; 9] {
-//     //***************************************************
-//     // Note: Normals must be normalized by this point!!!!!!
-//     // Since vectors are normalized, sin = magnitude(AxB) and cos = A dot B
-//     //***************************************************
-//     // normalA is current normal
-//     // nNormalB is target normal
-//     // TODO: use approach on page 6 of Nataliia's paper
-//     // Delete manually with delete[], created with new[]
-//     let x_prod = cross_product(normal_a, normal_b);
-//
-//     // here, get the theta (z angle) between the normal vectors
-//     // If not parallel
-//     if !(x_prod[0].abs() < input.eps && x_prod[1].abs() < input.eps && x_prod[2].abs() < input.eps)
-//     {
-//         // sin = magnitude(AxB) and cos = A . B
-//         let sin = (x_prod[0] * x_prod[0] + x_prod[1] * x_prod[1] + x_prod[2] * x_prod[2]).sqrt();
-//         let cos = dot_product(normal_a, normal_b);
-//         let v = [
-//             0., -x_prod[2], x_prod[1], x_prod[2], 0., -x_prod[0], -x_prod[1], x_prod[0], 0.,
-//         ];
-//         let scalar = (1.0 - cos) / (sin * sin);
-//         let v_squared = [
-//             (v[0] * v[0] + v[1] * v[3] + v[2] * v[6]) * scalar,
-//             (v[0] * v[1] + v[1] * v[4] + v[2] * v[7]) * scalar,
-//             (v[0] * v[2] + v[1] * v[5] + v[2] * v[8]) * scalar,
-//             (v[3] * v[0] + v[4] * v[3] + v[5] * v[6]) * scalar,
-//             (v[3] * v[1] + v[4] * v[4] + v[5] * v[7]) * scalar,
-//             (v[3] * v[2] + v[4] * v[5] + v[5] * v[8]) * scalar,
-//             (v[6] * v[0] + v[7] * v[3] + v[8] * v[6]) * scalar,
-//             (v[6] * v[1] + v[7] * v[4] + v[8] * v[7]) * scalar,
-//             (v[6] * v[2] + v[7] * v[5] + v[8] * v[8]) * scalar,
-//         ];
-//         [
-//             1. + v[0] + v_squared[0],
-//             0. + v[1] + v_squared[1],
-//             0. + v[2] + v_squared[2],
-//             0. + v[3] + v_squared[3],
-//             1. + v[4] + v_squared[4],
-//             0. + v[5] + v_squared[5],
-//             0. + v[6] + v_squared[6],
-//             0. + v[7] + v_squared[7],
-//             1. + v[8] + v_squared[8],
-//         ]
-//     } else {
-//         // normalA and normalB are parallel, return identity matrix
-//         [1., 0., 0., 0., 1., 0., 0., 0., 1.]
-//     }
-// }
-
-fn rotation_matrix(input: &Input, normal_a: &[f64; 3], normal_b: &[f64; 3]) -> [f64; 9] {
+fn rotation_matrix(input: &Input, normal_a: &Vector3<f64>, normal_b: &Vector3<f64>) -> [f64; 9] {
     //***************************************************
     // Note: Normals must be normalized by this point!!!!!!
     // Since vectors are normalized, sin = magnitude(AxB) and cos = A dot B
@@ -117,14 +66,12 @@ fn rotation_matrix(input: &Input, normal_a: &[f64; 3], normal_b: &[f64; 3]) -> [
     // normalA is current normal
     // nNormalB is target normal
     // Delete manually with delete[], created with new[]
-    let x_prod = cross_product(normal_a, normal_b);
+    let x_prod = normal_a.cross(normal_b);
 
-    // If not parallel
-    if !(x_prod[0].abs() < input.eps && x_prod[1].abs() < input.eps && x_prod[2].abs() < input.eps)
-    {
+    if !parallel(input, normal_a, normal_b) {
         // sin = magnitude(AxB) and cos = A . B
-        let sin = (x_prod[0] * x_prod[0] + x_prod[1] * x_prod[1] + x_prod[2] * x_prod[2]).sqrt();
-        let cos = dot_product(normal_a, normal_b);
+        let sin = x_prod.magnitude();
+        let cos = normal_a.dot(normal_b);
         let v = [
             0., -x_prod[2], x_prod[1], x_prod[2], 0., -x_prod[0], -x_prod[1], x_prod[0], 0.,
         ];
@@ -167,16 +114,12 @@ fn rotation_matrix(input: &Input, normal_a: &[f64; 3], normal_b: &[f64; 3]) -> [
 // Assumes poly.numberOfPoints and newPoly.normal are initialized and normalized
 // Arg 1: Poly to be rotated
 // Arg 2: Normal vector to rotate to (array of 3 doubles) */
-pub fn apply_rotation3_d(input: &Input, new_poly: &mut Poly, normal_b: &[f64; 3]) {
+pub fn apply_rotation3_d(input: &Input, new_poly: &mut Poly, normal_b: &Vector3<f64>) {
     // Normals should already be normalized by this point!!!
     // NormalA: newPoly's current normal
-    // NormalB: target normal
-    // Delete manually with delete[], created with new[]
-    let x_prod = cross_product(&new_poly.normal, normal_b);
+    let normal_a = Vector3::from_iterator(new_poly.normal.iter().cloned());
 
-    // If not parallel
-    if !(x_prod[0].abs() < input.eps && x_prod[1].abs() < input.eps && x_prod[2].abs() < input.eps)
-    {
+    if !parallel(input, &normal_a, normal_b) {
         // NOTE: rotationMatrix() requires normals to be normalized
         let r = rotation_matrix(input, &new_poly.normal, normal_b);
 
@@ -230,14 +173,11 @@ pub fn poly_and_intersection_rotation_to_xy(
 ) -> IntPoints {
     // newPoly.normal = newPoly's current normal, should already be normalized
     // normalB = target normal
-    let normal_b = [0., 0., 1.];
+    let normal_a = Vector3::from_iterator(new_poly.normal.iter().cloned());
+    let normal_b = Vector3::new(0., 0., 1.);
     let mut temp_intpts = IntPoints::new();
-    // Delete xProd manually, created with new[]
-    let x_prod = cross_product(&new_poly.normal, &normal_b);
 
-    // If not parallel (zero vector)
-    if !(x_prod[0].abs() < input.eps && x_prod[1].abs() < input.eps && x_prod[2].abs() < input.eps)
-    {
+    if !parallel(input, &normal_a, &normal_b) {
         // rotationMatrix() requires normals to be normalized
         let r = rotation_matrix(input, &new_poly.normal, &normal_b);
 
@@ -439,7 +379,7 @@ fn find_intersections(input: &Input, flag: &mut i32, poly1: &Poly, poly2: &Poly)
     let mut f2; // Fracture 2
     let mut inters2 = [0., 0., 0., 0., 0., 0.]; // Temporary intersection points of F2 and P1
     let mut inters = [0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0.]; // Stores 4 possible intersection points {x,y,z} * 3
-    let mut temp = [0., 0., 0.];
+    let mut temp = Vector3::new(0., 0., 0.);
 
     // Get intersecction points
     for jj in 0..2 {
@@ -456,10 +396,10 @@ fn find_intersections(input: &Input, flag: &mut i32, poly1: &Poly, poly2: &Poly)
         let n_vertices2 = f2.number_of_nodes;
         let index = ((n_vertices2 - 1) * 3) as usize; // Index to last vertice
         let vertex1 = [f1.vertices[0], f1.vertices[1], f1.vertices[2]];
-        temp[0] = f2.vertices[index] - vertex1[0]; // x1 -x2
-        temp[1] = f2.vertices[index + 1] - vertex1[1]; // y1 - y2
-        temp[2] = f2.vertices[index + 2] - vertex1[2]; // z1 - z2
-        let mut prevdist = dot_product(&temp, &f1.normal);
+        temp.x = f2.vertices[index] - vertex1[0]; // x1 -x2
+        temp.y = f2.vertices[index + 1] - vertex1[1]; // y1 - y2
+        temp.z = f2.vertices[index + 2] - vertex1[2]; // z1 - z2
+        let mut prevdist = temp.dot(&Vector3::from_iterator(f1.normal.iter().cloned()));
         let mut currdist;
 
         for i in 0..n_vertices2 {
@@ -467,10 +407,10 @@ fn find_intersections(input: &Input, flag: &mut i32, poly1: &Poly, poly2: &Poly)
             let idx = (i * 3) as usize;
             /* vector of vertex1 to a vertex on F2 dot normal vector of F1
             it's absolute value is the distance */
-            temp[0] = f2.vertices[idx] - vertex1[0];
-            temp[1] = f2.vertices[idx + 1] - vertex1[1];
-            temp[2] = f2.vertices[idx + 2] - vertex1[2];
-            currdist = dot_product(&temp, &f1.normal);
+            temp.x = f2.vertices[idx] - vertex1[0];
+            temp.y = f2.vertices[idx + 1] - vertex1[1];
+            temp.z = f2.vertices[idx + 2] - vertex1[2];
+            currdist = temp.dot(&Vector3::from_iterator(f1.normal.iter().cloned()));
 
             if prevdist.abs() < input.eps {
                 if i == 0 {
@@ -1294,12 +1234,12 @@ fn line_seg_to_line_seg(
     // Check if line 1 and line 2 intersect
     let p1 = &line1[0];
     let p2 = &line2[0];
-    let mut v1 = line1[0] - line1[1];
-    let mut v2 = line2[0] - line2[1];
-    let mut p1p2 = p1 - p2;
+    let v1 = (line1[0] - line1[1]).normalize();
+    let v2 = (line2[0] - line2[1]).normalize();
+    let p1p2 = (p1 - p2).normalize();
 
-    if parallel(input, &mut v1, &mut v2) {
-        if p1p2.magnitude() < input.eps || parallel(input, &mut p1p2, &mut v1) {
+    if parallel(input, &v1, &v2) {
+        if p1p2.magnitude() < input.eps || parallel(input, &p1p2, &v1) {
             // If 2 line segs overlap
             if point_on_line_seg(input, &line1[0], line2)
                 || point_on_line_seg(input, &line1[1], line2)

@@ -1,9 +1,6 @@
 use std::{cell::RefCell, rc::Rc};
 
-use crate::{
-    read_input::Input,
-    vector_functions::{cross_product, dot_product},
-};
+use crate::read_input::Input;
 use parry3d::na::{Point3, Vector3};
 use rand::distributions::Uniform;
 use rand::Rng;
@@ -88,42 +85,42 @@ pub fn fisher_distribution(
     angle2: f64,
     kappa: f64,
     rng: Rc<RefCell<Mt19937GenRand64>>,
-) -> [f64; 3] {
+) -> Vector3<f64> {
     let ck = (kappa.exp() - (-kappa).exp()) / kappa;
 
     let v1 = if input.orientationOption == 0 {
         // Spherical Coordinates
         // angleOne = Theta
         // angleTwo = Phi
-        [
+        Vector3::new(
             angle1.sin() * angle2.cos(),
             angle1.sin() * angle2.sin(),
             angle1.cos(),
-        ]
+        )
     } else if input.orientationOption == 1 {
         // Trend and Plunge
         // angleOne = Trend
         // angleTwo = Plunge
-        [
+        Vector3::new(
             angle1.cos() * angle2.cos(),
             angle1.sin() * angle2.cos(),
             angle2.cos(),
-        ]
+        )
     } else if input.orientationOption == 2 {
         // Dip and Strike
         // angleOne = Dip
         // angleTwo = Strike
-        [
+        Vector3::new(
             angle1.sin() * angle2.sin(),
             -angle1.sin() * angle2.cos(),
             angle1.cos(),
-        ]
+        )
     } else {
         unreachable!()
     };
 
-    let u = [0., 0., 1.];
-    let x_prod = cross_product(&u, &v1);
+    let u = Vector3::new(0., 0., 1.);
+    let x_prod = u.cross(&v1);
 
     // Get rotation matrix if normal vectors are not the same (if xProd is not zero vector)
     let r = if !(x_prod[0].abs() <= input.eps
@@ -132,7 +129,7 @@ pub fn fisher_distribution(
     {
         // Since vectors are normalized, sin = magnitude(AxB) and cos = A . B
         let sin = (x_prod[0] * x_prod[0] + x_prod[1] * x_prod[1] + x_prod[2] * x_prod[2]).sqrt();
-        let cos = dot_product(&u, &v1);
+        let cos = u.dot(&v1);
         let v = [
             0., -x_prod[2], x_prod[1], x_prod[2], 0., -x_prod[0], -x_prod[1], x_prod[0], 0.,
         ];
@@ -175,11 +172,11 @@ pub fn fisher_distribution(
     let v = [temp * theta_random.cos(), temp * theta_random.sin()];
 
     // Matrix multiply with R
-    [
+    Vector3::new(
         v[0] * r[0] + v[1] * r[1] + w * r[2],
         v[0] * r[3] + v[1] * r[4] + w * r[5],
         v[0] * r[6] + v[1] * r[7] + w * r[8],
-    ]
+    )
 }
 
 // ******************* Returns random TRANSLATION ***************************

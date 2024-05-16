@@ -1,4 +1,4 @@
-use parry3d::na::Point3;
+use parry3d::na::{Point3, Vector3};
 
 use crate::{
     computational_geometry::{create_bounding_box, intersection_checking},
@@ -7,7 +7,6 @@ use crate::{
     math_functions::get_area,
     read_input::Input,
     structures::{IntPoints, Poly, RejectedUserFracture, Stats},
-    vector_functions::{cross_product, magnitude, normalize},
 };
 
 // *************************************************************
@@ -55,24 +54,24 @@ pub fn insert_user_rects_by_coord(
         // Then, cross product xProd1 and xProd2, if this produces zero vector, all coords are on the same plane
         // v1 is vector from first vertice to third vertice
         // Vector from fist node to 3rd node (vector through middle of sqare)
-        let v1 = [
+        let v1 = Vector3::new(
             new_poly.vertices[6] - new_poly.vertices[0],
             new_poly.vertices[7] - new_poly.vertices[1],
             new_poly.vertices[8] - new_poly.vertices[2],
-        ];
+        );
         // Vector from first node to 2nd node
-        let v2 = [
+        let v2 = Vector3::new(
             new_poly.vertices[3] - new_poly.vertices[0],
             new_poly.vertices[4] - new_poly.vertices[1],
             new_poly.vertices[5] - new_poly.vertices[2],
-        ];
-        let x_prod1 = cross_product(&v2, &v1);
+        );
+        let x_prod1 = v2.cross(&v1).normalize();
         // Vector from fist node to 4th node
-        let v3 = [
+        let v3 = Vector3::new(
             new_poly.vertices[9] - new_poly.vertices[0],
             new_poly.vertices[10] - new_poly.vertices[1],
             new_poly.vertices[11] - new_poly.vertices[2],
-        ];
+        );
         // let x_prod2 = crossProduct(&v3, &v1);
         // let x_prod3 = crossProduct(&x_prod1, &x_prod2);
         //will be zero vector if all vertices are on the same plane
@@ -91,13 +90,12 @@ pub fn insert_user_rects_by_coord(
         // }
 
         // Set normal vector
-        new_poly.normal[0] = x_prod1[0]; //x
-        new_poly.normal[1] = x_prod1[1]; //y
-        new_poly.normal[2] = x_prod1[2]; //z
-        normalize(&mut new_poly.normal);
+        new_poly.normal[0] = x_prod1.x;
+        new_poly.normal[1] = x_prod1.y;
+        new_poly.normal[2] = x_prod1.z;
         // Set radius (x and y radii might be switched based on order of users coordinates)
-        new_poly.xradius = 0.5 * magnitude(v2[0], v2[1], v2[2]);
-        new_poly.yradius = 0.5 * magnitude(v3[0], v3[1], v3[2]);
+        new_poly.xradius = 0.5 * v2.magnitude();
+        new_poly.yradius = 0.5 * v3.magnitude();
         new_poly.aspect_ratio = new_poly.yradius / new_poly.xradius;
         // Estimate translation
         // Use midpoint between 1st and 3rd vertices

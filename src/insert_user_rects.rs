@@ -1,4 +1,4 @@
-use parry3d::na::Point3;
+use parry3d::na::{Point3, Vector3};
 
 use crate::{
     computational_geometry::{
@@ -9,7 +9,6 @@ use crate::{
     math_functions::get_area,
     read_input::Input,
     structures::{IntPoints, Poly, RejectedUserFracture, Stats},
-    vector_functions::normalize,
 };
 
 // ***********************************************************************
@@ -49,20 +48,24 @@ pub fn insert_user_rects(
         };
 
         // Initialize normal to {0,0,1}. need initialized for 3D rotation
-        new_poly.normal[0] = 0.; //x
-        new_poly.normal[1] = 0.; //y
-        new_poly.normal[2] = 1.; //z
-                                 // Apply 2d rotation matrix, twist around origin
-                                 // Assumes polygon on x-y plane
-                                 // Angle must be in rad
+        new_poly.normal.x = 0.; //x
+        new_poly.normal.y = 0.; //y
+        new_poly.normal.z = 1.; //z
+                                // Apply 2d rotation matrix, twist around origin
+                                // Assumes polygon on x-y plane
+                                // Angle must be in rad
         apply_rotation2_d(&mut new_poly, angle);
         // Rotate into 3D from poly.normal to "urnormal", new normal
-        normalize(&mut input.urnormal[index..index + 3].try_into().unwrap());
+        let tmp =
+            Vector3::from_iterator(input.urnormal[index..index + 3].iter().cloned()).normalize();
+        input.urnormal[index] = tmp.x;
+        input.urnormal[index + 1] = tmp.y;
+        input.urnormal[index + 2] = tmp.z;
         // Rotate vertices to urnormal[index] (new normal)
         apply_rotation3_d(
             input,
             &mut new_poly,
-            &input.urnormal[index..index + 3].try_into().unwrap(),
+            &Vector3::from_iterator(input.urnormal[index..index + 3].iter().cloned()),
         );
         // Save newPoly's new normal vector
         new_poly.normal[0] = input.urnormal[index];

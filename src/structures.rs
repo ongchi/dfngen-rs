@@ -1,4 +1,4 @@
-use parry3d::na::Point3;
+use parry3d::na::{Point3, Vector3};
 
 #[derive(Clone, Default)]
 // The Poly structre is used to create and store fracrures/polygons.
@@ -40,10 +40,10 @@ pub struct Poly {
     pub aspect_ratio: f64,
 
     // Translation of polygon. This variable is set while building the polygon.
-    pub translation: [f64; 3],
+    pub translation: Vector3<f64>,
 
     // Polygon normal. This variable is set while building the polygon.
-    pub normal: [f64; 3],
+    pub normal: Vector3<f64>,
 
     // The bounding box of the polygon. Set with createBoundingBox().
     // Index Key:

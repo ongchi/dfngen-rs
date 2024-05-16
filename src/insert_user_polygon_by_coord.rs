@@ -1,6 +1,6 @@
 use std::fs::File;
 
-use parry3d::na::Point3;
+use parry3d::na::{distance, Point3, Vector3};
 
 use crate::{
     computational_geometry::{create_bounding_box, intersection_checking},
@@ -10,7 +10,6 @@ use crate::{
     read_input::Input,
     read_input_functions::{search_var, ReadFromTextFile},
     structures::{IntPoints, Poly, RejectedUserFracture, Stats},
-    vector_functions::{cross_product, euclidean_distance, magnitude, normalize},
 };
 
 // **********************************************************************
@@ -79,36 +78,31 @@ pub fn insert_user_polygon_by_coord(
             mid_pt_idx = 8;
         }
 
-        let v1 = [
+        let v1 = Vector3::new(
             new_poly.vertices[mid_pt_idx] - new_poly.vertices[0],
             new_poly.vertices[mid_pt_idx + 1] - new_poly.vertices[1],
             new_poly.vertices[mid_pt_idx + 2] - new_poly.vertices[2],
-        ];
+        );
         // Vector from first node to 2nd node
-        let v2 = [
+        let v2 = Vector3::new(
             new_poly.vertices[3] - new_poly.vertices[0],
             new_poly.vertices[4] - new_poly.vertices[1],
             new_poly.vertices[5] - new_poly.vertices[2],
-        ];
-        let x_prod1 = cross_product(&v2, &v1);
+        );
+        let x_prod1 = v2.cross(&v1).normalize();
         // Set normal vector
-        new_poly.normal[0] = x_prod1[0]; //x
-        new_poly.normal[1] = x_prod1[1]; //y
-        new_poly.normal[2] = x_prod1[2]; //z
-        normalize(&mut new_poly.normal);
+        new_poly.normal[0] = x_prod1.x;
+        new_poly.normal[1] = x_prod1.y;
+        new_poly.normal[2] = x_prod1.z;
         // Estimate radius
-        new_poly.xradius = 0.5 * magnitude(v2[0], v2[1], v2[2]); // across middle if even number of nodes
-                                                                 // across middle close to perpendicular to xradius magnitude calculation
+        new_poly.xradius = 0.5 * v2.magnitude(); // across middle if even number of nodes
+                                                 // across middle close to perpendicular to xradius magnitude calculation
         let temp_idx1 = 3 * (n_poly_nodes / 4); // Get idx for node 1/4 around polygon
         let temp_idx2 = 3 * (3 * n_poly_nodes / 4); // Get idx for node 1/4 around polygon
         new_poly.yradius = 0.5
-            * euclidean_distance(
-                &new_poly.vertices[temp_idx1..temp_idx1 + 3]
-                    .try_into()
-                    .unwrap(),
-                &new_poly.vertices[temp_idx2..temp_idx2 + 3]
-                    .try_into()
-                    .unwrap(),
+            * distance(
+                &Point3::from_slice(&new_poly.vertices[temp_idx1..temp_idx1 + 3]),
+                &Point3::from_slice(&new_poly.vertices[temp_idx2..temp_idx2 + 3]),
             );
         new_poly.aspect_ratio = new_poly.yradius / new_poly.xradius;
         // Estimate translation (middle of poly)
