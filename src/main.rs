@@ -1,7 +1,7 @@
 use std::{cell::RefCell, fs::File, io::Write, rc::Rc, time::SystemTime};
 
 use clap::Parser;
-use parry3d::na::Point3;
+use parry3d_f64::na::Point3;
 use rand::{distributions::Uniform, Rng};
 use rand_mt::Mt19937GenRand64;
 

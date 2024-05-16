@@ -1,4 +1,4 @@
-use parry3d::na::{Point3, Vector3};
+use parry3d_f64::na::{Point3, Vector3};
 
 #[derive(Clone, Default)]
 // The Poly structre is used to create and store fracrures/polygons.

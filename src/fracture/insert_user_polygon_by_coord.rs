@@ -1,6 +1,6 @@
 use std::fs::File;
 
-use parry3d::na::{distance, Point3, Vector3};
+use parry3d_f64::na::{distance, Point3, Vector3};
 
 use super::domain::domain_truncation;
 use super::insert_shape::print_reject_reason;

@@ -1,7 +1,7 @@
 use std::{cell::RefCell, rc::Rc};
 
 use crate::io::input::Input;
-use parry3d::na::{Point3, Vector3};
+use parry3d_f64::na::{Point3, Vector3};
 use rand::distributions::Uniform;
 use rand::Rng;
 use rand_mt::Mt19937GenRand64;

@@ -1,4 +1,4 @@
-use parry3d::na::Vector3;
+use parry3d_f64::na::Vector3;
 
 use crate::io::input::Input;
 use crate::structures::Poly;

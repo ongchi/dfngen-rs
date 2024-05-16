@@ -1,4 +1,4 @@
-use parry3d::na::{distance, Point3, Translation3, Vector3};
+use parry3d_f64::na::{distance, Point3, Translation3, Vector3};
 
 use crate::{
     distribution::generating_points::line_function_3d,
@@ -15,7 +15,7 @@ pub mod polygon_boundary;
 // Arg 2: Pointer to vector 2, array of three doubles
 // Output: True if vectors are parallel
 //         False otherwise
-pub fn parallel(input: &Input, v1: &Vector3<f64>, v2: &Vector3<f64>) -> bool {
+fn parallel(input: &Input, v1: &Vector3<f64>, v2: &Vector3<f64>) -> bool {
     let dot_prod = v1.dot(v2);
     1. - input.eps < dot_prod && dot_prod < 1. + input.eps
 }

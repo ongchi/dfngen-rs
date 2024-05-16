@@ -1,6 +1,6 @@
 use std::fs::File;
 
-use parry3d::na::Point3;
+use parry3d_f64::na::Point3;
 
 use super::read_input_functions::{
     get_cords, get_rect_coords, read_domain_vertices, search_var, ReadFromTextFile,

@@ -3,7 +3,7 @@ use std::{
     io::{Seek, Write},
 };
 
-use parry3d::na::{distance, Point3, Vector3};
+use parry3d_f64::na::{distance, Point3, Vector3};
 
 use super::input::Input;
 use crate::{

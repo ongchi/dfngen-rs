@@ -1,4 +1,4 @@
-use parry3d::na::Point3;
+use parry3d_f64::na::Point3;
 
 use crate::{
     computational_geometry::intersection_checking,

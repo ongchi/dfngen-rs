@@ -3,7 +3,7 @@ use std::io::{BufRead, BufReader, Read, Seek, SeekFrom};
 use std::str::FromStr;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use parry3d::na::Point3;
+use parry3d_f64::na::Point3;
 use text_io::read;
 
 use crate::io::input::Input;
