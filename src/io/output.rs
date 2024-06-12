@@ -348,11 +348,11 @@ fn write_intersection_files(
                 // Similarly to above, the intersection must be rotated two different ways,
                 // one for each intersecting poly. We can't change the original data so we must use temp data
                 let temp_intersection = poly_and_intersection_rotation_to_xy(
-                    input,
                     &int_pts[poly_int_idx],
                     &mut accepted_poly[final_fractures[i]],
                     triple_points,
                     &mut temp_trip_pts,
+                    input.eps,
                 );
                 // poly and intersection now rotated
                 let triple_pts_size = temp_trip_pts.len();

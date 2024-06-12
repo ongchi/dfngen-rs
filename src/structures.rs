@@ -83,7 +83,7 @@ pub struct Poly {
 
 #[derive(Default)]
 pub struct RejectedUserFracture {
-    pub id: isize,
+    pub id: usize,
     pub user_fracture_type: i32,
 }
 

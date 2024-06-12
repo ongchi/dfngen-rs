@@ -1,6 +1,6 @@
 use std::fs::File;
 
-use parry3d_f64::na::Point3;
+use parry3d_f64::na::{Point3, Vector3};
 
 use super::read_input_functions::{
     get_cords, get_rect_coords, read_domain_vertices, search_var, ReadFromTextFile,
@@ -18,7 +18,7 @@ pub struct Input {
     pub nPoly: usize,
 
     // Domain size with dimension x*y*z for DFN, centered at the origin.
-    pub domainSize: [f64; 3],
+    pub domainSize: Vector3<f64>,
 
     // Minimum feature size, FRAM parameter.
     pub h: f64,
@@ -129,7 +129,7 @@ pub struct Input {
     // Fracture will be truncated based on domainSize above.
     // Increases the entire width by this ammount. So, {1,1,1} will increase
     // the domain by adding .5 to the +x, and subbtracting .5 to the -x, etc
-    pub domainSizeIncrease: [f64; 3],
+    pub domainSizeIncrease: Vector3<f64>,
 
     // Selection of orientation Option
     // 0 - spherical coordinates

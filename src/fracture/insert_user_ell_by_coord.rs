@@ -92,7 +92,7 @@ pub fn insert_user_ell_by_coord(
             pstats.rejection_reasons.outside += 1;
             pstats.rejected_poly_count += 1;
             println!("User Ellipse (defined by coordinates) {} was rejected for being outside the defined domain.", i + 1);
-            rejected_user_fracture.id = (i + 1) as isize;
+            rejected_user_fracture.id = i + 1;
             rejected_user_fracture.user_fracture_type = -1;
             pstats.rejected_user_fracture.push(rejected_user_fracture);
             continue; // Go to next poly (go to next iteration of for loop)
@@ -135,7 +135,7 @@ pub fn insert_user_ell_by_coord(
                 i + 1
             );
             print_reject_reason(reject_code, &new_poly);
-            rejected_user_fracture.id = (i + 1) as isize;
+            rejected_user_fracture.id = i + 1;
             rejected_user_fracture.user_fracture_type = -1;
             pstats.rejected_user_fracture.push(rejected_user_fracture);
         }

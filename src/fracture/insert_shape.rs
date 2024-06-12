@@ -245,8 +245,10 @@ pub fn generate_poly(
         norm = norm.normalize(); // Ensure norm is normalized
     }
 
-    apply_rotation3_d(global, &mut new_poly, &norm); // Rotate vertices to norm (new normal)
-                                                   // Save newPoly's new normal vector
+    // Rotate vertices to norm (new normal)
+    apply_rotation3_d(&mut new_poly, &norm, global.eps);
+
+    // Save newPoly's new normal vector
     new_poly.normal[0] = norm[0];
     new_poly.normal[1] = norm[1];
     new_poly.normal[2] = norm[2];
@@ -298,7 +300,7 @@ pub fn generate_poly(
     }
 
     // Translate - will also set translation vector in poly structure
-    translate(&mut new_poly, &t);
+    translate(&mut new_poly, t);
 
     new_poly
 }
@@ -381,8 +383,10 @@ pub fn generate_poly_with_radius(
         norm = norm.normalize(); //ensure norm is normalized
     }
 
-    apply_rotation3_d(global, &mut new_poly, &norm); // Rotate vertices to norm (new normal)
-                                                   // Save newPoly's new normal vector
+    // Rotate vertices to norm (new normal)
+    apply_rotation3_d(&mut new_poly, &norm, global.eps); 
+
+    // Save newPoly's new normal vector
     new_poly.normal[0] = norm[0];
     new_poly.normal[1] = norm[1];
     new_poly.normal[2] = norm[2];
@@ -436,7 +440,7 @@ pub fn generate_poly_with_radius(
     }
 
     // Translate - will also set translation vector in poly structure
-    translate(&mut new_poly, &t);
+    translate(&mut new_poly, t);
 
     new_poly
 }
@@ -574,7 +578,7 @@ pub fn re_translate_poly(
         }
 
         // Translate - will also set translation vector in poly structure
-        translate(new_poly, &t);
+        translate(new_poly, t);
     } else {
         // Poly was truncated, need to rebuild the polygon
         new_poly.vertices = Vec::with_capacity(shape_fam.num_points * 3);
@@ -637,7 +641,7 @@ pub fn re_translate_poly(
         // Angle must be in rad
         apply_rotation2_d(new_poly, beta);
         // Rotates poly from {0,0,1} to normalB, NEED to save normalB to newPoly.normal afterwards
-        apply_rotation3_d(global, new_poly, &normal_b);
+        apply_rotation3_d(new_poly, &normal_b, global.eps);
         new_poly.normal = normal_b;
         // Translate to new position
         // Translate() will also set translation vector in poly structure
@@ -690,7 +694,7 @@ pub fn re_translate_poly(
             panic!();
         }
 
-        translate(new_poly, &t);
+        translate(new_poly, t);
     }
 }
 

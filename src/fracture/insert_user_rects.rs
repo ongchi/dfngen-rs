@@ -64,9 +64,9 @@ pub fn insert_user_rects(
         input.urnormal[index + 2] = tmp.z;
         // Rotate vertices to urnormal[index] (new normal)
         apply_rotation3_d(
-            input,
             &mut new_poly,
             &Vector3::from_iterator(input.urnormal[index..index + 3].iter().cloned()),
+            input.eps,
         );
         // Save newPoly's new normal vector
         new_poly.normal[0] = input.urnormal[index];
@@ -75,7 +75,11 @@ pub fn insert_user_rects(
         // Translate newPoly to urtranslation
         translate(
             &mut new_poly,
-            &input.urtranslation[index..index + 3].try_into().unwrap(),
+            Vector3::new(
+                input.urtranslation[index],
+                input.urtranslation[index + 1],
+                input.urtranslation[index + 2],
+            ),
         );
 
         if domain_truncation(input, &mut new_poly, &input.domainSize) {
@@ -87,7 +91,7 @@ pub fn insert_user_rects(
                 "User Rectangle {} was rejected for being outside the defined domain.",
                 i + 1
             );
-            rejected_user_fracture.id = (i + 1) as isize;
+            rejected_user_fracture.id = i + 1;
             rejected_user_fracture.user_fracture_type = -2;
             pstats.rejected_user_fracture.push(rejected_user_fracture);
             continue; // Go to next poly (go to next iteration of for loop)
@@ -124,7 +128,7 @@ pub fn insert_user_rects(
             pstats.rejects_per_attempt[pstats.accepted_poly_count] += 1;
             println!("Rejected user defined rectangular fracture {}", i + 1);
             print_reject_reason(reject_code, &new_poly);
-            rejected_user_fracture.id = (i + 1) as isize;
+            rejected_user_fracture.id = i + 1;
             rejected_user_fracture.user_fracture_type = -2;
             pstats.rejected_user_fracture.push(rejected_user_fracture);
         }

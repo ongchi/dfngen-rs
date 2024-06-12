@@ -197,7 +197,7 @@ pub fn random_translation(
     y_max: f64,
     z_min: f64,
     z_max: f64,
-) -> [f64; 3] {
+) -> Vector3<f64> {
     let distribution_x = Uniform::new(x_min, x_max);
     let distribution_y = Uniform::new(y_min, y_max);
     let distribution_z = Uniform::new(z_min, z_max);
@@ -206,7 +206,7 @@ pub fn random_translation(
     let y = rng.borrow_mut().sample(distribution_y);
     let z = rng.borrow_mut().sample(distribution_z);
 
-    [x, y, z]
+    Vector3::new(x, y, z)
 }
 
 // *******************  Truncated Power-Law  ********************************

@@ -78,9 +78,9 @@ pub fn insert_user_ell(
 
         // Rotate vertices to uenormal[index] (new normal)
         apply_rotation3_d(
-            input,
             &mut new_poly,
             &Vector3::from_iterator(input.urnormal[index..index + 3].iter().cloned()),
+            input.eps,
         );
         // Save newPoly's new normal vector
         new_poly.normal[0] = input.uenormal[index];
@@ -89,7 +89,11 @@ pub fn insert_user_ell(
         // Translate newPoly to uetranslation
         translate(
             &mut new_poly,
-            input.uetranslation[index..index + 3].try_into().unwrap(),
+            Vector3::new(
+                input.uetranslation[index],
+                input.uetranslation[index + 1],
+                input.uetranslation[index + 2],
+            ),
         );
 
         if domain_truncation(input, &mut new_poly, &input.domainSize) {
@@ -101,7 +105,7 @@ pub fn insert_user_ell(
                 "\nUser Ellipse {} was rejected for being outside the defined domain.",
                 i + 1
             );
-            rejected_user_fracture.id = i as isize + 1;
+            rejected_user_fracture.id = i + 1;
             rejected_user_fracture.user_fracture_type = -1;
             pstats.rejected_user_fracture.push(rejected_user_fracture);
             continue; // Go to next poly (go to next iteration of for loop)
@@ -138,7 +142,7 @@ pub fn insert_user_ell(
             pstats.rejected_poly_count += 1;
             println!("\nRejected User Defined Elliptical Fracture {}", i + 1);
             print_reject_reason(reject_code, &new_poly);
-            rejected_user_fracture.id = i as isize + 1;
+            rejected_user_fracture.id = i + 1;
             rejected_user_fracture.user_fracture_type = -1;
             pstats.rejected_user_fracture.push(rejected_user_fracture);
 

@@ -11,13 +11,9 @@ use crate::{
 pub mod polygon_boundary;
 
 // Check if two vectors are parallel
-// Arg 1: Pointer to vector 1, array of three doubles
-// Arg 2: Pointer to vector 2, array of three doubles
-// Output: True if vectors are parallel
-//         False otherwise
-fn parallel(input: &Input, v1: &Vector3<f64>, v2: &Vector3<f64>) -> bool {
+fn is_parallel(v1: &Vector3<f64>, v2: &Vector3<f64>, eps: f64) -> bool {
     let dot_prod = v1.dot(v2);
-    1. - input.eps < dot_prod && dot_prod < 1. + input.eps
+    1. - eps < dot_prod && dot_prod < 1. + eps
 }
 
 // *********************** 2D rotation matrix ***************************
@@ -26,7 +22,7 @@ fn parallel(input: &Input, v1: &Vector3<f64>, v2: &Vector3<f64>) -> bool {
 // Assumes poly.numberOfNodes is set
 // Angle must be in radians
 // Arg 1: Poly to be rotated
-// Arg 2: Angle to rotate to */
+// Arg 2: Angle to rotate to
 pub fn apply_rotation2_d(new_poly: &mut Poly, angle: f64) {
     let sin_calc = angle.sin();
     let cos_calc = angle.cos();
@@ -46,21 +42,19 @@ pub fn apply_rotation2_d(new_poly: &mut Poly, angle: f64) {
 // Translates 'newPoly' to 'translation'
 // Assumes newPoly.numberOfNodes is initialized
 // Arg 1: Polygon to translate
-// Arg 2: translation (new x,y,z  position) double[3] array */
-pub fn translate(new_poly: &mut Poly, translation: &[f64; 3]) {
-    new_poly.translation[0] = translation[0];
-    new_poly.translation[1] = translation[1];
-    new_poly.translation[2] = translation[2];
+// Arg 2: translation (new x,y,z  position) double[3] array
+pub fn translate(new_poly: &mut Poly, translation: Vector3<f64>) {
+    new_poly.translation = translation;
 
     for i in 0..new_poly.number_of_nodes {
         let idx = (i * 3) as usize;
-        new_poly.vertices[idx] += translation[0];
-        new_poly.vertices[idx + 1] += translation[1];
-        new_poly.vertices[idx + 2] += translation[2];
+        new_poly.vertices[idx] += translation.x;
+        new_poly.vertices[idx + 1] += translation.y;
+        new_poly.vertices[idx + 2] += translation.z;
     }
 }
 
-fn rotation_matrix(input: &Input, normal_a: &Vector3<f64>, normal_b: &Vector3<f64>) -> [f64; 9] {
+fn rotation_matrix(normal_a: &Vector3<f64>, normal_b: &Vector3<f64>, eps: f64) -> [f64; 9] {
     //***************************************************
     // Note: Normals must be normalized by this point!!!!!!
     // Since vectors are normalized, sin = magnitude(AxB) and cos = A dot B
@@ -70,7 +64,7 @@ fn rotation_matrix(input: &Input, normal_a: &Vector3<f64>, normal_b: &Vector3<f6
     // Delete manually with delete[], created with new[]
     let x_prod = normal_a.cross(normal_b);
 
-    if !parallel(input, normal_a, normal_b) {
+    if !is_parallel(normal_a, normal_b, eps) {
         // sin = magnitude(AxB) and cos = A . B
         let sin = x_prod.magnitude();
         let cos = normal_a.dot(normal_b);
@@ -116,32 +110,31 @@ fn rotation_matrix(input: &Input, normal_a: &Vector3<f64>, normal_b: &Vector3<f6
 // Assumes poly.numberOfPoints and newPoly.normal are initialized and normalized
 // Arg 1: Poly to be rotated
 // Arg 2: Normal vector to rotate to (array of 3 doubles) */
-pub fn apply_rotation3_d(input: &Input, new_poly: &mut Poly, normal_b: &Vector3<f64>) {
+pub fn apply_rotation3_d(new_poly: &mut Poly, normal_b: &Vector3<f64>, eps: f64) {
     // Normals should already be normalized by this point!!!
-    // NormalA: newPoly's current normal
-    let normal_a = Vector3::from_iterator(new_poly.normal.iter().cloned());
+    let normal_a = new_poly.normal;
 
-    if !parallel(input, &normal_a, normal_b) {
+    if !is_parallel(&normal_a, normal_b, eps) {
         // NOTE: rotationMatrix() requires normals to be normalized
-        let r = rotation_matrix(input, &new_poly.normal, normal_b);
+        let r = rotation_matrix(&normal_a, normal_b, eps);
 
         // Apply rotation to all vertices
         for i in 0..new_poly.number_of_nodes {
             let idx = (i * 3) as usize;
-            let vertices = [
-                new_poly.vertices[idx] * r[0]
-                    + new_poly.vertices[idx + 1] * r[1]
-                    + new_poly.vertices[idx + 2] * r[2],
-                new_poly.vertices[idx] * r[3]
-                    + new_poly.vertices[idx + 1] * r[4]
-                    + new_poly.vertices[idx + 2] * r[5],
-                new_poly.vertices[idx] * r[6]
-                    + new_poly.vertices[idx + 1] * r[7]
-                    + new_poly.vertices[idx + 2] * r[8],
-            ];
-            new_poly.vertices[idx] = vertices[0];
-            new_poly.vertices[idx + 1] = vertices[1];
-            new_poly.vertices[idx + 2] = vertices[2];
+
+            let x = new_poly.vertices[idx] * r[0]
+                + new_poly.vertices[idx + 1] * r[1]
+                + new_poly.vertices[idx + 2] * r[2];
+            let y = new_poly.vertices[idx] * r[3]
+                + new_poly.vertices[idx + 1] * r[4]
+                + new_poly.vertices[idx + 2] * r[5];
+            let z = new_poly.vertices[idx] * r[6]
+                + new_poly.vertices[idx + 1] * r[7]
+                + new_poly.vertices[idx + 2] * r[8];
+
+            new_poly.vertices[idx] = x;
+            new_poly.vertices[idx + 1] = y;
+            new_poly.vertices[idx + 2] = z;
         }
     }
 }
@@ -167,21 +160,21 @@ pub fn apply_rotation3_d(input: &Input, new_poly: &mut Poly, normal_b: &Vector3<
 //           we must preserve the original points.
 //    Return: Rotated version of intersection passed in arg 1 */
 pub fn poly_and_intersection_rotation_to_xy(
-    input: &Input,
     intersection: &IntersectionPoints,
     new_poly: &mut Poly,
     triple_points: &[Point3<f64>],
     temp_trip_pts: &mut Vec<Point3<f64>>,
+    eps: f64,
 ) -> IntersectionPoints {
     // newPoly.normal = newPoly's current normal, should already be normalized
     // normalB = target normal
-    let normal_a = Vector3::from_iterator(new_poly.normal.iter().cloned());
+    let normal_a = new_poly.normal;
     let normal_b = Vector3::new(0., 0., 1.);
     let mut temp_intpts = IntersectionPoints::new();
 
-    if !parallel(input, &normal_a, &normal_b) {
+    if !is_parallel(&normal_a, &normal_b, eps) {
         // rotationMatrix() requires normals to be normalized
-        let r = rotation_matrix(input, &new_poly.normal, &normal_b);
+        let r = rotation_matrix(&new_poly.normal, &normal_b, eps);
 
         // Because the normal's in the polygon structure don't change (we need them to
         // write params.txt), the xProd check at the top of the function may not work.
@@ -195,21 +188,20 @@ pub fn poly_and_intersection_rotation_to_xy(
             for i in 0..new_poly.number_of_nodes {
                 let idx = (i * 3) as usize;
                 // Apply rotation matrix R to each vertice
-                let vertices = [
-                    new_poly.vertices[idx] * r[0]
-                        + new_poly.vertices[idx + 1] * r[1]
-                        + new_poly.vertices[idx + 2] * r[2],
-                    new_poly.vertices[idx] * r[3]
-                        + new_poly.vertices[idx + 1] * r[4]
-                        + new_poly.vertices[idx + 2] * r[5],
-                    new_poly.vertices[idx] * r[6]
-                        + new_poly.vertices[idx + 1] * r[7]
-                        + new_poly.vertices[idx + 2] * r[8],
-                ];
+                let x = new_poly.vertices[idx] * r[0]
+                    + new_poly.vertices[idx + 1] * r[1]
+                    + new_poly.vertices[idx + 2] * r[2];
+                let y = new_poly.vertices[idx] * r[3]
+                    + new_poly.vertices[idx + 1] * r[4]
+                    + new_poly.vertices[idx + 2] * r[5];
+                let z = new_poly.vertices[idx] * r[6]
+                    + new_poly.vertices[idx + 1] * r[7]
+                    + new_poly.vertices[idx + 2] * r[8];
+
                 // Save vertices back to poly struct, now on x-y plane
-                new_poly.vertices[idx] = vertices[0];
-                new_poly.vertices[idx + 1] = vertices[1];
-                new_poly.vertices[idx + 2] = vertices[2];
+                new_poly.vertices[idx] = x;
+                new_poly.vertices[idx + 1] = y;
+                new_poly.vertices[idx + 2] = z;
             }
         }
 
@@ -344,12 +336,7 @@ fn check_bounding_box(poly1: &Poly, poly2: &Poly) -> bool {
 // Arg 2: Poly 1
 // Arg 3: Poly 2
 // Return: Intersection end points, Valid only if flag != 0 */
-fn find_intersections(
-    input: &Input,
-    flag: &mut i32,
-    poly1: &Poly,
-    poly2: &Poly,
-) -> IntersectionPoints {
+fn find_intersections(flag: &mut i32, poly1: &Poly, poly2: &Poly, eps: f64) -> IntersectionPoints {
     /* FLAGS: 0 = no intersection
        NOTE: The only flag which is currently used is '0'
              1 = intersection is completely inside poly 1 (new fracture)/poly)
@@ -400,7 +387,7 @@ fn find_intersections(
             temp.z = f2.vertices[idx + 2] - vertex1[2];
             currdist = temp.dot(&Vector3::from_iterator(f1.normal.iter().cloned()));
 
-            if prevdist.abs() < input.eps {
+            if prevdist.abs() < eps {
                 if i == 0 {
                     // Previous point is intersection point
                     inters2[0] = f2.vertices[index]; // x
@@ -418,7 +405,7 @@ fn find_intersections(
             } else {
                 let mut curr_times_prev = currdist * prevdist;
 
-                if curr_times_prev.abs() < input.eps {
+                if curr_times_prev.abs() < eps {
                     curr_times_prev = 0.;
                 }
 
@@ -466,7 +453,7 @@ fn find_intersections(
         }
 
         for inter2 in inters2.iter_mut() {
-            if inter2.abs() < input.eps {
+            if inter2.abs() < eps {
                 *inter2 = 0.;
             }
         }
@@ -572,13 +559,13 @@ fn fram(
             // Reject if intersection shirnks < 'shrinkLimit'
             let shrink_limit = 0.9 * (int_pts.p1 - int_pts.p2).magnitude();
 
-            if check_close_edge(input, new_poly, int_pts, shrink_limit, pstats) {
+            if check_close_edge(new_poly, int_pts, shrink_limit, pstats, input.h, input.eps) {
                 // std::cout<<"\nrejectCode = -6: Fracture too close to another fracture's edge.\n";
                 pstats.rejection_reasons.close_to_edge += 1;
                 return -6;
             }
 
-            if check_close_edge(input, poly2, int_pts, shrink_limit, pstats) {
+            if check_close_edge(poly2, int_pts, shrink_limit, pstats, input.h, input.eps) {
                 // std::cout<<"\nrejectCode = -6: Fracture too close to another fracture's edge.\n";
                 pstats.rejection_reasons.close_to_edge += 1;
                 return -6;
@@ -588,7 +575,7 @@ fn fram(
             // Check distance from new intersection to other intersections on
             // poly2 (fracture newPoly is intersecting with)
 
-            if check_dist_to_old_intersections(input, int_pts_list, int_pts, poly2, input.h) {
+            if check_dist_to_old_intersections(int_pts_list, int_pts, poly2, input.h, input.eps) {
                 pstats.rejection_reasons.inter_close_to_inter += 1;
                 return -5;
             }
@@ -596,7 +583,8 @@ fn fram(
             // Check distance from new intersection to intersections already
             // existing on newPoly
             // Also checks for undetected triple points
-            if check_dist_to_new_intersections(input, temp_int_pts, int_pts, temp_data, input.h) {
+            if check_dist_to_new_intersections(temp_int_pts, int_pts, temp_data, input.h, input.eps)
+            {
                 pstats.rejection_reasons.inter_close_to_inter += 1;
                 return -5;
             }
@@ -643,11 +631,11 @@ fn fram(
 // Return: 0 if no all distances are larger than minDistance or minDistance = 0 with triple intersection point
 //         1 Otherwise
 fn check_dist_to_old_intersections(
-    input: &Input,
     int_pts_list: &[IntersectionPoints],
     int_pts: &IntersectionPoints,
     poly2: &Poly,
     min_distance: f64,
+    eps: f64,
 ) -> bool {
     let intersection = [int_pts.p1, int_pts.p2];
     let mut pt = Point3::default();
@@ -657,9 +645,9 @@ fn check_dist_to_old_intersections(
             int_pts_list[poly2.intersection_index[i]].p1,
             int_pts_list[poly2.intersection_index[i]].p2,
         ];
-        let dist = line_seg_to_line_seg(input, &intersection, &int2, &mut pt);
+        let dist = line_seg_to_line_seg(&intersection, &int2, &mut pt, eps);
 
-        if dist < (min_distance - input.eps) && dist > input.eps {
+        if dist < (min_distance - eps) && dist > eps {
             return true;
         }
     }
@@ -681,31 +669,31 @@ fn check_dist_to_old_intersections(
 //       Due to the shrinkIntersection algorithm, it may be possible for a triple intersection point
 //       to exist on only one fracture. This check resolves this issue. */
 fn check_dist_to_new_intersections(
-    input: &Input,
     temp_int_pts: &[IntersectionPoints],
     int_pts: &IntersectionPoints,
     temp_tri_pts: &[TriplePtTempData],
     min_distance: f64,
+    eps: f64,
 ) -> bool {
     let intersection = [int_pts.p1, int_pts.p2];
     let mut pt = Point3::default(); // Pt of intersection if lines intersect
 
     for tmp_int in temp_int_pts {
         let int2 = [tmp_int.p1, tmp_int.p2];
-        let dist = line_seg_to_line_seg(input, &intersection, &int2, &mut pt);
+        let dist = line_seg_to_line_seg(&intersection, &int2, &mut pt, eps);
 
-        if dist < min_distance && dist > input.eps {
+        if dist < min_distance && dist > eps {
             return true;
-        } else if dist < input.eps {
+        } else if dist < eps {
             // Make sure there is a triple intersection point
             // before accepting
             let mut reject = true;
 
             for tmp_tri in temp_tri_pts {
                 // If the triple point is found, continue with checks, else reject
-                if (pt.x - tmp_tri.triple_point.x).abs() < input.eps
-                    && (pt.y - tmp_tri.triple_point.y).abs() < input.eps
-                    && (pt.z - tmp_tri.triple_point.z).abs() < input.eps
+                if (pt.x - tmp_tri.triple_point.x).abs() < eps
+                    && (pt.y - tmp_tri.triple_point.y).abs() < eps
+                    && (pt.z - tmp_tri.triple_point.z).abs() < eps
                 {
                     reject = false;
                     break;
@@ -741,17 +729,17 @@ fn check_dist_to_new_intersections(
 //           and minDist <= dist to edge && shrinkLimit <= intersection length
 //         1 If intersection length shrinks to less than shrinkLimit
 fn shrink_intersection(
-    input: &Input,
     int_pts: &mut IntersectionPoints,
     edge: &[Point3<f64>; 2],
     shrink_limit: f64,
     first_node_min_dist: f64,
-    min_dist: f64,
+    global_min_dist: f64,
+    eps: f64,
 ) -> bool {
     let vect = int_pts.p2 - int_pts.p1;
     let dist = vect.magnitude();
     // n is number of discrete points on intersection
-    let n = (2. * dist / input.h).ceil();
+    let n = (2. * dist / global_min_dist).ceil();
     let step_size = 1. / n;
     let pt = int_pts.p1;
     // Start step at first descrete point
@@ -768,7 +756,7 @@ fn shrink_intersection(
         }
 
         let point = line_function_3d(&vect, &pt, step);
-        let first_pt_dist_to_edge = point_to_line_seg(input, &point, edge);
+        let first_pt_dist_to_edge = point_to_line_seg(&point, edge, eps);
         let mut first_pt = true;
 
         while node_count <= n as i32 {
@@ -781,11 +769,11 @@ fn shrink_intersection(
             }
 
             let pt_on_intersection = line_function_3d(&vect, &pt, step);
-            let dist = point_to_line_seg(input, &pt_on_intersection, edge);
+            let dist = point_to_line_seg(&pt_on_intersection, edge, eps);
 
             if first_pt && (dist > first_node_min_dist) {
                 // || (stepSize == 1 && dist < eps)))  {
-                if first_pt_dist_to_edge < input.eps || first_pt_dist_to_edge >= min_dist {
+                if first_pt_dist_to_edge < eps || first_pt_dist_to_edge >= global_min_dist {
                     // Leave intersection end point un-modified
                     break;
                 }
@@ -793,7 +781,7 @@ fn shrink_intersection(
 
             first_pt = false;
 
-            if dist > min_dist {
+            if dist > global_min_dist {
                 if i == 0 {
                     int_pts.p1 = pt_on_intersection;
                 } else {
@@ -864,7 +852,7 @@ pub fn intersection_checking(
         // NOTE: findIntersections() searches bounding boxes
         // Bounding box search
         if check_bounding_box(new_poly, poly) {
-            intersection = find_intersections(input, &mut flag, new_poly, poly);
+            intersection = find_intersections(&mut flag, new_poly, poly, input.eps);
 
             if flag != 0 {
                 // If flag != 0, intersection exists
@@ -998,17 +986,17 @@ pub fn intersection_checking(
 // Return: 0 - Distance from intersection to vertices are all > 'minDist'
 //         1 - Na distance less than minDist was found */
 fn check_distance_from_nodes(
-    input: &Input,
     poly: &Poly,
     int_pts: &IntersectionPoints,
     min_dist: f64,
     pstats: &mut Stats,
+    eps: f64,
 ) -> bool {
     let n_nodes = poly.number_of_nodes;
     // Intersection dist to poly vertices
     let line = [int_pts.p1, int_pts.p2];
     let mut poly_vertices = Point3::new(poly.vertices[0], poly.vertices[1], poly.vertices[2]);
-    let mut dist = point_to_line_seg(input, &poly_vertices, &line);
+    let mut dist = point_to_line_seg(&poly_vertices, &line, eps);
 
     for i in 1..n_nodes {
         let idx = (3 * i) as usize;
@@ -1017,14 +1005,14 @@ fn check_distance_from_nodes(
             poly.vertices[idx + 1],
             poly.vertices[idx + 2],
         );
-        let temp = point_to_line_seg(input, &poly_vertices, &line);
+        let temp = point_to_line_seg(&poly_vertices, &line, eps);
 
         // If new distance is less than the last calculated distance...
         if temp < dist {
             dist = temp;
         }
 
-        if dist < min_dist && dist > input.eps {
+        if dist < min_dist && dist > eps {
             pstats.rejection_reasons.close_to_node += 1;
             return true;
         }
@@ -1039,10 +1027,10 @@ fn check_distance_from_nodes(
 // Arg 1: Point in 3D space (array of three doubles)
 // Arg 2: Line (array of 6 doubles. Enpoint 1 and end point 2: {x1, y1, z1, x2, y2, z2}
 // Return: Returns the shortest distance between the point and the line segment */
-fn point_to_line_seg(input: &Input, point: &Point3<f64>, line: &[Point3<f64>; 2]) -> f64 {
+fn point_to_line_seg(point: &Point3<f64>, line: &[Point3<f64>; 2], eps: f64) -> f64 {
     let sqr_line_len = (line[0] - line[1]).magnitude_squared();
 
-    if sqr_line_len < input.eps {
+    if sqr_line_len < eps {
         // Line endpoints are equal to each other
         return (point - line[0]).magnitude();
     }
@@ -1065,7 +1053,7 @@ fn point_to_line_seg(input: &Input, point: &Point3<f64>, line: &[Point3<f64>; 2]
 //        endPoint1 and endpoint 2, {x1, y1, z1, x2, y2, z2}
 // Return: True if the point lies on the line segment
 //         False otherwise
-fn point_on_line_seg(input: &Input, pt: &Point3<f64>, line: &[Point3<f64>; 2]) -> bool {
+fn point_on_line_seg(pt: &Point3<f64>, line: &[Point3<f64>; 2], eps: f64) -> bool {
     // pt is point we are checking if on line between A and B
     // If mag(A to Pt) + mag(pt to B) = mag(A to B), pt is on line
     // end point A to end point B
@@ -1078,7 +1066,7 @@ fn point_on_line_seg(input: &Input, pt: &Point3<f64>, line: &[Point3<f64>; 2]) -
     // If zero, pt is between endpoints, and on line
     let result = end_pt_to_pt_dist + pt_to_end_pt_dist - end_ptto_end_pt_dist;
 
-    -input.eps < result && result < input.eps
+    -eps < result && result < eps
 }
 
 // ********************************************************************************
@@ -1092,18 +1080,18 @@ fn point_on_line_seg(input: &Input, pt: &Point3<f64>, line: &[Point3<f64>; 2]) -
 // Arg 3: Minimum length the intersection is allowed to shinrk to
 // Arg 4: Stats program statistics structure, used to report stats on how much
 //        intersection length is being reduced by from shrinkIntersection() */
+// min_dist is the minimum distance allowed from an end point to the edge of a polygon
+// if the intersection does not land accross a poly's edge
 fn check_close_edge(
-    input: &Input,
     poly1: &Poly,
     int_pts: &mut IntersectionPoints,
     shrink_limit: f64,
     pstats: &mut Stats,
+    min_dist: f64,
+    eps: f64,
 ) -> bool {
     // 'line' is newest intersection end points
     let line = [int_pts.p1, int_pts.p2];
-    // minDist is the minimum distance allowed from an end point to the edge of a polygon
-    // if the intersection does not land accross a poly's edge
-    let min_dist = input.h;
     // Counts how many endPoints are on the polys edge.
     // If both end points of intersection are on polys edge,
     // we must check the distance from end points to
@@ -1134,18 +1122,18 @@ fn check_close_edge(
             ),
         ];
         let mut end_pts_to_edge = [
-            point_to_line_seg(input, &line[0], &edge),
-            point_to_line_seg(input, &line[1], &edge),
-            point_to_line_seg(input, &edge[0], &line),
-            point_to_line_seg(input, &edge[1], &line),
+            point_to_line_seg(&line[0], &edge, eps),
+            point_to_line_seg(&line[1], &edge, eps),
+            point_to_line_seg(&edge[0], &line, eps),
+            point_to_line_seg(&edge[1], &line, eps),
         ];
         // Sort smallest to largest
         end_pts_to_edge.sort_by(|a, b| a.partial_cmp(b).unwrap());
 
         // If two smallest distances are < h,
         // the line is almost parallel and closer to edge than h, reject it
-        if (end_pts_to_edge[0] < input.h && end_pts_to_edge[1] < input.h)
-            && end_pts_to_edge[0] > input.eps
+        if (end_pts_to_edge[0] < min_dist && end_pts_to_edge[1] < min_dist)
+            && end_pts_to_edge[0] > eps
         {
             return true;
         }
@@ -1155,16 +1143,16 @@ fn check_close_edge(
         // Minimum dist from poly edge segment to intersection segment
         let mut pt = Point3::default();
 
-        let dist = line_seg_to_line_seg(input, &edge, &line, &mut pt);
+        let dist = line_seg_to_line_seg(&edge, &line, &mut pt, eps);
 
-        if dist < min_dist && dist > input.eps {
+        if dist < min_dist && dist > eps {
             // Try to shrink the intersection slightly in order to
             // not reject the polygon
-            if shrink_intersection(input, int_pts, &edge, shrink_limit, input.h, input.h) {
+            if shrink_intersection(int_pts, &edge, shrink_limit, min_dist, min_dist, eps) {
                 // Returns one if insterection shrinks to less than .9*h
                 return true;
             }
-        } else if dist < input.eps {
+        } else if dist < eps {
             // Endpoint is almost exactly on poly's edge, must check
             // whether the discretized nodes will ne closer
             // than the minimum allowed distance
@@ -1172,9 +1160,9 @@ fn check_close_edge(
             // distance to edge rules
             // NOTE: Intersections discretize with set size = .5*h
             // Minimum distance to edge must be less than .5*h to allow for angles
-            let min_dist2 = 0.4 * input.h;
+            let min_dist2 = 0.4 * min_dist;
 
-            if shrink_intersection(input, int_pts, &edge, shrink_limit, min_dist2, input.h) {
+            if shrink_intersection(int_pts, &edge, shrink_limit, min_dist2, min_dist, eps) {
                 //returns one if insterection shrinks to less than .9*h
                 return true;
             }
@@ -1186,7 +1174,7 @@ fn check_close_edge(
             // IF the intersecion is within the polygon, distances less than h to
             // edges and vertices will be caught by lineSegToLineSeg() in this function.
             if (on_edge_count >= 2)
-                & check_distance_from_nodes(input, poly1, int_pts, input.h, pstats)
+                & check_distance_from_nodes(poly1, int_pts, min_dist, pstats, eps)
             {
                 return true;
             }
@@ -1214,10 +1202,10 @@ fn check_close_edge(
 //        intersection point.
 // Return: Minimum distance between line 1 and line 2 */
 fn line_seg_to_line_seg(
-    input: &Input,
     line1: &[Point3<f64>; 2],
     line2: &[Point3<f64>; 2],
     pt: &mut Point3<f64>,
+    eps: f64,
 ) -> f64 {
     // Check if line 1 and line 2 intersect
     let p1 = &line1[0];
@@ -1226,20 +1214,19 @@ fn line_seg_to_line_seg(
     let v2 = (line2[0] - line2[1]).normalize();
     let p1p2 = (p1 - p2).normalize();
 
-    if parallel(input, &v1, &v2) {
-        if p1p2.magnitude() < input.eps || parallel(input, &p1p2, &v1) {
+    if is_parallel(&v1, &v2, eps) {
+        if p1p2.magnitude() < eps || is_parallel(&p1p2, &v1, eps) {
             // If 2 line segs overlap
-            if point_on_line_seg(input, &line1[0], line2)
-                || point_on_line_seg(input, &line1[1], line2)
+            if point_on_line_seg(&line1[0], line2, eps) || point_on_line_seg(&line1[1], line2, eps)
             {
                 0.
             } else {
                 // Line segs are colinear but not overlapping
-                line_seg_to_line_seg_sep(input, line1, line2)
+                line_seg_to_line_seg_sep(line1, line2, eps)
             }
         } else {
             // Line segs are parallel but not overlapping
-            line_seg_to_line_seg_sep(input, line1, line2)
+            line_seg_to_line_seg_sep(line1, line2, eps)
         }
     } else {
         // Lines are not parallel
@@ -1256,12 +1243,12 @@ fn line_seg_to_line_seg(
 
             temp.transform_point(p1)
         }; // Point of intersection if lines intersect
-        if point_on_line_seg(input, pt, line1) && point_on_line_seg(input, pt, line2) {
+        if point_on_line_seg(pt, line1, eps) && point_on_line_seg(pt, line2, eps) {
             // Case 1: Lines Intersection occurs on the lines
             0.
         } else {
             // Case 2: Line Intersection does not occur on both lines, find min distance from 4 endpoints to other line seg
-            line_seg_to_line_seg_sep(input, line1, line2)
+            line_seg_to_line_seg_sep(line1, line2, eps)
         }
     }
 }
@@ -1275,18 +1262,14 @@ fn line_seg_to_line_seg(
 // Arg 2: Array of 6 doubles for line 2 end points:
 //        {x1, y1, z1, x2, y2, z2}
 // Return: Minimum distance between 'line1' and 'line2'
-fn line_seg_to_line_seg_sep(
-    input: &Input,
-    line1: &[Point3<f64>; 2],
-    line2: &[Point3<f64>; 2],
-) -> f64 {
+fn line_seg_to_line_seg_sep(line1: &[Point3<f64>; 2], line2: &[Point3<f64>; 2], eps: f64) -> f64 {
     let dist = f64::min(
-        point_to_line_seg(input, &line1[0], line2),
-        point_to_line_seg(input, &line1[1], line2),
+        point_to_line_seg(&line1[0], line2, eps),
+        point_to_line_seg(&line1[1], line2, eps),
     );
     let temp = f64::min(
-        point_to_line_seg(input, &line2[0], line1),
-        point_to_line_seg(input, &line2[1], line1),
+        point_to_line_seg(&line2[0], line1, eps),
+        point_to_line_seg(&line2[1], line1, eps),
     );
 
     f64::min(dist, temp)
@@ -1329,7 +1312,7 @@ fn check_for_triple_intersections(
             int_pts_list[intersection_index].p1,
             int_pts_list[intersection_index].p2,
         ];
-        let mut dist1 = line_seg_to_line_seg(input, &int_end_pts, &line, &mut pt); //get distance and pt of intersection
+        let mut dist1 = line_seg_to_line_seg(&int_end_pts, &line, &mut pt, input.eps); //get distance and pt of intersection
 
         if dist1 >= input.h {
             continue;

@@ -13,7 +13,7 @@ use crate::{io::input::Input, structures::Poly};
 //              of poly truncation was not needed
 //          1 - If rejected due to being outside the domain or was truncated to
 //              less than 3 vertices
-pub fn domain_truncation(input: &Input, new_poly: &mut Poly, domain_size: &[f64; 3]) -> bool {
+pub fn domain_truncation(input: &Input, new_poly: &mut Poly, domain_size: &Vector3<f64>) -> bool {
     let mut points = Vec::with_capacity(18);
     let mut n_nodes = 0;
     let domain_x = domain_size[0] * 0.5;

@@ -129,7 +129,7 @@ pub fn insert_user_polygon_by_coord(
                 println!("{:?}", &new_poly.vertices[idx..idx + 3]);
             }
 
-            rejected_user_fracture.id = (i + 1) as isize;
+            rejected_user_fracture.id = i + 1;
             rejected_user_fracture.user_fracture_type = -3;
             pstats.rejected_user_fracture.push(rejected_user_fracture);
             new_poly.vertices.clear();
@@ -169,7 +169,7 @@ pub fn insert_user_polygon_by_coord(
                 i + 1
             );
             print_reject_reason(reject_code, &new_poly);
-            rejected_user_fracture.id = (i + 1) as isize;
+            rejected_user_fracture.id = i + 1;
             rejected_user_fracture.user_fracture_type = -3;
             pstats.rejected_user_fracture.push(rejected_user_fracture);
         }
