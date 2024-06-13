@@ -1,7 +1,6 @@
 use parry3d_f64::na::{distance, Point3, Translation3, Vector3};
 
 use crate::{
-    distribution::generating_points::line_function_3d,
     fracture::cluster_groups::{assign_group, update_groups},
     io::input::Input,
     math_functions::{max_elmt_idx, sorted_index, sum_dev_ary3},
@@ -755,7 +754,7 @@ fn shrink_intersection(
             step = 1.;
         }
 
-        let point = line_function_3d(&vect, &pt, step);
+        let point = pt + vect * step;
         let first_pt_dist_to_edge = point_to_line_seg(&point, edge, eps);
         let mut first_pt = true;
 
@@ -768,7 +767,7 @@ fn shrink_intersection(
                 step -= step_size;
             }
 
-            let pt_on_intersection = line_function_3d(&vect, &pt, step);
+            let pt_on_intersection = pt + vect * step;
             let dist = point_to_line_seg(&pt_on_intersection, edge, eps);
 
             if first_pt && (dist > first_node_min_dist) {

@@ -51,24 +51,10 @@ pub fn discretize_line_of_intersection(
     let mut points_list = Vec::with_capacity(nprime + 1);
 
     for x in xx.iter().cloned().take(points_list.capacity()) {
-        points_list.push(line_function_3d(&v, &p, x));
+        points_list.push(p + v * x);
     }
 
     points_list
-}
-
-// *********************** Parametric Line Function *************************
-// Returns a point on the line/vector v at point t,  0 <= t <= 1
-// Arg 1: Array of three doubles {x, y, z}, vector of line segment
-// Arg 2: Array of three doubles {x, y, z}, end point on line
-// Arg 3: t, 0<= t <= 1
-// Return: Point on line
-pub fn line_function_3d(v: &Vector3<f64>, point: &Point3<f64>, t: f64) -> Point3<f64> {
-    Point3::new(
-        point[0] + v[0] * t,
-        point[1] + v[1] * t,
-        point[2] + v[2] * t,
-    )
 }
 
 /// Polygon normal vector generator by Fisher distribution
