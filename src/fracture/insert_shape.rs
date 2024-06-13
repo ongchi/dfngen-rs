@@ -10,7 +10,7 @@ use crate::distribution::{Exp, TruncPowerLaw};
 use crate::io::input::Input;
 use crate::{
     computational_geometry::{apply_rotation2_d, apply_rotation3_d, translate},
-    distribution::generating_points::{fisher_distribution, random_translation},
+    distribution::generating_points::{poly_norm_gen, random_translation},
     structures::{Poly, Shape},
 };
 
@@ -224,11 +224,9 @@ pub fn generate_poly(
     // Angle must be in rad
     apply_rotation2_d(&mut new_poly, beta);
     // Fisher distribution / get normal vector
-    let mut norm = fisher_distribution(
+    let mut norm = poly_norm_gen(
         global,
-        shape_fam.angle_one,
-        shape_fam.angle_two,
-        shape_fam.kappa,
+        shape_fam,
         generator.clone(),
     );
     let mag = norm.magnitude();
@@ -362,11 +360,9 @@ pub fn generate_poly_with_radius(
     // Angle must be in rad
     apply_rotation2_d(&mut new_poly, beta);
     // Fisher distribution / get normal vector
-    let mut norm = fisher_distribution(
+    let mut norm = poly_norm_gen(
         global,
-        shape_fam.angle_one,
-        shape_fam.angle_two,
-        shape_fam.kappa,
+        shape_fam,
         generator.clone(),
     );
     let mag = norm.magnitude();

@@ -1,10 +1,13 @@
 use std::{cell::RefCell, rc::Rc};
 
 use crate::io::input::Input;
+use crate::structures::Shape;
 use parry3d_f64::na::{Point3, Vector3};
 use rand::distributions::Uniform;
 use rand::Rng;
 use rand_mt::Mt19937GenRand64;
+
+use super::Fisher;
 
 // ********************  Discretize Intersection  ***************************
 // Discretizes intersetion
@@ -68,115 +71,35 @@ pub fn line_function_3d(v: &Vector3<f64>, point: &Point3<f64>, t: f64) -> Point3
     )
 }
 
-// ****** Fisher Distributions for Generating polygons Normal Vectors *******
-// Creates and returns an x,y,z array of doubles using Fisher distribution.
-//
-// NOTE: Uses new[] to return an array. NEED TO USE delete[] TO FREE THE MEMORY AFTER USE
-//
-// Arg 1: theta, the angle the normal vector makes with the z-axis
-// Arg 2: phi, the angle the projection of the normal onto the x-y plane makes with the x-axis
-// Arg 3: kappa, parameter for the Fisher distribnShaprutions
-// Arg 4: Random generator, see std c++ <random> library
-// Return: A Fisher distribution array {x, y, z}. Used for random generation of
-// polygon normal vectors.
-pub fn fisher_distribution(
+/// Polygon normal vector generator by Fisher distribution
+pub fn poly_norm_gen(
     input: &Input,
-    angle1: f64,
-    angle2: f64,
-    kappa: f64,
+    shape_family: &Shape,
     rng: Rc<RefCell<Mt19937GenRand64>>,
 ) -> Vector3<f64> {
-    let ck = (kappa.exp() - (-kappa).exp()) / kappa;
-
-    let v1 = if input.orientationOption == 0 {
-        // Spherical Coordinates
-        // angleOne = Theta
-        // angleTwo = Phi
-        Vector3::new(
-            angle1.sin() * angle2.cos(),
-            angle1.sin() * angle2.sin(),
-            angle1.cos(),
-        )
-    } else if input.orientationOption == 1 {
-        // Trend and Plunge
-        // angleOne = Trend
-        // angleTwo = Plunge
-        Vector3::new(
-            angle1.cos() * angle2.cos(),
-            angle1.sin() * angle2.cos(),
-            angle2.cos(),
-        )
-    } else if input.orientationOption == 2 {
-        // Dip and Strike
-        // angleOne = Dip
-        // angleTwo = Strike
-        Vector3::new(
-            angle1.sin() * angle2.sin(),
-            -angle1.sin() * angle2.cos(),
-            angle1.cos(),
-        )
-    } else {
-        unreachable!()
+    let fisher = match input.orientationOption {
+        0 => Fisher::new_with_theta_phi(
+            shape_family.angle_one,
+            shape_family.angle_two,
+            shape_family.kappa,
+            input.eps,
+        ),
+        1 => Fisher::new_with_trend_plunge(
+            shape_family.angle_one,
+            shape_family.angle_two,
+            shape_family.kappa,
+            input.eps,
+        ),
+        2 => Fisher::new_with_dip_strike(
+            shape_family.angle_one,
+            shape_family.angle_two,
+            shape_family.kappa,
+            input.eps,
+        ),
+        _ => unreachable!(),
     };
 
-    let u = Vector3::new(0., 0., 1.);
-    let x_prod = u.cross(&v1);
-
-    // Get rotation matrix if normal vectors are not the same (if xProd is not zero vector)
-    let r = if !(x_prod[0].abs() <= input.eps
-        && x_prod[1].abs() <= input.eps
-        && x_prod[2].abs() <= input.eps)
-    {
-        // Since vectors are normalized, sin = magnitude(AxB) and cos = A . B
-        let sin = (x_prod[0] * x_prod[0] + x_prod[1] * x_prod[1] + x_prod[2] * x_prod[2]).sqrt();
-        let cos = u.dot(&v1);
-        let v = [
-            0., -x_prod[2], x_prod[1], x_prod[2], 0., -x_prod[0], -x_prod[1], x_prod[0], 0.,
-        ];
-        let scalar = (1.0 - cos) / (sin * sin);
-        let v_squared = [
-            (v[0] * v[0] + v[1] * v[3] + v[2] * v[6]) * scalar,
-            (v[0] * v[1] + v[1] * v[4] + v[2] * v[7]) * scalar,
-            (v[0] * v[2] + v[1] * v[5] + v[2] * v[8]) * scalar,
-            (v[3] * v[0] + v[4] * v[3] + v[5] * v[6]) * scalar,
-            (v[3] * v[1] + v[4] * v[4] + v[5] * v[7]) * scalar,
-            (v[3] * v[2] + v[4] * v[5] + v[5] * v[8]) * scalar,
-            (v[6] * v[0] + v[7] * v[3] + v[8] * v[6]) * scalar,
-            (v[6] * v[1] + v[7] * v[4] + v[8] * v[7]) * scalar,
-            (v[6] * v[2] + v[7] * v[5] + v[8] * v[8]) * scalar,
-        ];
-
-        [
-            1. + v[0] + v_squared[0],
-            0. + v[1] + v_squared[1],
-            0. + v[2] + v_squared[2],
-            0. + v[3] + v_squared[3],
-            1. + v[4] + v_squared[4],
-            0. + v[5] + v_squared[5],
-            0. + v[6] + v_squared[6],
-            0. + v[7] + v_squared[7],
-            1. + v[8] + v_squared[8],
-        ]
-    } else {
-        // Identity Matrix
-        [1., 0., 0., 0., 1., 0., 0., 0., 1.]
-    };
-
-    let theta_dist = Uniform::new(0., 2. * std::f64::consts::PI);
-    let distribution = Uniform::new(0., 1.);
-    let theta_random = rng.borrow_mut().sample(theta_dist);
-    let y = rng.borrow_mut().sample(distribution);
-
-    let w = 1. / kappa * ((-kappa).exp() + kappa * ck * y).ln();
-    let temp = (1. - (w * w)).sqrt();
-    let v = [temp * theta_random.cos(), temp * theta_random.sin()];
-
-    // Matrix multiply with R
-    Vector3::new(
-        v[0] * r[0] + v[1] * r[1] + w * r[2],
-        v[0] * r[3] + v[1] * r[4] + w * r[5],
-        v[0] * r[6] + v[1] * r[7] + w * r[8],
-    )
+    rng.borrow_mut().sample(fisher)
 }
 
 // ******************* Returns random TRANSLATION ***************************
