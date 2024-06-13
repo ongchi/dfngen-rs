@@ -3,10 +3,9 @@ use std::rc::Rc;
 
 use rand::distributions::Uniform;
 use rand::Rng;
-use rand_distr::LogNormal;
 use rand_mt::Mt19937GenRand64;
 
-use crate::distribution::{Exp, TruncPowerLaw};
+use crate::distribution::{Exp, TruncLogNormal, TruncPowerLaw};
 use crate::io::input::Input;
 use crate::{
     computational_geometry::{apply_rotation2_d, apply_rotation3_d, translate},
@@ -47,57 +46,30 @@ pub fn generate_poly(
                                                                                    // Assign family number (index of array)
     new_poly.family_num = family_index;
 
-    // Switch based on distribution type
-    match shape_fam.distribution_type {
+    let radius = match shape_fam.distribution_type {
         1 => {
-            // Lognormal
-            let mut radius;
-            let mut count = 1;
+            let radius;
 
+            // If out of radii from list, insert random radius
             if shape_fam.radii_idx >= shape_fam.radii_list.len() || !use_list {
-                // If out of radii from list, insert random radius
-                let log_distribution = LogNormal::new(shape_fam.mean, shape_fam.sd).unwrap();
+                let min_val = f64::max(global.h, shape_fam.log_min);
+                let log_distribution = TruncLogNormal::new(min_val, shape_fam.log_max ,shape_fam.mean, shape_fam.sd).unwrap();
 
-                loop {
-                    radius = generator.clone().borrow_mut().sample(log_distribution);
-
-                    if count % 1000 == 0 {
-                        println!(
-                    "\nWarning: Lognormal distribution for {} family {} has been  unable to generate a fracture with radius within set parameters after {} consecutive tries.", shape_type(shape_fam), get_family_number(global, family_index, shape_fam.shape_family), count 
-                        );
-                        println!("Consider adjusting the lognormal paramerters for this family in the input file.");
-                        break;
-                    }
-
-                    count += 1;
-
-                    if !(radius < global.h
-                        || radius < shape_fam.log_min
-                        || radius > shape_fam.log_max)
-                    {
-                        break;
-                    }
-                }
+                radius = match generator.clone().borrow_mut().sample(log_distribution) {
+                    Ok(value) => value,
+                    Err(_) => panic!(
+                            "Lognormal distribution for {} family {} has been unable to generate a fracture with radius within set parameters after 1000 consecutive tries.",
+                            shape_type(shape_fam),
+                            get_family_number(global, family_index, shape_fam.shape_family),
+                        )
+                };
             } else {
                 // Insert radius from list
                 radius = shape_fam.radii_list[shape_fam.radii_idx];
                 shape_fam.radii_idx += 1;
             }
 
-            if shape_fam.shape_family == 1 {
-                // Rectangle
-                // Initialize rectangles vertices using lognormal dist.
-                initialize_rect_vertices(&mut new_poly, radius, shape_fam.aspect_ratio);
-            } else {
-                // Ellipse
-                initialize_ell_vertices(
-                    &mut new_poly,
-                    radius,
-                    shape_fam.aspect_ratio,
-                    &shape_fam.theta_list,
-                    shape_fam.num_points,
-                );
-            }
+            radius
         }
 
         2 => {
@@ -105,8 +77,6 @@ pub fn generate_poly(
             let radius;
 
             if shape_fam.radii_idx >= shape_fam.radii_list.len() || !use_list {
-                // If out of radii from list, generate random radius
-                // let uniform_dist = Uniform::new(0., 1.);
                 let trunc_power_law = TruncPowerLaw::new(
                     shape_fam.min,
                     shape_fam.max,
@@ -119,17 +89,7 @@ pub fn generate_poly(
                 shape_fam.radii_idx += 1;
             }
 
-            if shape_fam.shape_family == 1 {
-                initialize_rect_vertices(&mut new_poly, radius, shape_fam.aspect_ratio);
-            } else {
-                initialize_ell_vertices(
-                    &mut new_poly,
-                    radius,
-                    shape_fam.aspect_ratio,
-                    &shape_fam.theta_list,
-                    shape_fam.num_points,
-                );
-            }
+            radius
         }
 
         3 => {
@@ -172,41 +132,29 @@ pub fn generate_poly(
                 shape_fam.radii_idx += 1;
             }
 
-            if shape_fam.shape_family == 1 {
-                // Rectangle
-                // Initialize rectangles vertices using exp. dist.
-                initialize_rect_vertices(&mut new_poly, radius, shape_fam.aspect_ratio);
-            } else {
-                // Ellipse
-                initialize_ell_vertices(
-                    &mut new_poly,
-                    radius,
-                    shape_fam.aspect_ratio,
-                    &shape_fam.theta_list,
-                    shape_fam.num_points,
-                );
-            }
+            radius
         }
 
         4 => {
-            // Constant
-            if shape_fam.shape_family == 1 {
-                // Rectangle
-                // Initialize rectangles vertices
-                initialize_rect_vertices(&mut new_poly, shape_fam.const_radi, shape_fam.aspect_ratio);
-            } else {
-                // Ellipse
-                initialize_ell_vertices(
-                    &mut new_poly,
-                    shape_fam.const_radi,
-                    shape_fam.aspect_ratio,
-                    &shape_fam.theta_list,
-                    shape_fam.num_points,
-                );
-            }
+            shape_fam.const_radi
         }
 
         _ => unreachable!(),
+    };
+
+    if shape_fam.shape_family == 1 {
+        // Rectangle
+        // Initialize rectangles vertices using lognormal dist.
+        initialize_rect_vertices(&mut new_poly, radius, shape_fam.aspect_ratio);
+    } else {
+        // Ellipse
+        initialize_ell_vertices(
+            &mut new_poly,
+            radius,
+            shape_fam.aspect_ratio,
+            &shape_fam.theta_list,
+            shape_fam.num_points,
+        );
     }
 
     // Initialize beta based on distrubution type: 0 = unifrom on [0,2PI], 1 = constant
