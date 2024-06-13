@@ -8,7 +8,6 @@ use rand_mt::Mt19937GenRand64;
 use crate::{
     computational_geometry::polygon_boundary::polygon_boundary,
     computational_geometry::{create_bounding_box, intersection_checking},
-    distribution::Distribution,
     fracture::cluster_groups::get_cluster,
     fracture::domain::domain_truncation,
     fracture::fracture_estimating::{
@@ -87,11 +86,6 @@ fn main() {
     }
 
     let generator = Rc::new(RefCell::new(Mt19937GenRand64::new(input.seed)));
-    let distributions = Rc::new(RefCell::new(Distribution::new(
-        &input,
-        generator.clone(),
-        &mut shape_families,
-    )));
     let dom_vol = input.domainSize[0] * input.domainSize[1] * input.domainSize[2];
 
     if total_families > 0 {
@@ -103,19 +97,13 @@ fn main() {
                 &mut shape_families,
                 &input.famProb,
                 generator.clone(),
-                distributions.clone(),
             );
         } else {
             // P32 Option
             // ESTIMATE # FRACTURES NEEDED
             if !input.disableFram {
                 println!("Estimating number of fractures needed...");
-                dry_run(
-                    &mut input,
-                    &mut shape_families,
-                    generator.clone(),
-                    distributions.clone(),
-                );
+                dry_run(&mut input, &mut shape_families, generator.clone());
             }
         }
 
@@ -129,7 +117,6 @@ fn main() {
                 input.radiiListIncrease,
                 &mut shape_families,
                 generator.clone(),
-                distributions.clone(),
             );
 
             for (j, shape) in shape_families.iter().enumerate() {
@@ -346,7 +333,6 @@ fn main() {
                 &input,
                 &mut shape_families[family_index],
                 generator.clone(),
-                distributions.clone(),
                 family_index as isize,
                 true,
             );

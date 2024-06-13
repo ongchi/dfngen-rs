@@ -6,8 +6,7 @@ use rand_mt::Mt19937GenRand64;
 
 use super::domain::domain_truncation;
 use crate::{
-    distribution::generating_points::truncated_power_law,
-    distribution::Distribution,
+    distribution::{generating_points::truncated_power_law, Exp},
     fracture::insert_shape::{
         generate_poly, generate_poly_with_radius, get_family_number, get_largest_fracture_radius,
         p32_complete, re_translate_poly, shape_type,
@@ -46,7 +45,6 @@ pub fn generate_radii_lists_n_poly_option(
     shape_families: &mut [Shape],
     fam_prob: &[f64],
     generator: Rc<RefCell<Mt19937GenRand64>>,
-    distributions: Rc<RefCell<Distribution>>,
 ) {
     println!("Building radii lists for nPoly option...");
 
@@ -70,7 +68,6 @@ pub fn generate_radii_lists_n_poly_option(
             i as isize,
             &mut shape_families[i],
             generator.clone(),
-            distributions.clone(),
         );
     }
 
@@ -106,18 +103,10 @@ pub fn add_radii_to_lists(
     percent: f64,
     shape_families: &mut [Shape],
     generator: Rc<RefCell<Mt19937GenRand64>>,
-    distributions: Rc<RefCell<Distribution>>,
 ) {
     for (i, shape) in shape_families.iter_mut().enumerate() {
         let amount_to_add = (shape.radii_list.len() as f64 * percent).ceil() as usize;
-        add_radii(
-            input,
-            amount_to_add,
-            i as isize,
-            shape,
-            generator.clone(),
-            distributions.clone(),
-        );
+        add_radii(input, amount_to_add, i as isize, shape, generator.clone());
     }
 }
 
@@ -136,7 +125,6 @@ pub fn add_radii(
     fam_idx: isize,
     shape_fam: &mut Shape,
     generator: Rc<RefCell<Mt19937GenRand64>>,
-    distributions: Rc<RefCell<Distribution>>,
 ) {
     let mut radius = 0.;
     let min_radius = 3. * input.h;
@@ -196,19 +184,18 @@ pub fn add_radii(
 
         // Exponential
         3 => {
+            let exp_dist = Exp::new(
+                shape_fam.exp_lambda,
+                shape_fam.min_dist_input,
+                shape_fam.max_dist_input,
+            )
+            .unwrap();
+
             for _ in 0..amount_to_add {
                 let mut count = 0;
 
                 loop {
-                    let radius = distributions
-                        .clone()
-                        .borrow_mut()
-                        .exp_dist
-                        .get_value_by_min_max_val(
-                            shape_fam.exp_lambda,
-                            shape_fam.min_dist_input,
-                            shape_fam.max_dist_input,
-                        );
+                    let radius = generator.clone().borrow_mut().sample(&exp_dist);
                     count += 1;
 
                     if count % 1000 == 0 {
@@ -244,7 +231,6 @@ pub fn dry_run(
     input: &mut Input,
     shape_families: &mut [Shape],
     generator: Rc<RefCell<Mt19937GenRand64>>,
-    distributions: Rc<RefCell<Distribution>>,
 ) {
     println!("Estimating number of fractures per family for defined fracture intensities (P32)...");
     let dom_vol = input.domainSize[0] * input.domainSize[1] * input.domainSize[2];
@@ -295,7 +281,6 @@ pub fn dry_run(
                     input,
                     &mut shape_families[family_index],
                     generator.clone(),
-                    distributions.clone(),
                     family_index as isize,
                     false,
                 )

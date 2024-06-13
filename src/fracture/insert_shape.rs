@@ -6,7 +6,7 @@ use rand::Rng;
 use rand_distr::LogNormal;
 use rand_mt::Mt19937GenRand64;
 
-use crate::distribution::Distribution;
+use crate::distribution::Exp;
 use crate::distribution::generating_points::truncated_power_law;
 use crate::io::input::Input;
 use crate::{
@@ -33,7 +33,6 @@ pub fn generate_poly(
     global: &Input,
     shape_fam: &mut Shape,
     generator: Rc<RefCell<Mt19937GenRand64>>,
-    distributions: Rc<RefCell<Distribution>>,
     family_index: isize,
     use_list: bool,
 ) -> Poly {
@@ -140,17 +139,11 @@ pub fn generate_poly(
             let mut count = 1;
 
             if shape_fam.radii_idx >= shape_fam.radii_list.len() || !use_list {
+                let exp_dist = Exp::new(shape_fam.exp_lambda, shape_fam.min_dist_input, shape_fam.max_dist_input).unwrap();
+
                 // If out of radii from list, generate random radius
                 loop {
-                    radius = distributions
-                        .clone()
-                        .borrow_mut()
-                        .exp_dist
-                        .get_value_by_min_max_val(
-                            shape_fam.exp_lambda,
-                            shape_fam.min_dist_input,
-                            shape_fam.max_dist_input,
-                        );
+                    radius = generator.clone().borrow_mut().sample(&exp_dist);
 
                     if count % 1000 == 0 {
                         println!(
