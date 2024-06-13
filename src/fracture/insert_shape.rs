@@ -5,7 +5,7 @@ use rand::distributions::Uniform;
 use rand::Rng;
 use rand_mt::Mt19937GenRand64;
 
-use crate::distribution::{Exp, TruncLogNormal, TruncPowerLaw};
+use crate::distribution::{TruncExp, TruncLogNormal, TruncPowerLaw};
 use crate::io::input::Input;
 use crate::{
     computational_geometry::{apply_rotation2_d, apply_rotation3_d, translate},
@@ -43,88 +43,59 @@ pub fn generate_poly(
                              // Assign number of nodes
     new_poly.number_of_nodes = shape_fam.num_points as isize;
     new_poly.vertices = Vec::with_capacity((3 * new_poly.number_of_nodes) as usize); //numPoints*{x,y,z}
-                                                                                   // Assign family number (index of array)
+                                                                                     // Assign family number (index of array)
     new_poly.family_num = family_index;
 
     let radius = match shape_fam.distribution_type {
-        1 => {
+        1..=3 => {
             let radius;
 
             // If out of radii from list, insert random radius
             if shape_fam.radii_idx >= shape_fam.radii_list.len() || !use_list {
-                let min_val = f64::max(global.h, shape_fam.log_min);
-                let log_distribution = TruncLogNormal::new(min_val, shape_fam.log_max ,shape_fam.mean, shape_fam.sd).unwrap();
+                match shape_fam.distribution_type {
+                    d_type @ (1 | 3) => {
+                        let sampling = if d_type == 1 {
+                            let min_val = f64::max(global.h, shape_fam.log_min);
+                            let log_distribution = TruncLogNormal::new(
+                                min_val,
+                                shape_fam.log_max,
+                                shape_fam.mean,
+                                shape_fam.sd,
+                            )
+                            .unwrap();
 
-                radius = match generator.clone().borrow_mut().sample(log_distribution) {
-                    Ok(value) => value,
-                    Err(_) => panic!(
-                            "Lognormal distribution for {} family {} has been unable to generate a fracture with radius within set parameters after 1000 consecutive tries.",
-                            shape_type(shape_fam),
-                            get_family_number(global, family_index, shape_fam.shape_family),
-                        )
-                };
-            } else {
-                // Insert radius from list
-                radius = shape_fam.radii_list[shape_fam.radii_idx];
-                shape_fam.radii_idx += 1;
-            }
+                            generator.clone().borrow_mut().sample(log_distribution)
+                        } else {
+                            let min_val = f64::max(global.h, shape_fam.exp_min);
+                            let exp_dist = TruncExp::new(
+                                min_val,
+                                shape_fam.exp_max,
+                                shape_fam.exp_lambda,
+                                shape_fam.min_dist_input,
+                                shape_fam.max_dist_input,
+                            )
+                            .unwrap();
 
-            radius
-        }
+                            generator.clone().borrow_mut().sample(exp_dist)
+                        };
 
-        2 => {
-            // Truncated power-law
-            let radius;
-
-            if shape_fam.radii_idx >= shape_fam.radii_list.len() || !use_list {
-                let trunc_power_law = TruncPowerLaw::new(
-                    shape_fam.min,
-                    shape_fam.max,
-                    shape_fam.alpha,
-                    );
-                radius = generator.clone().borrow_mut().sample(trunc_power_law);
-            } else {
-                // Pull radius from list
-                radius = shape_fam.radii_list[shape_fam.radii_idx];
-                shape_fam.radii_idx += 1;
-            }
-
-            radius
-        }
-
-        3 => {
-            // Exponential
-            let mut radius;
-            let mut count = 1;
-
-            if shape_fam.radii_idx >= shape_fam.radii_list.len() || !use_list {
-                let exp_dist = Exp::new(shape_fam.exp_lambda, shape_fam.min_dist_input, shape_fam.max_dist_input).unwrap();
-
-                // If out of radii from list, generate random radius
-                loop {
-                    radius = generator.clone().borrow_mut().sample(&exp_dist);
-
-                    if count % 1000 == 0 {
-                        println!(
-                            "\nWARNING: Exponential distribution for {} family {} has been unable to generate a fracture with radius within set parameters after {} consecutive tries.",
-                            shape_type(shape_fam),
-                            get_family_number(global, family_index, shape_fam.shape_family),
-                            count 
-                        );
-                        println!(
-                            "Consider adjusting the exponential parameters for this family in the input file."
-                        );
-                        break;
+                        radius = match sampling {
+                            Ok(value) => value,
+                            Err(_) => panic!(
+                                    "distribution for {} family {} has been unable to generate a fracture with radius within set parameters after 1000 consecutive tries.",
+                                    shape_type(shape_fam),
+                                    get_family_number(global, family_index, shape_fam.shape_family),
+                                )
+                        }
                     }
 
-                    count += 1;
-
-                    if !(radius < global.h
-                        || radius < shape_fam.exp_min
-                        || radius > shape_fam.exp_max)
-                    {
-                        break;
+                    2 => {
+                        let trunc_power_law =
+                            TruncPowerLaw::new(shape_fam.min, shape_fam.max, shape_fam.alpha);
+                        radius = generator.clone().borrow_mut().sample(trunc_power_law);
                     }
+
+                    _ => unreachable!(),
                 }
             } else {
                 // Insert radius from list
@@ -135,9 +106,7 @@ pub fn generate_poly(
             radius
         }
 
-        4 => {
-            shape_fam.const_radi
-        }
+        4 => shape_fam.const_radi,
 
         _ => unreachable!(),
     };
@@ -158,8 +127,7 @@ pub fn generate_poly(
     }
 
     // Initialize beta based on distrubution type: 0 = unifrom on [0,2PI], 1 = constant
-    let beta = 
-    if !shape_fam.beta_distribution {
+    let beta = if !shape_fam.beta_distribution {
         //uniform distribution
         let uniform_dist = Uniform::new(0., 2. * std::f64::consts::PI);
         generator.clone().borrow_mut().sample(uniform_dist)
@@ -172,11 +140,7 @@ pub fn generate_poly(
     // Angle must be in rad
     apply_rotation2_d(&mut new_poly, beta);
     // Fisher distribution / get normal vector
-    let mut norm = poly_norm_gen(
-        global,
-        shape_fam,
-        generator.clone(),
-    );
+    let mut norm = poly_norm_gen(global, shape_fam, generator.clone());
     let mag = norm.magnitude();
 
     if mag < 1. - global.eps || mag > 1. + global.eps {
@@ -272,7 +236,7 @@ pub fn generate_poly_with_radius(
                              // Assign number of nodes
     new_poly.number_of_nodes = shape_fam.num_points as isize;
     new_poly.vertices = Vec::with_capacity((3 * new_poly.number_of_nodes) as usize); //numPoints*{x,y,z}
-                                                                                   // Assign family number (index of shapeFam array)
+                                                                                     // Assign family number (index of shapeFam array)
     new_poly.family_num = family_index;
 
     // TODO: Convert any degrees to rad
@@ -293,7 +257,6 @@ pub fn generate_poly_with_radius(
         );
     }
 
-
     // Initialize beta based on distrubution type: 0 = unifrom on [0,2PI], 1 = constant
     let beta = if !shape_fam.beta_distribution {
         // Uniform distribution
@@ -308,11 +271,7 @@ pub fn generate_poly_with_radius(
     // Angle must be in rad
     apply_rotation2_d(&mut new_poly, beta);
     // Fisher distribution / get normal vector
-    let mut norm = poly_norm_gen(
-        global,
-        shape_fam,
-        generator.clone(),
-    );
+    let mut norm = poly_norm_gen(global, shape_fam, generator.clone());
     let mag = norm.magnitude();
 
     if mag < 1. - global.eps || mag > 1. + global.eps {
@@ -320,7 +279,7 @@ pub fn generate_poly_with_radius(
     }
 
     // Rotate vertices to norm (new normal)
-    apply_rotation3_d(&mut new_poly, &norm, global.eps); 
+    apply_rotation3_d(&mut new_poly, &norm, global.eps);
 
     // Save newPoly's new normal vector
     new_poly.normal[0] = norm[0];

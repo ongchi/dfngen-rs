@@ -2,6 +2,8 @@ use rand::distributions::Distribution;
 use rand_distr::LogNormal;
 use rand_distr::NormalError;
 
+use super::SamplingError;
+
 pub struct TruncLogNormal {
     min: f64,
     max: f64,
@@ -19,11 +21,6 @@ impl TruncLogNormal {
     }
 }
 
-#[derive(Debug)]
-pub enum SamplingError {
-    BadParameters,
-}
-
 impl Distribution<Result<f64, SamplingError>> for TruncLogNormal {
     fn sample<R: rand::Rng + ?Sized>(&self, rng: &mut R) -> Result<f64, SamplingError> {
         let mut value;
@@ -32,15 +29,15 @@ impl Distribution<Result<f64, SamplingError>> for TruncLogNormal {
         loop {
             value = rng.sample(self.log_normal);
 
+            if value >= self.min || value <= self.max {
+                return Ok(value);
+            }
+
             if count == 1000 {
                 return Err(SamplingError::BadParameters);
             }
 
             count += 1;
-
-            if value >= self.min || value <= self.max {
-                return Ok(value);
-            }
         }
     }
 }

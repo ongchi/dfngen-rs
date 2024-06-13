@@ -1,12 +1,11 @@
 use std::{cell::RefCell, rc::Rc};
 
 use rand::{distributions::Uniform, Rng};
-use rand_distr::LogNormal;
 use rand_mt::Mt19937GenRand64;
 
 use super::domain::domain_truncation;
 use crate::{
-    distribution::{Exp, TruncPowerLaw},
+    distribution::{TruncExp, TruncLogNormal, TruncPowerLaw},
     fracture::insert_shape::{
         generate_poly, generate_poly_with_radius, get_family_number, get_largest_fracture_radius,
         p32_complete, re_translate_poly, shape_type,
@@ -126,61 +125,45 @@ pub fn add_radii(
     shape_fam: &mut Shape,
     generator: Rc<RefCell<Mt19937GenRand64>>,
 ) {
-    let mut radius = 0.;
     let min_radius = 3. * input.h;
 
     match shape_fam.distribution_type {
         // Lognormal
         1 => {
-            let log_distribution = LogNormal::new(shape_fam.mean, shape_fam.sd).unwrap();
+            let log_dist =
+                TruncLogNormal::new(min_radius, f64::INFINITY, shape_fam.mean, shape_fam.sd)
+                    .unwrap();
 
             for _ in 0..amount_to_add {
-                let mut count = 0;
-
-                loop {
-                    let radius = generator.borrow_mut().sample(log_distribution);
-                    count += 1;
-
-                    if count % 1000 == 0 {
+                match generator.borrow_mut().sample(&log_dist) {
+                    Ok(radius) => shape_fam.radii_list.push(radius),
+                    Err(_) => {
                         print_generating_fractures_less_than_hwarning(input, fam_idx, shape_fam);
+                        panic!()
                     }
-
-                    if radius > min_radius {
-                        break;
-                    }
-                }
-
-                shape_fam.radii_list.push(radius);
+                };
             }
         }
 
         // Truncated power-law
         2 => {
-            let trunc_power_law = TruncPowerLaw::new(shape_fam.min, shape_fam.max, shape_fam.alpha);
+            let power_law = TruncPowerLaw::new(
+                f64::max(shape_fam.min, min_radius),
+                shape_fam.max,
+                shape_fam.alpha,
+            );
 
             for _ in 0..amount_to_add {
-                let mut count = 0;
-
-                loop {
-                    radius = generator.borrow_mut().sample(&trunc_power_law);
-                    count += 1;
-
-                    if count % 1000 == 0 {
-                        print_generating_fractures_less_than_hwarning(input, fam_idx, shape_fam);
-                    }
-
-                    if radius > min_radius {
-                        break;
-                    }
-                }
-
+                let radius = generator.borrow_mut().sample(&power_law);
                 shape_fam.radii_list.push(radius);
             }
         }
 
         // Exponential
         3 => {
-            let exp_dist = Exp::new(
+            let exp_dist = TruncExp::new(
+                min_radius,
+                f64::INFINITY,
                 shape_fam.exp_lambda,
                 shape_fam.min_dist_input,
                 shape_fam.max_dist_input,
@@ -188,22 +171,13 @@ pub fn add_radii(
             .unwrap();
 
             for _ in 0..amount_to_add {
-                let mut count = 0;
-
-                loop {
-                    let radius = generator.clone().borrow_mut().sample(&exp_dist);
-                    count += 1;
-
-                    if count % 1000 == 0 {
+                match generator.clone().borrow_mut().sample(&exp_dist) {
+                    Ok(radius) => shape_fam.radii_list.push(radius),
+                    Err(_) => {
                         print_generating_fractures_less_than_hwarning(input, fam_idx, shape_fam);
+                        panic!()
                     }
-
-                    if radius > min_radius {
-                        break;
-                    }
-                }
-
-                shape_fam.radii_list.push(radius);
+                };
             }
         }
 

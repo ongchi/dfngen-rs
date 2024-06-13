@@ -1,10 +1,15 @@
 mod exp;
 mod fisher;
 pub mod generating_points;
-mod trunc_log_norm;
-mod trunc_power_law;
+mod log_norm;
+mod power_law;
 
-pub use exp::Exp;
+pub use exp::TruncExp;
 pub use fisher::Fisher;
-pub use trunc_log_norm::TruncLogNormal;
-pub use trunc_power_law::TruncPowerLaw;
+pub use log_norm::TruncLogNormal;
+pub use power_law::TruncPowerLaw;
+
+#[derive(Debug)]
+pub enum SamplingError {
+    BadParameters,
+}
