@@ -6,7 +6,7 @@ use rand_mt::Mt19937GenRand64;
 
 use super::domain::domain_truncation;
 use crate::{
-    distribution::{generating_points::truncated_power_law, Exp},
+    distribution::{Exp, TruncPowerLaw},
     fracture::insert_shape::{
         generate_poly, generate_poly_with_radius, get_family_number, get_largest_fracture_radius,
         p32_complete, re_translate_poly, shape_type,
@@ -128,7 +128,6 @@ pub fn add_radii(
 ) {
     let mut radius = 0.;
     let min_radius = 3. * input.h;
-    let uniform_dist = Uniform::new(0., 1.);
 
     match shape_fam.distribution_type {
         // Lognormal
@@ -157,16 +156,13 @@ pub fn add_radii(
 
         // Truncated power-law
         2 => {
+            let trunc_power_law = TruncPowerLaw::new(shape_fam.min, shape_fam.max, shape_fam.alpha);
+
             for _ in 0..amount_to_add {
                 let mut count = 0;
 
                 loop {
-                    radius = truncated_power_law(
-                        generator.borrow_mut().sample(uniform_dist),
-                        shape_fam.min,
-                        shape_fam.max,
-                        shape_fam.alpha,
-                    );
+                    radius = generator.borrow_mut().sample(&trunc_power_law);
                     count += 1;
 
                     if count % 1000 == 0 {

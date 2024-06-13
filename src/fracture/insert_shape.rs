@@ -6,8 +6,7 @@ use rand::Rng;
 use rand_distr::LogNormal;
 use rand_mt::Mt19937GenRand64;
 
-use crate::distribution::Exp;
-use crate::distribution::generating_points::truncated_power_law;
+use crate::distribution::{Exp, TruncPowerLaw};
 use crate::io::input::Input;
 use crate::{
     computational_geometry::{apply_rotation2_d, apply_rotation3_d, translate},
@@ -107,13 +106,13 @@ pub fn generate_poly(
 
             if shape_fam.radii_idx >= shape_fam.radii_list.len() || !use_list {
                 // If out of radii from list, generate random radius
-                let uniform_dist = Uniform::new(0., 1.);
-                radius = truncated_power_law(
-                    generator.clone().borrow_mut().sample(uniform_dist),
+                // let uniform_dist = Uniform::new(0., 1.);
+                let trunc_power_law = TruncPowerLaw::new(
                     shape_fam.min,
                     shape_fam.max,
                     shape_fam.alpha,
-                );
+                    );
+                radius = generator.clone().borrow_mut().sample(trunc_power_law);
             } else {
                 // Pull radius from list
                 radius = shape_fam.radii_list[shape_fam.radii_idx];

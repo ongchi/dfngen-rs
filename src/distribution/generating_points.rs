@@ -209,21 +209,6 @@ pub fn random_translation(
     Vector3::new(x, y, z)
 }
 
-// *******************  Truncated Power-Law  ********************************
-// Distrubution function for truncated power-law
-// randomNum must be between 0 and 1
-// This distribution should be sampled uniformly between 0 and 1 to
-// produce a truncated power-law distribution
-// Arg 1: Random variable between 0 and 1
-// Arg 2: Minimum number which can be returned from the distribution
-// Arg 3: Maximum number which can be returned from the distribution
-// Arg 4: Power-law's alpha
-// Return: Random float adhering to the truncated power law distribution */
-pub fn truncated_power_law(random_num: f64, min: f64, max: f64, alpha: f64) -> f64 {
-    let temp = 1. - random_num + (random_num * (min / max).powf(alpha));
-    min * temp.powf(-1. / alpha)
-}
-
 // **********  Generates Theta Array for Generating Ellipses  ***************
 // Integrate diff eq for theta as function of arc length using RK2
 // Used once for each ell family, saves theta array to shape structures
