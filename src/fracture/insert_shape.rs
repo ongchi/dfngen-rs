@@ -1,6 +1,7 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
+use parry3d_f64::na::Vector3;
 use rand::distributions::Uniform;
 use rand::Rng;
 use rand_mt::Mt19937GenRand64;
@@ -13,40 +14,14 @@ use crate::{
     structures::{Poly, Shape},
 };
 
-// **************************************************************************
-// *****************  Generate Polygon/Fracture  ****************************
-// Generates a polygon based on a stochastic fracture shape family
-// NOTE: Function does not create bouding box. The bouding box has to be
-//       created after fracture truncation
-// Arg 1: Shape family to generate fracture from
-// Arg 2: Random generator, see std <random> c++ library
-// Arg 3: Distributions class, currently used only for exponential dist.
-// Arg 4: Index of 'shapeFam' (arg 1) in the shapeFamilies array in main()
-// Arg 5: True - Use pre-calculated fracture radii list to pull radii from
-//        False - Generate random radii every time (used in dryRun()
-//                which estimates number of fractures needed when using
-//                p32 option and generates the radii lists)
-// Return: Random polygon/fracture based from 'shapeFam'
-pub fn generate_poly(
+fn generate_radius(
     global: &Input,
     shape_fam: &mut Shape,
     generator: Rc<RefCell<Mt19937GenRand64>>,
     family_index: isize,
     use_list: bool,
-) -> Poly {
-    // New polygon to build
-    let mut new_poly = Poly::default();
-    // Initialize normal to {0,0,1}. ( All polys start on x-y plane )
-    new_poly.normal[0] = 0.; // x
-    new_poly.normal[1] = 0.; // y
-    new_poly.normal[2] = 1.; // z
-                             // Assign number of nodes
-    new_poly.number_of_nodes = shape_fam.num_points as isize;
-    new_poly.vertices = Vec::with_capacity((3 * new_poly.number_of_nodes) as usize); //numPoints*{x,y,z}
-                                                                                     // Assign family number (index of array)
-    new_poly.family_num = family_index;
-
-    let radius = match shape_fam.distribution_type {
+) -> f64 {
+    match shape_fam.distribution_type {
         1..=3 => {
             let radius;
 
@@ -109,102 +84,32 @@ pub fn generate_poly(
         4 => shape_fam.const_radi,
 
         _ => unreachable!(),
-    };
-
-    if shape_fam.shape_family == 1 {
-        // Rectangle
-        // Initialize rectangles vertices using lognormal dist.
-        initialize_rect_vertices(&mut new_poly, radius, shape_fam.aspect_ratio);
-    } else {
-        // Ellipse
-        initialize_ell_vertices(
-            &mut new_poly,
-            radius,
-            shape_fam.aspect_ratio,
-            &shape_fam.theta_list,
-            shape_fam.num_points,
-        );
     }
+}
 
-    // Initialize beta based on distrubution type: 0 = unifrom on [0,2PI], 1 = constant
-    let beta = if !shape_fam.beta_distribution {
-        //uniform distribution
-        let uniform_dist = Uniform::new(0., 2. * std::f64::consts::PI);
-        generator.clone().borrow_mut().sample(uniform_dist)
-    } else {
-        shape_fam.beta
-    };
-
-    // Apply 2d rotation matrix, twist around origin
-    // Assumes polygon on x-y plane
-    // Angle must be in rad
-    apply_rotation2_d(&mut new_poly, beta);
-    // Fisher distribution / get normal vector
-    let mut norm = poly_norm_gen(global, shape_fam, generator.clone());
-    let mag = norm.magnitude();
-
-    if mag < 1. - global.eps || mag > 1. + global.eps {
-        norm = norm.normalize(); // Ensure norm is normalized
-    }
-
-    // Rotate vertices to norm (new normal)
-    apply_rotation3_d(&mut new_poly, &norm, global.eps);
-
-    // Save newPoly's new normal vector
-    new_poly.normal[0] = norm[0];
-    new_poly.normal[1] = norm[1];
-    new_poly.normal[2] = norm[2];
-    let t;
-
-    // HERE
-    if shape_fam.layer == 0 && shape_fam.region == 0 {
-        // The family layer is the whole domain
-        t = random_translation(
-            generator.clone(),
-            (-global.domainSize[0] - global.domainSizeIncrease[0]) / 2.,
-            (global.domainSize[0] + global.domainSizeIncrease[0]) / 2.,
-            (-global.domainSize[1] - global.domainSizeIncrease[1]) / 2.,
-            (global.domainSize[1] + global.domainSizeIncrease[1]) / 2.,
-            (-global.domainSize[2] - global.domainSizeIncrease[2]) / 2.,
-            (global.domainSize[2] + global.domainSizeIncrease[2]) / 2.,
-        );
-    } else if shape_fam.layer > 0 && shape_fam.region == 0 {
-        // Family belongs to a certain layer, shapeFam.layer is > zero
-        // Layers start at 1, but the array of layers start at 0, hence
-        // the subtraction by 1
-        // Layer 0 is reservered to be the entire domain
-        let layer_idx = (shape_fam.layer - 1) * 2;
-        // Layers only apply to z coordinates
-        t = random_translation(
-            generator.clone(),
-            (-global.domainSize[0] - global.domainSizeIncrease[0]) / 2.,
-            (global.domainSize[0] + global.domainSizeIncrease[0]) / 2.,
-            (-global.domainSize[1] - global.domainSizeIncrease[1]) / 2.,
-            (global.domainSize[1] + global.domainSizeIncrease[1]) / 2.,
-            global.layers[layer_idx],
-            global.layers[layer_idx + 1],
-        );
-    } else if shape_fam.layer == 0 && shape_fam.region > 0 {
-        let region_idx = (shape_fam.region - 1) * 6;
-        // Layers only apply to z coordinates
-        t = random_translation(
-            generator.clone(),
-            global.regions[region_idx],
-            global.regions[region_idx + 1],
-            global.regions[region_idx + 2],
-            global.regions[region_idx + 3],
-            global.regions[region_idx + 4],
-            global.regions[region_idx + 5],
-        );
-    } else {
-        // t = randomTranslation(generator, -1., 1., -1., 1., -1., 1.);
-        panic!("ERROR!!!\nLayer and Region both defined for this Family.\nExiting Program\n");
-    }
-
-    // Translate - will also set translation vector in poly structure
-    translate(&mut new_poly, t);
-
-    new_poly
+// **************************************************************************
+// *****************  Generate Polygon/Fracture  ****************************
+// Generates a polygon based on a stochastic fracture shape family
+// NOTE: Function does not create bouding box. The bouding box has to be
+//       created after fracture truncation
+// Arg 1: Shape family to generate fracture from
+// Arg 2: Random generator, see std <random> c++ library
+// Arg 3: Distributions class, currently used only for exponential dist.
+// Arg 4: Index of 'shapeFam' (arg 1) in the shapeFamilies array in main()
+// Arg 5: True - Use pre-calculated fracture radii list to pull radii from
+//        False - Generate random radii every time (used in dryRun()
+//                which estimates number of fractures needed when using
+//                p32 option and generates the radii lists)
+// Return: Random polygon/fracture based from 'shapeFam'
+pub fn generate_poly(
+    global: &Input,
+    shape_fam: &mut Shape,
+    generator: Rc<RefCell<Mt19937GenRand64>>,
+    family_index: isize,
+    use_list: bool,
+) -> Poly {
+    let radius = generate_radius(global, shape_fam, generator.clone(), family_index, use_list);
+    generate_poly_with_radius(global, radius, shape_fam, generator, family_index)
 }
 
 // **************************************************************************
@@ -230,17 +135,10 @@ pub fn generate_poly_with_radius(
     // New polygon to build
     let mut new_poly = Poly::default();
     // Initialize normal to {0,0,1}. ( All polys start on x-y plane )
-    new_poly.normal[0] = 0.; //x
-    new_poly.normal[1] = 0.; //y
-    new_poly.normal[2] = 1.; //z
-                             // Assign number of nodes
+    new_poly.normal = Vector3::new(0., 0., 1.);
     new_poly.number_of_nodes = shape_fam.num_points as isize;
     new_poly.vertices = Vec::with_capacity((3 * new_poly.number_of_nodes) as usize); //numPoints*{x,y,z}
-                                                                                     // Assign family number (index of shapeFam array)
     new_poly.family_num = family_index;
-
-    // TODO: Convert any degrees to rad
-    // in readInput() to avoid continuous checking
 
     if shape_fam.shape_family == 1 {
         // If rectangle shape
@@ -259,9 +157,8 @@ pub fn generate_poly_with_radius(
 
     // Initialize beta based on distrubution type: 0 = unifrom on [0,2PI], 1 = constant
     let beta = if !shape_fam.beta_distribution {
-        // Uniform distribution
         let uniform_dist = Uniform::new(0., 2. * std::f64::consts::PI);
-        generator.clone().borrow_mut().sample(uniform_dist)
+        generator.borrow_mut().sample(uniform_dist)
     } else {
         shape_fam.beta
     };
@@ -272,8 +169,8 @@ pub fn generate_poly_with_radius(
     apply_rotation2_d(&mut new_poly, beta);
     // Fisher distribution / get normal vector
     let mut norm = poly_norm_gen(global, shape_fam, generator.clone());
-    let mag = norm.magnitude();
 
+    let mag = norm.magnitude();
     if mag < 1. - global.eps || mag > 1. + global.eps {
         norm = norm.normalize(); //ensure norm is normalized
     }
@@ -282,57 +179,53 @@ pub fn generate_poly_with_radius(
     apply_rotation3_d(&mut new_poly, &norm, global.eps);
 
     // Save newPoly's new normal vector
-    new_poly.normal[0] = norm[0];
-    new_poly.normal[1] = norm[1];
-    new_poly.normal[2] = norm[2];
+    new_poly.normal = norm;
 
-    let t;
-
-    if shape_fam.layer == 0 && shape_fam.region == 0 {
+    let (mins, maxs) = if shape_fam.layer == 0 && shape_fam.region == 0 {
         // The family layer is the whole domain
-        t = random_translation(
-            generator.clone(),
-            (-global.domainSize[0] - global.domainSizeIncrease[0]) / 2.,
-            (global.domainSize[0] + global.domainSizeIncrease[0]) / 2.,
-            (-global.domainSize[1] - global.domainSizeIncrease[1]) / 2.,
-            (global.domainSize[1] + global.domainSizeIncrease[1]) / 2.,
-            (-global.domainSize[2] - global.domainSizeIncrease[2]) / 2.,
-            (global.domainSize[2] + global.domainSizeIncrease[2]) / 2.,
-        );
+        let mins = (-global.domainSize - global.domainSizeIncrease) / 2.;
+        let maxs = (global.domainSize + global.domainSizeIncrease) / 2.;
+        (mins, maxs)
     } else if shape_fam.layer > 0 && shape_fam.region == 0 {
         // Family belongs to a certain layer, shapeFam.layer is > zero
         // Layers start at 1, but the array of layers start at 0, hence
         // the subtraction by 1
         // Layer 0 is reservered to be the entire domain
         let layer_idx = (shape_fam.layer - 1) * 2;
+        let _mins = (-global.domainSize - global.domainSizeIncrease) / 2.;
+        let _maxs = (global.domainSize + global.domainSizeIncrease) / 2.;
         // Layers only apply to z coordinates
-        t = random_translation(
-            generator.clone(),
-            (-global.domainSize[0] - global.domainSizeIncrease[0]) / 2.,
-            (global.domainSize[0] + global.domainSizeIncrease[0]) / 2.,
-            (-global.domainSize[1] - global.domainSizeIncrease[1]) / 2.,
-            (global.domainSize[1] + global.domainSizeIncrease[1]) / 2.,
-            global.layers[layer_idx],
-            global.layers[layer_idx + 1],
-        );
+        let mins = Vector3::new(_mins.x, _mins.y, global.layers[layer_idx]);
+        let maxs = Vector3::new(_maxs.x, _maxs.y, global.layers[layer_idx + 1]);
+        (mins, maxs)
     } else if shape_fam.layer == 0 && shape_fam.region > 0 {
         let region_idx = (shape_fam.region - 1) * 6;
-        // Layers only apply to z coordinates
-        t = random_translation(
-            generator.clone(),
+        let mins = Vector3::new(
             global.regions[region_idx],
-            global.regions[region_idx + 1],
             global.regions[region_idx + 2],
-            global.regions[region_idx + 3],
             global.regions[region_idx + 4],
+        );
+        let maxs = Vector3::new(
+            global.regions[region_idx + 1],
+            global.regions[region_idx + 3],
             global.regions[region_idx + 5],
         );
+        (mins, maxs)
     } else {
         println!("ERROR!!!");
         println!("Layer and Region both defined for this Family.");
         println!("Exiting Program");
         panic!()
-    }
+    };
+    let t = random_translation(
+        generator.clone(),
+        mins.x,
+        maxs.x,
+        mins.y,
+        maxs.y,
+        mins.z,
+        maxs.z,
+    );
 
     // Translate - will also set translation vector in poly structure
     translate(&mut new_poly, t);
