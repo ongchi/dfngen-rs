@@ -81,10 +81,18 @@ pub struct Poly {
     pub intersection_index: Vec<usize>,
 }
 
-#[derive(Default)]
 pub struct RejectedUserFracture {
     pub id: usize,
     pub user_fracture_type: i32,
+}
+
+impl RejectedUserFracture {
+    pub fn new(id: usize, user_fracture_type: i32) -> Self {
+        Self {
+            id,
+            user_fracture_type,
+        }
+    }
 }
 
 // Intersections structure.

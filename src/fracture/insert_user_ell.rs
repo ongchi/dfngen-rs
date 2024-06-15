@@ -13,6 +13,74 @@ use crate::{
     structures::{IntersectionPoints, Poly, RejectedUserFracture, Stats},
 };
 
+fn create_poly(input: &mut Input, idx: usize) -> Poly {
+    let index = idx * 3;
+
+    let mut new_poly = Poly {
+        family_num: -1,
+        // Set number of nodes. Needed for rotations.
+        number_of_nodes: input.uenumPoints[idx] as isize,
+        // Initialize normal to {0,0,1}. need initialized for 3D rotation
+        normal: Vector3::new(0., 0., 1.),
+        translation: Vector3::from_row_slice(&input.uetranslation[index..index + 3]),
+        ..Default::default()
+    };
+
+    new_poly.vertices = Vec::with_capacity(input.uenumPoints[idx] * 3);
+
+    // Generate theta array used to place vertices
+    let mut theta_ary = Vec::new();
+    generate_theta(&mut theta_ary, input.ueaspect[idx], input.uenumPoints[idx]);
+
+    // Initialize vertices on x-y plane
+    initialize_ell_vertices(
+        &mut new_poly,
+        input.ueRadii[idx],
+        input.ueaspect[idx],
+        &theta_ary,
+        input.uenumPoints[idx],
+    );
+
+    // Convert angle to rad if necessary
+    let angle = if input.ueAngleOption {
+        input.ueBeta[idx] * std::f64::consts::PI / 180.
+    } else {
+        input.ueBeta[idx]
+    };
+
+    // Apply 2d rotation matrix, twist around origin
+    // Assumes polygon on x-y plane
+    // Angle must be in rad
+    apply_rotation2_d(&mut new_poly, angle);
+    // Normalize user denined normal vector
+    let normal = Vector3::from_row_slice(&input.uenormal[index..index + 3]).normalize();
+
+    // Rotate vertices to uenormal[index] (new normal)
+    apply_rotation3_d(
+        &mut new_poly,
+        &Vector3::from_row_slice(&input.urnormal[index..index + 3]),
+        input.eps,
+    );
+
+    // Save newPoly's new normal vector
+    new_poly.normal = normal;
+    input.uenormal[index] = normal.x;
+    input.uenormal[index + 1] = normal.y;
+    input.uenormal[index + 2] = normal.z;
+
+    // Translate newPoly to uetranslation
+    translate(
+        &mut new_poly,
+        Vector3::new(
+            input.uetranslation[index],
+            input.uetranslation[index + 1],
+            input.uetranslation[index + 2],
+        ),
+    );
+
+    new_poly
+}
+
 // ***********************************************************************
 // *********************  Insert User Ellipse  ***************************
 // Inserts a user defined ellipse into the domain.
@@ -29,85 +97,24 @@ pub fn insert_user_ell(
     pstats: &mut Stats,
     triple_points: &mut Vec<Point3<f64>>,
 ) {
-    println!("\n{} User Ellipses Defined\n", input.nUserEll);
+    let family_id = -1;
+    let npoly = input.nUserEll;
+    println!("{} User Ellipses Defined", npoly);
 
-    for i in 0..input.nUserEll {
-        let index = i * 3; // Index to start of vertices/nodes
-        let mut new_poly = Poly::default(); // New poly/fracture to be tested
-        let mut rejected_user_fracture = RejectedUserFracture::default();
-        new_poly.family_num = -1; // Using -1 for all user specified ellipses
-        new_poly.vertices = Vec::with_capacity(input.uenumPoints[i] * 3);
-        // Set number of nodes  - needed for rotations
-        new_poly.number_of_nodes = input.uenumPoints[i] as isize;
-        // Initialize translation data
-        new_poly.translation[0] = input.uetranslation[index];
-        new_poly.translation[1] = input.uetranslation[index + 1];
-        new_poly.translation[2] = input.uetranslation[index + 2];
-        // Generate theta array used to place vertices
-        let mut theta_ary = Vec::new();
-        generate_theta(&mut theta_ary, input.ueaspect[i], input.uenumPoints[i]);
-        // Initialize vertices on x-y plane
-        initialize_ell_vertices(
-            &mut new_poly,
-            input.ueRadii[i],
-            input.ueaspect[i],
-            &theta_ary,
-            input.uenumPoints[i],
-        );
-        // Convert angle to rad if necessary
-        let angle = if input.ueAngleOption {
-            input.ueBeta[i] * std::f64::consts::PI / 180.
-        } else {
-            input.ueBeta[i]
-        };
-
-        // Initialize normal to {0,0,1}. need initialized for 3D rotation
-        new_poly.normal[0] = 0.; //x
-        new_poly.normal[1] = 0.; //y
-        new_poly.normal[2] = 1.; //z
-                                 // Apply 2d rotation matrix, twist around origin
-                                 // Assumes polygon on x-y plane
-                                 // Angle must be in rad
-        apply_rotation2_d(&mut new_poly, angle);
-        // Normalize user denined normal vector
-        let tmp_uenormal =
-            Vector3::from_iterator(input.uenormal[index..index + 3].iter().cloned()).normalize();
-        input.uenormal[index] = tmp_uenormal.x;
-        input.uenormal[index + 1] = tmp_uenormal.y;
-        input.uenormal[index + 2] = tmp_uenormal.z;
-
-        // Rotate vertices to uenormal[index] (new normal)
-        apply_rotation3_d(
-            &mut new_poly,
-            &Vector3::from_iterator(input.urnormal[index..index + 3].iter().cloned()),
-            input.eps,
-        );
-        // Save newPoly's new normal vector
-        new_poly.normal[0] = input.uenormal[index];
-        new_poly.normal[1] = input.uenormal[index + 1];
-        new_poly.normal[2] = input.uenormal[index + 2];
-        // Translate newPoly to uetranslation
-        translate(
-            &mut new_poly,
-            Vector3::new(
-                input.uetranslation[index],
-                input.uetranslation[index + 1],
-                input.uetranslation[index + 2],
-            ),
-        );
+    for i in 0..npoly {
+        let mut new_poly = create_poly(input, i);
 
         if domain_truncation(input, &mut new_poly, &input.domainSize) {
             // Poly completely outside domain
-            new_poly.vertices.clear();
             pstats.rejection_reasons.outside += 1;
             pstats.rejected_poly_count += 1;
             println!(
                 "\nUser Ellipse {} was rejected for being outside the defined domain.",
                 i + 1
             );
-            rejected_user_fracture.id = i + 1;
-            rejected_user_fracture.user_fracture_type = -1;
-            pstats.rejected_user_fracture.push(rejected_user_fracture);
+            pstats
+                .rejected_user_fracture
+                .push(RejectedUserFracture::new(i + 1, family_id));
             continue; // Go to next poly (go to next iteration of for loop)
         }
 
@@ -137,21 +144,13 @@ pub fn insert_user_ell(
             println!("User Defined Elliptical Fracture {} Accepted", i + 1);
             accepted_poly.push(new_poly); // Save newPoly to accepted polys list
         } else {
-            new_poly.vertices.clear(); // Need to delete manually, created with new[]
             pstats.rejects_per_attempt[pstats.accepted_poly_count] += 1;
             pstats.rejected_poly_count += 1;
             println!("\nRejected User Defined Elliptical Fracture {}", i + 1);
             print_reject_reason(reject_code, &new_poly);
-            rejected_user_fracture.id = i + 1;
-            rejected_user_fracture.user_fracture_type = -1;
-            pstats.rejected_user_fracture.push(rejected_user_fracture);
-
-            #[cfg(feature = "testing")]
-            {
-                panic!()
-            }
+            pstats
+                .rejected_user_fracture
+                .push(RejectedUserFracture::new(i + 1, family_id));
         }
-
-        println!("\n");
     }
 }

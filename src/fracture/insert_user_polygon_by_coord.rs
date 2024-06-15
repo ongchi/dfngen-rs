@@ -23,15 +23,70 @@ use crate::{
 // Arg 2: OUTPUT. Pointer to array to store the coordinates
 // Arg 3: Number of ellipses
 // Arg 4: Number of points per ellipse
-fn get_poly_coords(stream: &mut File, out_ary: &mut [f64], n_vertices: usize) {
-    for i in 0..n_vertices {
-        let x = i * 3;
+fn get_poly_coords(stream: &mut File, n_vertices: usize) -> Vec<f64> {
+    let mut vertices = Vec::with_capacity(n_vertices * 3);
+
+    for _ in 0..n_vertices {
         let mut tmp = [0., 0., 0.];
         tmp.read_from_text(stream);
-        out_ary[x] = tmp[0];
-        out_ary[x + 1] = tmp[1];
-        out_ary[x + 2] = tmp[2];
+        vertices.extend(tmp);
     }
+
+    vertices
+}
+
+fn create_poly(file: &mut File) -> Poly {
+    let mut n_poly_nodes: usize = 0;
+    n_poly_nodes.read_from_text(file);
+
+    let mut new_poly = Poly {
+        family_num: -3,
+        // Set number of nodes. Needed for rotations.
+        number_of_nodes: n_poly_nodes as isize,
+        vertices: get_poly_coords(file, n_poly_nodes),
+        ..Default::default()
+    };
+
+    // Get a normal vector
+    // Vector from fist node to node across middle of polygon
+    let mut pt_idx_12 = 3 * (n_poly_nodes / 2);
+
+    if n_poly_nodes == 3 {
+        pt_idx_12 = 8;
+    }
+
+    let p1 = Point3::from_slice(&new_poly.vertices[0..3]);
+    let p2 = Point3::from_slice(&new_poly.vertices[3..6]);
+    let p_12 = Point3::from_slice(&new_poly.vertices[pt_idx_12..pt_idx_12 + 3]);
+
+    let v1 = p_12 - p1;
+    let v2 = p2 - p1;
+
+    new_poly.normal = v2.cross(&v1).normalize();
+    // Estimate radius
+    // across middle if even number of nodes
+    // across middle close to perpendicular to xradius magnitude calculation
+    new_poly.xradius = 0.5 * v2.magnitude();
+
+    // Get idx for node 1/4 around polygon
+    let pt_idx_14 = 3 * (n_poly_nodes / 4);
+    // Get idx for node 3/4 around polygon
+    let pt_idx_34 = 3 * (3 * n_poly_nodes / 4);
+
+    let p_14 = Point3::from_slice(&new_poly.vertices[pt_idx_14..pt_idx_14 + 3]);
+    let p_34 = Point3::from_slice(&new_poly.vertices[pt_idx_34..pt_idx_34 + 3]);
+
+    new_poly.yradius = 0.5 * distance(&p_14, &p_34);
+    new_poly.aspect_ratio = new_poly.yradius / new_poly.xradius;
+
+    // Estimate translation (middle of poly)
+    // Use midpoint between 1st and and half way around polygon
+    // Note: For polygons defined by coordinates, the coordinates
+    // themselves provide the translation. We need to estimate the center
+    // of the polygon and init. the translation array
+    new_poly.translation = 0.5 * Vector3::new(p1.x + p_12.x, p1.y + p_12.y, p1.z + p_12.z);
+
+    new_poly
 }
 
 // /****************************************************************/
@@ -51,88 +106,28 @@ pub fn insert_user_polygon_by_coord(
     pstats: &mut Stats,
     triple_points: &mut Vec<Point3<f64>>,
 ) {
-    let mut n_poly_nodes: usize = 0;
-    println!(
-        "Domain Size {} {} {}",
-        input.domainSize[0], input.domainSize[1], input.domainSize[2]
-    );
+    let family_id = -3;
+
     println!("Reading User Defined Polygons from {}", input.polygonFile);
     let mut file = File::open(&input.polygonFile).unwrap();
+
     search_var(&mut file, "nPolygons:");
-    let mut n_polygon_by_coord: usize = 0;
-    n_polygon_by_coord.read_from_text(&mut file);
-    println!("There are {} polygons", n_polygon_by_coord);
-    accepted_poly.reserve(n_polygon_by_coord);
+    let mut npoly: usize = 0;
+    npoly.read_from_text(&mut file);
 
-    for i in 0..n_polygon_by_coord {
-        let mut new_poly = Poly::default();
-        let mut rejected_user_fracture = RejectedUserFracture::default();
-        new_poly.family_num = -3;
-        n_poly_nodes.read_from_text(&mut file);
-        new_poly.number_of_nodes = n_poly_nodes as isize;
-        new_poly.vertices.reserve(3 * n_poly_nodes); // 3 * number of nodes
-        get_poly_coords(&mut file, &mut new_poly.vertices, n_poly_nodes);
+    println!("There are {} polygons", npoly);
 
-        // Get a normal vector
-        // Vector from fist node to node across middle of polygon
-        let mut mid_pt_idx = 3 * (n_poly_nodes / 2);
-
-        if n_poly_nodes == 3 {
-            mid_pt_idx = 8;
-        }
-
-        let v1 = Vector3::new(
-            new_poly.vertices[mid_pt_idx] - new_poly.vertices[0],
-            new_poly.vertices[mid_pt_idx + 1] - new_poly.vertices[1],
-            new_poly.vertices[mid_pt_idx + 2] - new_poly.vertices[2],
-        );
-        // Vector from first node to 2nd node
-        let v2 = Vector3::new(
-            new_poly.vertices[3] - new_poly.vertices[0],
-            new_poly.vertices[4] - new_poly.vertices[1],
-            new_poly.vertices[5] - new_poly.vertices[2],
-        );
-        let x_prod1 = v2.cross(&v1).normalize();
-        // Set normal vector
-        new_poly.normal[0] = x_prod1.x;
-        new_poly.normal[1] = x_prod1.y;
-        new_poly.normal[2] = x_prod1.z;
-        // Estimate radius
-        new_poly.xradius = 0.5 * v2.magnitude(); // across middle if even number of nodes
-                                                 // across middle close to perpendicular to xradius magnitude calculation
-        let temp_idx1 = 3 * (n_poly_nodes / 4); // Get idx for node 1/4 around polygon
-        let temp_idx2 = 3 * (3 * n_poly_nodes / 4); // Get idx for node 1/4 around polygon
-        new_poly.yradius = 0.5
-            * distance(
-                &Point3::from_slice(&new_poly.vertices[temp_idx1..temp_idx1 + 3]),
-                &Point3::from_slice(&new_poly.vertices[temp_idx2..temp_idx2 + 3]),
-            );
-        new_poly.aspect_ratio = new_poly.yradius / new_poly.xradius;
-        // Estimate translation (middle of poly)
-        // Use midpoint between 1st and and half way around polygon
-        // Note: For polygons defined by coordinates, the coordinates
-        // themselves provide the translation. We need to estimate the center
-        // of the polygon and init. the translation array
-        new_poly.translation[0] = 0.5 * (new_poly.vertices[0] + new_poly.vertices[mid_pt_idx]);
-        new_poly.translation[1] = 0.5 * (new_poly.vertices[1] + new_poly.vertices[mid_pt_idx + 1]);
-        new_poly.translation[2] = 0.5 * (new_poly.vertices[2] + new_poly.vertices[mid_pt_idx + 2]);
+    for i in 0..npoly {
+        let mut new_poly = create_poly(&mut file);
 
         if domain_truncation(input, &mut new_poly, &input.domainSize) {
             // Poly completely outside domain
             pstats.rejection_reasons.outside += 1;
             pstats.rejected_poly_count += 1;
             println!("User Polygon (defined by coordinates) {} was rejected for being outside the defined domain.", i + 1);
-            let mut idx;
-
-            for j in 0..n_poly_nodes {
-                idx = j * 3;
-                println!("{:?}", &new_poly.vertices[idx..idx + 3]);
-            }
-
-            rejected_user_fracture.id = i + 1;
-            rejected_user_fracture.user_fracture_type = -3;
-            pstats.rejected_user_fracture.push(rejected_user_fracture);
-            new_poly.vertices.clear();
+            pstats
+                .rejected_user_fracture
+                .push(RejectedUserFracture::new(i + 1, family_id));
             continue; // Go to next poly (go to next iteration of for loop)
         }
 
@@ -159,9 +154,7 @@ pub fn insert_user_polygon_by_coord(
                 i + 1
             );
             accepted_poly.push(new_poly); // Save newPoly to accepted polys list
-                                          //std::cout << "size of accepted Poly " << acceptedPoly.size() << std::endl;
         } else {
-            new_poly.vertices.clear(); // Need to delete manually, created with new[]
             pstats.rejects_per_attempt[pstats.accepted_poly_count] += 1;
             pstats.rejected_poly_count += 1;
             println!(
@@ -169,9 +162,9 @@ pub fn insert_user_polygon_by_coord(
                 i + 1
             );
             print_reject_reason(reject_code, &new_poly);
-            rejected_user_fracture.id = i + 1;
-            rejected_user_fracture.user_fracture_type = -3;
-            pstats.rejected_user_fracture.push(rejected_user_fracture);
+            pstats
+                .rejected_user_fracture
+                .push(RejectedUserFracture::new(i + 1, family_id));
         }
     }
 }

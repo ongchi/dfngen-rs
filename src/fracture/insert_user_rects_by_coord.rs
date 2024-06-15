@@ -10,6 +10,76 @@ use crate::{
     structures::{IntersectionPoints, Poly, RejectedUserFracture, Stats},
 };
 
+fn create_poly(input: &mut Input, idx: usize) -> Poly {
+    let mut new_poly = Poly {
+        family_num: -2,
+        // Set number of nodes. Needed for rotations.
+        number_of_nodes: 4,
+        ..Default::default()
+    };
+
+    new_poly.vertices.reserve(12); // 4 * {x,y,z}
+    let poly_vert_idx = idx * 12; // Each polygon has 4 vertices (12 elements, 4*{x,y,z}))
+
+    // Initialize vertices
+    for j in 0..4 {
+        let v_idx = j * 3;
+        new_poly.vertices[v_idx] = input.userRectCoordVertices[poly_vert_idx + v_idx];
+        new_poly.vertices[v_idx + 1] = input.userRectCoordVertices[poly_vert_idx + 1 + v_idx];
+        new_poly.vertices[v_idx + 2] = input.userRectCoordVertices[poly_vert_idx + 2 + v_idx];
+    }
+
+    // Check that rectangle lays one a single plane:
+    // let xProd1 = cross Product vector (1st node to 2nd node) with vector(1st node to 3rd node)
+    // and xProd2 = cross product vector (1st node to 3th node) with vector (1st node to 4th node)
+    // Then, cross product xProd1 and xProd2, if this produces zero vector, all coords are on the same plane
+    // v1 is vector from first vertice to third vertice
+    // Vector from fist node to 3rd node (vector through middle of sqare)
+    let p1 = Point3::from_slice(&new_poly.vertices[0..3]);
+    let p2 = Point3::from_slice(&new_poly.vertices[3..6]);
+    let p3 = Point3::from_slice(&new_poly.vertices[6..9]);
+    let p4 = Point3::from_slice(&new_poly.vertices[9..12]);
+
+    let v1 = p3 - p1;
+    let v2 = p2 - p1;
+    let v3 = p4 - p1;
+    let x_prod1 = v2.cross(&v1).normalize();
+    // let x_prod2 = crossProduct(&v3, &v1);
+    // let x_prod3 = crossProduct(&x_prod1, &x_prod2);
+    //will be zero vector if all vertices are on the same plane
+    //TODO: Error check below is too sensitive. Adjust it.
+    // Error check for points not on the same plane
+    //        if (std::abs(magnitude(xProd3[0],xProd3[1],xProd3[2])) > eps) { //points do not lay on the same plane. reject poly else meshing will fail
+    // if (!(std::abs(xProd3[0]) < eps && std::abs(xProd3[1]) < eps && std::abs(xProd3[2]) < eps)) {
+    //     delete[] newPoly.vertices;
+    //     pstats.rejectedPolyCount++;
+    //     std::cout << "\nUser Rectangle (defined by coordinates) " << i+1 << " was rejected. The defined vertices are not co-planar.\n";
+    //     std::cout << "Please check user defined coordinates for rectanle " << i+1 << " in input file\n";
+    //     delete[] xProd1;
+    //     delete[] xProd2;
+    //     delete[] xProd3;
+    //     continue; //go to next poly
+    // }
+
+    // Set normal vector
+    new_poly.normal = x_prod1;
+
+    // Set radius (x and y radii might be switched based on order of users coordinates)
+    new_poly.xradius = 0.5 * v2.magnitude();
+    new_poly.yradius = 0.5 * v3.magnitude();
+    new_poly.aspect_ratio = new_poly.yradius / new_poly.xradius;
+
+    // Estimate translation
+    // Use midpoint between 1st and 3rd vertices
+    // Note: For polygons defined by coordinates, the coordinates
+    // themselves provide the translation. We are just filling the
+    // translation array for completeness even though the translation
+    // array might not be used
+    new_poly.translation = 0.5 * Vector3::new(p1.x + p3.x, p1.y + p3.y, p1.z + p3.z);
+
+    new_poly
+}
+
 // *************************************************************
 // ***********  Insert User Rects By Coord  ********************
 //     Inserts user rectangles using defined coordinates
@@ -27,96 +97,21 @@ pub fn insert_user_rects_by_coord(
     pstats: &mut Stats,
     triple_points: &mut Vec<Point3<f64>>,
 ) {
-    println!(
-        "{} User Rectangles By Coordinates Defined",
-        input.nRectByCoord
-    );
+    let family_id = -2;
+    let npoly = input.nRectByCoord;
+    println!("{} User Rectangles By Coordinates Defined", npoly);
 
-    for i in 0..input.nRectByCoord {
-        let mut new_poly = Poly::default();
-        let mut rejected_user_fracture = RejectedUserFracture::default();
-        new_poly.family_num = -2; // Using -2 for all user specified rectangles
-        new_poly.vertices.reserve(12); // 4 * {x,y,z}
-                                       // Set number of nodes  - needed for rotations
-        new_poly.number_of_nodes = 4;
-        let poly_vert_idx = i * 12; // Each polygon has 4 vertices (12 elements, 4*{x,y,z}))
-
-        // Initialize vertices
-        for j in 0..4 {
-            let v_idx = j * 3;
-            new_poly.vertices[v_idx] = input.userRectCoordVertices[poly_vert_idx + v_idx];
-            new_poly.vertices[v_idx + 1] = input.userRectCoordVertices[poly_vert_idx + 1 + v_idx];
-            new_poly.vertices[v_idx + 2] = input.userRectCoordVertices[poly_vert_idx + 2 + v_idx];
-        }
-
-        // Check that rectangle lays one a single plane:
-        // let xProd1 = cross Product vector (1st node to 2nd node) with vector(1st node to 3rd node)
-        // and xProd2 = cross product vector (1st node to 3th node) with vector (1st node to 4th node)
-        // Then, cross product xProd1 and xProd2, if this produces zero vector, all coords are on the same plane
-        // v1 is vector from first vertice to third vertice
-        // Vector from fist node to 3rd node (vector through middle of sqare)
-        let v1 = Vector3::new(
-            new_poly.vertices[6] - new_poly.vertices[0],
-            new_poly.vertices[7] - new_poly.vertices[1],
-            new_poly.vertices[8] - new_poly.vertices[2],
-        );
-        // Vector from first node to 2nd node
-        let v2 = Vector3::new(
-            new_poly.vertices[3] - new_poly.vertices[0],
-            new_poly.vertices[4] - new_poly.vertices[1],
-            new_poly.vertices[5] - new_poly.vertices[2],
-        );
-        let x_prod1 = v2.cross(&v1).normalize();
-        // Vector from fist node to 4th node
-        let v3 = Vector3::new(
-            new_poly.vertices[9] - new_poly.vertices[0],
-            new_poly.vertices[10] - new_poly.vertices[1],
-            new_poly.vertices[11] - new_poly.vertices[2],
-        );
-        // let x_prod2 = crossProduct(&v3, &v1);
-        // let x_prod3 = crossProduct(&x_prod1, &x_prod2);
-        //will be zero vector if all vertices are on the same plane
-        //TODO: Error check below is too sensitive. Adjust it.
-        // Error check for points not on the same plane
-        //        if (std::abs(magnitude(xProd3[0],xProd3[1],xProd3[2])) > eps) { //points do not lay on the same plane. reject poly else meshing will fail
-        // if (!(std::abs(xProd3[0]) < eps && std::abs(xProd3[1]) < eps && std::abs(xProd3[2]) < eps)) {
-        //     delete[] newPoly.vertices;
-        //     pstats.rejectedPolyCount++;
-        //     std::cout << "\nUser Rectangle (defined by coordinates) " << i+1 << " was rejected. The defined vertices are not co-planar.\n";
-        //     std::cout << "Please check user defined coordinates for rectanle " << i+1 << " in input file\n";
-        //     delete[] xProd1;
-        //     delete[] xProd2;
-        //     delete[] xProd3;
-        //     continue; //go to next poly
-        // }
-
-        // Set normal vector
-        new_poly.normal[0] = x_prod1.x;
-        new_poly.normal[1] = x_prod1.y;
-        new_poly.normal[2] = x_prod1.z;
-        // Set radius (x and y radii might be switched based on order of users coordinates)
-        new_poly.xradius = 0.5 * v2.magnitude();
-        new_poly.yradius = 0.5 * v3.magnitude();
-        new_poly.aspect_ratio = new_poly.yradius / new_poly.xradius;
-        // Estimate translation
-        // Use midpoint between 1st and 3rd vertices
-        // Note: For polygons defined by coordinates, the coordinates
-        // themselves provide the translation. We are just filling the
-        // translation array for completeness even though the translation
-        // array might not be used
-        new_poly.translation[0] = 0.5 * (new_poly.vertices[0] + new_poly.vertices[6]);
-        new_poly.translation[1] = 0.5 * (new_poly.vertices[1] + new_poly.vertices[7]);
-        new_poly.translation[2] = 0.5 * (new_poly.vertices[2] + new_poly.vertices[8]);
+    for i in 0..npoly {
+        let mut new_poly = create_poly(input, i);
 
         if domain_truncation(input, &mut new_poly, &input.domainSize) {
             // Poly completely outside domain
-            new_poly.vertices.clear();
             pstats.rejection_reasons.outside += 1;
             pstats.rejected_poly_count += 1;
             println!("User Rectangle (defined by coordinates) {} was rejected for being outside the defined domain.", i + 1);
-            rejected_user_fracture.id = i + 1;
-            rejected_user_fracture.user_fracture_type = -2;
-            pstats.rejected_user_fracture.push(rejected_user_fracture);
+            pstats
+                .rejected_user_fracture
+                .push(RejectedUserFracture::new(i + 1, family_id));
             continue; // Go to next poly (go to next iteration of for loop)
         }
 
@@ -149,7 +144,6 @@ pub fn insert_user_rects_by_coord(
             );
             accepted_poly.push(new_poly); // Save newPoly to accepted polys list
         } else {
-            new_poly.vertices.clear(); // Need to delete manually, created with new[]
             pstats.rejects_per_attempt[pstats.accepted_poly_count] += 1;
             pstats.rejected_poly_count += 1;
             println!(
@@ -157,11 +151,11 @@ pub fn insert_user_rects_by_coord(
                 i + 1
             );
             print_reject_reason(reject_code, &new_poly);
-            rejected_user_fracture.id = i + 1;
-            rejected_user_fracture.user_fracture_type = -2;
-            pstats.rejected_user_fracture.push(rejected_user_fracture);
+            pstats
+                .rejected_user_fracture
+                .push(RejectedUserFracture::new(i + 1, family_id));
         }
-    } // End loop
+    }
 
     input.userRectCoordVertices.clear();
 }

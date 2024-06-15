@@ -268,7 +268,6 @@ pub fn dry_run(
 
             // Test if newPoly has reached its limit of insertion attempts
             if reject_counter >= input.rejectsPerFracture {
-                new_poly.vertices.clear(); // Created with new, need to manually deallocate
                 reject = true;
                 break; // Reject poly, generate new polygon
             } else {

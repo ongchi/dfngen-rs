@@ -12,6 +12,59 @@ use crate::{
     structures::{IntersectionPoints, Poly, RejectedUserFracture, Stats},
 };
 
+fn create_poly(input: &mut Input, idx: usize) -> Poly {
+    let mut new_poly = Poly {
+        family_num: -2,
+        // Set number of nodes. Needed for rotations.
+        number_of_nodes: 4,
+        // Initialize normal to {0,0,1}. need initialized for 3D rotation
+        normal: Vector3::new(0., 0., 1.),
+        ..Default::default()
+    };
+
+    new_poly.vertices.reserve(12); // 4*{x,y,z}
+
+    // Index to start of vertices/nodes
+    let index = idx * 3;
+
+    // initializeRectVertices() sets newpoly.xradius, newpoly.yradius, newpoly.aperture
+    initialize_rect_vertices(&mut new_poly, input.urRadii[idx], input.uraspect[idx]);
+
+    // Convert angle to rad if necessary
+    let angle = if input.urAngleOption {
+        input.urBeta[idx] * std::f64::consts::PI / 180.
+    } else {
+        input.urBeta[idx]
+    };
+
+    // Apply 2d rotation matrix, twist around origin
+    // Assumes polygon on x-y plane
+    // Angle must be in rad
+    apply_rotation2_d(&mut new_poly, angle);
+
+    // Rotate vertices to urnormal[index] (new normal)
+    let normal = Vector3::from_row_slice(&input.urnormal[index..index + 3]).normalize();
+    apply_rotation3_d(&mut new_poly, &normal, input.eps);
+
+    // Update normal vector
+    new_poly.normal = normal;
+    input.urnormal[index] = normal.x;
+    input.urnormal[index + 1] = normal.y;
+    input.urnormal[index + 2] = normal.z;
+
+    // Translate newPoly to urtranslation
+    translate(
+        &mut new_poly,
+        Vector3::new(
+            input.urtranslation[index],
+            input.urtranslation[index + 1],
+            input.urtranslation[index + 2],
+        ),
+    );
+
+    new_poly
+}
+
 // ***********************************************************************
 // ********************  Insert User Rectangles  *************************
 //     Inserts a user defined rectangle into the domain
@@ -28,72 +81,24 @@ pub fn insert_user_rects(
     pstats: &mut Stats,
     triple_points: &mut Vec<Point3<f64>>,
 ) {
-    println!("{} User Rectangles Defined", input.nUserRect);
+    let npoly = input.nUserRect;
+    let family_id = -2;
+    println!("{} User Rectangles Defined", npoly);
 
-    for i in 0..input.nUserRect {
-        let mut new_poly = Poly::default();
-        let mut rejected_user_fracture = RejectedUserFracture::default();
-        new_poly.family_num = -2; // Using -2 for all user specified rectangles
-        new_poly.vertices.reserve(12); // 4*{x,y,z}
-                                       // Set number of nodes. Needed for rotations.
-        new_poly.number_of_nodes = 4;
-        let index = i * 3; // Index to start of vertices/nodes
-                           // initializeRectVertices() sets newpoly.xradius, newpoly.yradius, newpoly.aperture
-        initialize_rect_vertices(&mut new_poly, input.urRadii[i], input.uraspect[i]);
-
-        // Convert angle to rad if necessary
-        let angle = if input.urAngleOption {
-            input.urBeta[i] * std::f64::consts::PI / 180.
-        } else {
-            input.urBeta[i]
-        };
-
-        // Initialize normal to {0,0,1}. need initialized for 3D rotation
-        new_poly.normal.x = 0.; //x
-        new_poly.normal.y = 0.; //y
-        new_poly.normal.z = 1.; //z
-                                // Apply 2d rotation matrix, twist around origin
-                                // Assumes polygon on x-y plane
-                                // Angle must be in rad
-        apply_rotation2_d(&mut new_poly, angle);
-        // Rotate into 3D from poly.normal to "urnormal", new normal
-        let tmp =
-            Vector3::from_iterator(input.urnormal[index..index + 3].iter().cloned()).normalize();
-        input.urnormal[index] = tmp.x;
-        input.urnormal[index + 1] = tmp.y;
-        input.urnormal[index + 2] = tmp.z;
-        // Rotate vertices to urnormal[index] (new normal)
-        apply_rotation3_d(
-            &mut new_poly,
-            &Vector3::from_iterator(input.urnormal[index..index + 3].iter().cloned()),
-            input.eps,
-        );
-        // Save newPoly's new normal vector
-        new_poly.normal[0] = input.urnormal[index];
-        new_poly.normal[1] = input.urnormal[index + 1];
-        new_poly.normal[2] = input.urnormal[index + 2];
-        // Translate newPoly to urtranslation
-        translate(
-            &mut new_poly,
-            Vector3::new(
-                input.urtranslation[index],
-                input.urtranslation[index + 1],
-                input.urtranslation[index + 2],
-            ),
-        );
+    for i in 0..npoly {
+        let mut new_poly = create_poly(input, i);
 
         if domain_truncation(input, &mut new_poly, &input.domainSize) {
             //poly completely outside domain
-            new_poly.vertices.clear();
             pstats.rejection_reasons.outside += 1;
             pstats.rejected_poly_count += 1;
             println!(
                 "User Rectangle {} was rejected for being outside the defined domain.",
                 i + 1
             );
-            rejected_user_fracture.id = i + 1;
-            rejected_user_fracture.user_fracture_type = -2;
-            pstats.rejected_user_fracture.push(rejected_user_fracture);
+            pstats
+                .rejected_user_fracture
+                .push(RejectedUserFracture::new(i + 1, family_id));
             continue; // Go to next poly (go to next iteration of for loop)
         }
 
@@ -123,14 +128,13 @@ pub fn insert_user_rects(
             println!("User Defined Rectangular Fracture {} Accepted", i + 1);
             accepted_poly.push(new_poly); // Save newPoly to accepted polys list
         } else {
-            new_poly.vertices.clear(); // Delete manually, created with new[]
             pstats.rejected_poly_count += 1;
             pstats.rejects_per_attempt[pstats.accepted_poly_count] += 1;
             println!("Rejected user defined rectangular fracture {}", i + 1);
             print_reject_reason(reject_code, &new_poly);
-            rejected_user_fracture.id = i + 1;
-            rejected_user_fracture.user_fracture_type = -2;
-            pstats.rejected_user_fracture.push(rejected_user_fracture);
+            pstats
+                .rejected_user_fracture
+                .push(RejectedUserFracture::new(i + 1, family_id));
         }
     }
 }
