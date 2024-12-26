@@ -60,7 +60,6 @@ fn rotation_matrix(normal_a: &Vector3<f64>, normal_b: &Vector3<f64>, eps: f64) -
     //***************************************************
     // normalA is current normal
     // nNormalB is target normal
-    // Delete manually with delete[], created with new[]
     let x_prod = normal_a.cross(normal_b);
 
     if !is_parallel(normal_a, normal_b, eps) {
@@ -264,35 +263,15 @@ pub fn create_bounding_box(new_poly: &mut Poly) {
 
     for i in 1..new_poly.number_of_nodes {
         let idx = (i * 3) as usize;
-
-        // idx = x
-        if max_x < new_poly.vertices[idx] {
-            max_x = new_poly.vertices[idx];
-        } else if min_x > new_poly.vertices[idx] {
-            min_x = new_poly.vertices[idx];
-        }
-
-        // idx+1 = y
-        if max_y < new_poly.vertices[idx + 1] {
-            max_y = new_poly.vertices[idx + 1];
-        } else if min_y > new_poly.vertices[idx + 1] {
-            min_y = new_poly.vertices[idx + 1];
-        }
-
-        // idx+2 = z
-        if max_z < new_poly.vertices[idx + 2] {
-            max_z = new_poly.vertices[idx + 2];
-        } else if min_z > new_poly.vertices[idx + 2] {
-            min_z = new_poly.vertices[idx + 2];
-        }
+        max_x = f64::max(max_x, new_poly.vertices[idx]);
+        min_x = f64::min(min_x, new_poly.vertices[idx]);
+        max_y = f64::max(max_y, new_poly.vertices[idx + 1]);
+        min_y = f64::min(min_y, new_poly.vertices[idx + 1]);
+        max_z = f64::max(max_z, new_poly.vertices[idx + 2]);
+        min_z = f64::min(min_z, new_poly.vertices[idx + 2]);
     }
 
-    new_poly.bounding_box[0] = min_x;
-    new_poly.bounding_box[1] = max_x;
-    new_poly.bounding_box[2] = min_y;
-    new_poly.bounding_box[3] = max_y;
-    new_poly.bounding_box[4] = min_z;
-    new_poly.bounding_box[5] = max_z;
+    new_poly.bounding_box = [min_x, max_x, min_y, max_y, min_z, max_z];
 }
 
 // *********************** Check Bounding Box ***************************
@@ -1037,7 +1016,7 @@ fn point_to_line_seg(point: &Point3<f64>, line: &[Point3<f64>; 2], eps: f64) -> 
     let p_l1 = point - line[0];
     let l1l2 = line[1] - line[0];
     // Find parameterization for line projection on [0, 1]
-    let t = f64::max(0.0, f64::min(1.0, p_l1.dot(&l1l2) / sqr_line_len));
+    let t = (p_l1.dot(&l1l2) / sqr_line_len).clamp(0.0, 1.0);
 
     let t = Translation3::from(l1l2.scale(t));
     let projection = t.transform_point(&line[0]);

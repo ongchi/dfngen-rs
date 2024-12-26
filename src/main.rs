@@ -158,16 +158,7 @@ fn main() {
         pstats.rejects_per_attempt.push(0);
     }
 
-    // *********** SETUP HOT KEY *************
-    // let stdout = Term::buffered_stdout();
     let key = '\0';
-    #[cfg(feature = "testing")]
-    {
-        // Set custom terminal settings for hotkey functionality
-        set_conio_terminal_mode();
-        atexit(reset_terminal_mode);
-    }
-    // *********  END SETUP HOT KEY **********
 
     // ********************* User Defined Shapes Insertion ************************
     // User Polygons are always inserted first
@@ -403,11 +394,6 @@ fn main() {
                     &mut triple_points,
                 );
 
-                #[cfg(feature = "testing")]
-                if (reject_code != 0) {
-                    return 1;
-                }
-
                 // IF POLY ACCEPTED:
                 if reject_code == 0 {
                     // Intersections are ok
@@ -557,9 +543,6 @@ fn main() {
     // To get the correct number we must subtract the close to node count
     // (they were counted in closeToEdge AND closeToNode)
     pstats.rejection_reasons.close_to_edge -= pstats.rejection_reasons.close_to_node;
-
-    #[cfg(feature = "testing")]
-    reset_terminal_mode();
 
     // // Assign apertures and permiability to accepted polygons
     // for (unsigned int i = 0; i < acceptedPoly.size(); i++) {
