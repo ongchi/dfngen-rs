@@ -314,7 +314,7 @@ fn main() {
             else {
                 // P32 Option
                 family_index = index_from_prob_and_p32_status(
-                    &mut input,
+                    &mut input.p32Status,
                     &cdf,
                     generator.clone().borrow_mut().sample(uniform_dist),
                     total_families,

@@ -1,6 +1,5 @@
 use parry3d_f64::na::Vector3;
 
-use crate::io::input::Input;
 use crate::structures::Poly;
 
 // Used for ORing arrays of bool for boundary face codes
@@ -172,7 +171,7 @@ pub fn index_from_prob(cdf: &[f64], roll: f64) -> usize {
 // Return: Index of chosen family based on its family probability, and p32Status
 //         (avoids inserting a fracture from a family which has already met it's fracture intensity requrement) */
 pub fn index_from_prob_and_p32_status(
-    input: &mut Input,
+    p32_status: &mut [bool],
     cdf: &[f64],
     roll: f64,
     fam_size: usize,
@@ -189,14 +188,14 @@ pub fn index_from_prob_and_p32_status(
     // this family will be used to create the next polygon
     let mut count = 0; // Count of families encountered with p32Status = 0
 
-    for i in 0..fam_size {
-        input.p32Status[i] = false;
+    for p32 in p32_status.iter_mut() {
+        *p32 = false;
     }
 
-    for i in 0..fam_size {
-        if cdf_idx == &count && !input.p32Status[i] {
+    for (i, p32) in p32_status.iter().enumerate() {
+        if cdf_idx == &count {
             return i; // Returns family index we need to build poly with.
-        } else if !input.p32Status[i] {
+        } else if !p32 {
             count += 1; // Count number of 0's ( number of families not having met their p32 req. )
         }
     }
