@@ -12,8 +12,7 @@ use crate::{
     },
     io::input::Input,
     math_functions::{
-        adjust_cdf_and_fam_prob, cdf_idx_from_fam_num, create_cdf, get_area,
-        index_from_prob_and_p32_status,
+        adjust_cdf_and_fam_prob, create_cdf, get_area, index_from_prob_and_p32_status,
     },
     structures::Shape,
 };
@@ -246,7 +245,13 @@ pub fn dry_run(
             if (force_large_fract_count < shape_families.len()) && input.forceLargeFractures {
                 let radius = get_largest_fracture_radius(&shape_families[force_large_fract_count]);
                 family_index = force_large_fract_count;
-                cdf_idx = cdf_idx_from_fam_num(&input.p32Status, force_large_fract_count);
+
+                // Choose CDF randomly by family
+                cdf_idx = (0..force_large_fract_count)
+                    .filter(|i| !input.p32Status[*i])
+                    .count()
+                    - 1;
+
                 force_large_fract_count += 1;
                 let boundary = poly_boundary(
                     &input.domainSize,

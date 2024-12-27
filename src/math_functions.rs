@@ -206,25 +206,6 @@ pub fn index_from_prob_and_p32_status(
     fam_size - 1
 }
 
-// ******  Choose Family Randomly Based On P32 and CDF  ***********************
-// Given a family number, return its corresponding CDF array index
-// Arg 1: CDF array
-// Arg 2: p32Status array
-// Arg 3: Family index of family whos CDF index to return
-// Return: Index of CDF which belongs to shapeFamily[famIdx] */
-pub fn cdf_idx_from_fam_num(p32_status: &[bool], fam_idx: usize) -> usize {
-    let mut idx = 0;
-    // Check how many 0's (p32's not complete) before the given family index
-    // This gives the index in the CDF array for the given family
-    for i in (0..fam_idx).rev() {
-        if !p32_status[i] {
-            idx += 1;
-        }
-    }
-
-    idx - 1
-}
-
 // ************************  Create CDF *****************************
 // Creates CDF from famProb[]
 // Arg 1: Pointer to famProb array (see input file, and readInput())
