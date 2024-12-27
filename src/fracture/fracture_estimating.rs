@@ -8,7 +8,7 @@ use crate::{
     distribution::{TruncExp, TruncLogNormal, TruncPowerLaw},
     fracture::insert_shape::{
         generate_poly, generate_poly_with_radius, get_family_number, get_largest_fracture_radius,
-        re_translate_poly, shape_type,
+        poly_boundary, re_translate_poly, shape_type,
     },
     io::input::Input,
     math_functions::{
@@ -248,10 +248,19 @@ pub fn dry_run(
                 family_index = force_large_fract_count;
                 cdf_idx = cdf_idx_from_fam_num(&input.p32Status, force_large_fract_count);
                 force_large_fract_count += 1;
+                let boundary = poly_boundary(
+                    &input.domainSize,
+                    &input.domainSizeIncrease,
+                    &input.layers,
+                    &input.regions,
+                    &shape_families[force_large_fract_count - 1],
+                );
                 generate_poly_with_radius(
-                    input,
+                    input.orientationOption,
+                    input.eps,
                     radius,
                     &shape_families[force_large_fract_count - 1],
+                    boundary,
                     generator.clone(),
                     family_index as isize,
                 )

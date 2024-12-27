@@ -110,10 +110,26 @@ pub fn generate_poly(
     use_list: bool,
 ) -> Poly {
     let radius = generate_radius(global, shape_fam, generator.clone(), family_index, use_list);
-    generate_poly_with_radius(global, radius, shape_fam, generator, family_index)
+
+    let boundary = poly_boundary(
+        &global.domainSize,
+        &global.domainSizeIncrease,
+        &global.layers,
+        &global.regions,
+        shape_fam,
+    );
+    generate_poly_with_radius(
+        global.orientationOption,
+        global.eps,
+        radius,
+        shape_fam,
+        boundary,
+        generator,
+        family_index,
+    )
 }
 
-fn poly_boundary(
+pub fn poly_boundary(
     domain_size: &Vector3<f64>,
     domain_size_increase: &Vector3<f64>,
     layers: &[f64],
@@ -174,9 +190,11 @@ fn poly_boundary(
 // Arg 5: Index of 'shapeFam' (arg 1) in the shapeFamilies array in main()
 // Return: Polygond with radius passed in arg 1 and shape based on 'shapeFam'
 pub fn generate_poly_with_radius(
-    global: &Input,
+    orientation_option: u8,
+    eps: f64,
     radius: f64,
     shape_fam: &Shape,
+    bbox: Aabb,
     generator: Rc<RefCell<Mt19937GenRand64>>,
     family_index: isize,
 ) -> Poly {
@@ -216,31 +234,19 @@ pub fn generate_poly_with_radius(
     // Angle must be in rad
     apply_rotation2_d(&mut new_poly, beta);
     // Fisher distribution / get normal vector
-    let mut norm = poly_norm_gen(
-        global.orientationOption,
-        global.eps,
-        shape_fam,
-        generator.clone(),
-    );
+    let mut norm = poly_norm_gen(orientation_option, eps, shape_fam, generator.clone());
 
     let mag = norm.magnitude();
-    if mag < 1. - global.eps || mag > 1. + global.eps {
+    if mag < 1. - eps || mag > 1. + eps {
         norm = norm.normalize(); //ensure norm is normalized
     }
 
     // Rotate vertices to norm (new normal)
-    apply_rotation3_d(&mut new_poly, &norm, global.eps);
+    apply_rotation3_d(&mut new_poly, &norm, eps);
 
     // Save newPoly's new normal vector
     new_poly.normal = norm;
 
-    let bbox = poly_boundary(
-        &global.domainSize,
-        &global.domainSizeIncrease,
-        &global.layers,
-        &global.regions,
-        shape_fam,
-    );
     let t = random_translation(
         generator.clone(),
         bbox.mins.x,
