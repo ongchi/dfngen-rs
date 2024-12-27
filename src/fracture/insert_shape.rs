@@ -113,11 +113,17 @@ pub fn generate_poly(
     generate_poly_with_radius(global, radius, shape_fam, generator, family_index)
 }
 
-fn poly_boundary(global: &Input, shape_fam: &Shape) -> Aabb {
+fn poly_boundary(
+    domain_size: &Vector3<f64>,
+    domain_size_increase: &Vector3<f64>,
+    layers: &[f64],
+    regions: &[f64],
+    shape_fam: &Shape,
+) -> Aabb {
     let (mins, maxs) = if shape_fam.layer == 0 && shape_fam.region == 0 {
         // The family layer is the whole domain
-        let mins = (-global.domainSize - global.domainSizeIncrease) / 2.;
-        let maxs = (global.domainSize + global.domainSizeIncrease) / 2.;
+        let mins = (-domain_size - domain_size_increase) / 2.;
+        let maxs = (domain_size + domain_size_increase) / 2.;
         (mins, maxs)
     } else if shape_fam.layer > 0 && shape_fam.region == 0 {
         // Family belongs to a certain layer, shapeFam.layer is > zero
@@ -125,23 +131,23 @@ fn poly_boundary(global: &Input, shape_fam: &Shape) -> Aabb {
         // the subtraction by 1
         // Layer 0 is reservered to be the entire domain
         let layer_idx = (shape_fam.layer - 1) * 2;
-        let _mins = (-global.domainSize - global.domainSizeIncrease) / 2.;
-        let _maxs = (global.domainSize + global.domainSizeIncrease) / 2.;
+        let _mins = (-domain_size - domain_size_increase) / 2.;
+        let _maxs = (domain_size + domain_size_increase) / 2.;
         // Layers only apply to z coordinates
-        let mins = Vector3::new(_mins.x, _mins.y, global.layers[layer_idx]);
-        let maxs = Vector3::new(_maxs.x, _maxs.y, global.layers[layer_idx + 1]);
+        let mins = Vector3::new(_mins.x, _mins.y, layers[layer_idx]);
+        let maxs = Vector3::new(_maxs.x, _maxs.y, layers[layer_idx + 1]);
         (mins, maxs)
     } else if shape_fam.layer == 0 && shape_fam.region > 0 {
         let region_idx = (shape_fam.region - 1) * 6;
         let mins = Vector3::new(
-            global.regions[region_idx],
-            global.regions[region_idx + 2],
-            global.regions[region_idx + 4],
+            regions[region_idx],
+            regions[region_idx + 2],
+            regions[region_idx + 4],
         );
         let maxs = Vector3::new(
-            global.regions[region_idx + 1],
-            global.regions[region_idx + 3],
-            global.regions[region_idx + 5],
+            regions[region_idx + 1],
+            regions[region_idx + 3],
+            regions[region_idx + 5],
         );
         (mins, maxs)
     } else {
@@ -228,7 +234,13 @@ pub fn generate_poly_with_radius(
     // Save newPoly's new normal vector
     new_poly.normal = norm;
 
-    let bbox = poly_boundary(global, shape_fam);
+    let bbox = poly_boundary(
+        &global.domainSize,
+        &global.domainSizeIncrease,
+        &global.layers,
+        &global.regions,
+        shape_fam,
+    );
     let t = random_translation(
         generator.clone(),
         bbox.mins.x,
@@ -327,7 +339,13 @@ pub fn re_translate_poly(
         }
 
         // Translate to new position
-        let bbox = poly_boundary(global, shape_fam);
+        let bbox = poly_boundary(
+            &global.domainSize,
+            &global.domainSizeIncrease,
+            &global.layers,
+            &global.regions,
+            shape_fam,
+        );
         let t = random_translation(
             generator.clone(),
             bbox.mins.x,
@@ -406,7 +424,13 @@ pub fn re_translate_poly(
         new_poly.normal = normal_b;
         // Translate to new position
         // Translate() will also set translation vector in poly structure
-        let bbox = poly_boundary(global, shape_fam);
+        let bbox = poly_boundary(
+            &global.domainSize,
+            &global.domainSizeIncrease,
+            &global.layers,
+            &global.regions,
+            shape_fam,
+        );
         let t = random_translation(
             generator.clone(),
             bbox.mins.x,
