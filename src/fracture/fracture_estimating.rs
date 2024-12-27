@@ -40,14 +40,17 @@ pub fn sort_radii(shape_fam: &mut Vec<Shape>) {
 //     Arg 3: Random number generator, see std <random> library
 //     Arg 4: Reference to Distributions class (used for exponential distribution)
 pub fn generate_radii_lists_n_poly_option(
-    input: &Input,
+    force_large_fractures: bool,
+    n_poly: usize,
+    h: f64,
+    n_fam_ell: usize,
     shape_families: &mut [Shape],
     fam_prob: &[f64],
     generator: Rc<RefCell<Mt19937GenRand64>>,
 ) {
     println!("Building radii lists for nPoly option...");
 
-    if input.forceLargeFractures {
+    if force_large_fractures {
         for shape in shape_families.iter_mut() {
             let radius = get_largest_fracture_radius(shape);
             shape.radii_list.push(radius);
@@ -55,14 +58,15 @@ pub fn generate_radii_lists_n_poly_option(
     }
 
     for i in 0..shape_families.len() {
-        let amount_to_add = if input.forceLargeFractures {
-            (fam_prob[i] * (input.nPoly - shape_families.len()) as f64).ceil() as usize
+        let amount_to_add = if force_large_fractures {
+            (fam_prob[i] * (n_poly - shape_families.len()) as f64).ceil() as usize
         } else {
-            (fam_prob[i] * input.nPoly as f64).ceil() as usize
+            (fam_prob[i] * n_poly as f64).ceil() as usize
         };
 
         add_radii(
-            input,
+            h,
+            n_fam_ell,
             amount_to_add,
             i as isize,
             &mut shape_families[i],
@@ -81,11 +85,15 @@ pub fn generate_radii_lists_n_poly_option(
 //     Arg 1: Index to the family in vecotr<Shape> array the warning is refering to
 //     Arg 2: Shape structure the warning is refering to
 pub fn print_generating_fractures_less_than_hwarning(
-    input: &Input,
+    n_fam_ell: usize,
     fam_index: isize,
     shape_fam: &Shape,
 ) {
-    println!("WARNING: {} Family {} is attepting to populate fracture radii lists, however many fractures are being generated with radii less than 3*h (Minimum radius). Consider adjusting distribution parameters.", shape_type(shape_fam), get_family_number(input, fam_index, shape_fam.shape_family));
+    println!(
+        "WARNING: {} Family {} is attepting to populate fracture radii lists, however many fractures are being generated with radii less than 3*h (Minimum radius). Consider adjusting distribution parameters.",
+        shape_type(shape_fam),
+        get_family_number(n_fam_ell, fam_index, shape_fam.shape_family)
+    );
 }
 
 // **********************************************************************
@@ -105,7 +113,14 @@ pub fn add_radii_to_lists(
 ) {
     for (i, shape) in shape_families.iter_mut().enumerate() {
         let amount_to_add = (shape.radii_list.len() as f64 * percent).ceil() as usize;
-        add_radii(input, amount_to_add, i as isize, shape, generator.clone());
+        add_radii(
+            input.h,
+            input.nFamEll,
+            amount_to_add,
+            i as isize,
+            shape,
+            generator.clone(),
+        );
     }
 }
 
@@ -119,13 +134,14 @@ pub fn add_radii_to_lists(
 //     Arg 4: Random number generator (see std <random> library)
 //     Arg 5: Distributions class (currently only used for exponential dist)
 pub fn add_radii(
-    input: &Input,
+    h: f64,
+    n_fam_ell: usize,
     amount_to_add: usize,
     fam_idx: isize,
     shape_fam: &mut Shape,
     generator: Rc<RefCell<Mt19937GenRand64>>,
 ) {
-    let min_radius = 3. * input.h;
+    let min_radius = 3. * h;
 
     match shape_fam.distribution_type {
         // Lognormal
@@ -138,7 +154,9 @@ pub fn add_radii(
                 match generator.borrow_mut().sample(&log_dist) {
                     Ok(radius) => shape_fam.radii_list.push(radius),
                     Err(_) => {
-                        print_generating_fractures_less_than_hwarning(input, fam_idx, shape_fam);
+                        print_generating_fractures_less_than_hwarning(
+                            n_fam_ell, fam_idx, shape_fam,
+                        );
                         panic!()
                     }
                 };
@@ -174,7 +192,9 @@ pub fn add_radii(
                 match generator.clone().borrow_mut().sample(&exp_dist) {
                     Ok(radius) => shape_fam.radii_list.push(radius),
                     Err(_) => {
-                        print_generating_fractures_less_than_hwarning(input, fam_idx, shape_fam);
+                        print_generating_fractures_less_than_hwarning(
+                            n_fam_ell, fam_idx, shape_fam,
+                        );
                         panic!()
                     }
                 };

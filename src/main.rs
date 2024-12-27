@@ -93,7 +93,10 @@ fn main() {
             // Npoly Option
             // Estimate fractures, generate radii lists for nPoly option
             generate_radii_lists_n_poly_option(
-                &input,
+                input.forceLargeFractures,
+                input.nPoly,
+                input.h,
+                input.nFamEll,
                 &mut shape_families,
                 &input.famProb,
                 generator.clone(),
@@ -125,14 +128,14 @@ fn main() {
                     println!(
                         "{} family {} using constant size",
                         shape_type(shape),
-                        get_family_number(&input, j as isize, shape.shape_family)
+                        get_family_number(input.nFamEll, j as isize, shape.shape_family)
                     );
                 } else {
                     println!(
                         "Estimated {} fractures for {} family {}",
                         shape.radii_list.len(),
                         shape_type(shape),
-                        get_family_number(&input, j as isize, shape.shape_family)
+                        get_family_number(input.nFamEll, j as isize, shape.shape_family)
                     );
                 }
             }
@@ -469,14 +472,22 @@ fn main() {
                                 println!(
                                     "{} family {} Current P32 = {:.8}",
                                     shape_type(shape),
-                                    get_family_number(&input, i as isize, shape.shape_family),
+                                    get_family_number(
+                                        input.nFamEll,
+                                        i as isize,
+                                        shape.shape_family
+                                    ),
                                     shape.current_p32
                                 );
                             } else {
                                 println!(
                                     "{} family {} target P32 = {:.8}, Current P32 = {}",
                                     shape_type(shape),
-                                    get_family_number(&input, i as isize, shape.shape_family),
+                                    get_family_number(
+                                        input.nFamEll,
+                                        i as isize,
+                                        shape.shape_family
+                                    ),
                                     shape.p32_target,
                                     shape.current_p32
                                 );
@@ -1140,7 +1151,7 @@ fn main() {
                     &format!(
                         "{} Family {}\nUsing constant size\n\n",
                         shape_type(shape),
-                        get_family_number(&input, i as isize, shape.shape_family)
+                        get_family_number(input.nFamEll, i as isize, shape.shape_family)
                     ),
                 );
             } else {
@@ -1149,7 +1160,7 @@ fn main() {
                     &format!(
                         "{} Family {}\nEstimated: {}\n",
                         shape_type(shape),
-                        get_family_number(&input, i as isize, shape.shape_family),
+                        get_family_number(input.nFamEll, i as isize, shape.shape_family),
                         pstats.expected_from_fam[i]
                     ),
                 );

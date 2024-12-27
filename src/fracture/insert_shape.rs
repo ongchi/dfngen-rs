@@ -60,7 +60,7 @@ fn generate_radius(
                             Err(_) => panic!(
                                     "distribution for {} family {} has been unable to generate a fracture with radius within set parameters after 1000 consecutive tries.",
                                     shape_type(shape_fam),
-                                    get_family_number(global, family_index, shape_fam.shape_family),
+                                    get_family_number(global.nFamEll, family_index, shape_fam.shape_family),
                                 )
                         }
                     }
@@ -514,10 +514,10 @@ pub fn print_reject_reason(reject_code: i32, new_poly: &Poly) {
 // Arg 2: Rectangle or ellipse family
 //        0 - Ellipse
 //        1 - Rectangle
-pub fn get_family_number(input: &Input, family_index: isize, family_shape: usize) -> isize {
+pub fn get_family_number(n_fam_ell: usize, family_index: isize, family_shape: usize) -> isize {
     if family_shape != 0 {
         // if not ellipse family
-        family_index - input.nFamEll as isize + 1
+        family_index - n_fam_ell as isize + 1
     } else {
         family_index + 1
     }

@@ -1019,7 +1019,7 @@ fn write_shape_fams(input: &Input, shape_families: &[Shape], output: &str) {
             format!(
                 "{} Family: {}\n",
                 shape_type(shape),
-                get_family_number(input, i as isize, shape.shape_family)
+                get_family_number(input.nFamEll, i as isize, shape.shape_family)
             )
             .as_bytes(),
         )
