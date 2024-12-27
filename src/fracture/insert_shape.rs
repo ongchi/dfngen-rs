@@ -16,7 +16,8 @@ use crate::{
 };
 
 fn generate_radius(
-    global: &Input,
+    h: f64,
+    n_fam_ell: usize,
     shape_fam: &mut Shape,
     generator: Rc<RefCell<Mt19937GenRand64>>,
     family_index: isize,
@@ -31,7 +32,7 @@ fn generate_radius(
                 match shape_fam.distribution_type {
                     d_type @ (1 | 3) => {
                         let sampling = if d_type == 1 {
-                            let min_val = f64::max(global.h, shape_fam.log_min);
+                            let min_val = f64::max(h, shape_fam.log_min);
                             let log_distribution = TruncLogNormal::new(
                                 min_val,
                                 shape_fam.log_max,
@@ -42,7 +43,7 @@ fn generate_radius(
 
                             generator.clone().borrow_mut().sample(log_distribution)
                         } else {
-                            let min_val = f64::max(global.h, shape_fam.exp_min);
+                            let min_val = f64::max(h, shape_fam.exp_min);
                             let exp_dist = TruncExp::new(
                                 min_val,
                                 shape_fam.exp_max,
@@ -60,7 +61,7 @@ fn generate_radius(
                             Err(_) => panic!(
                                     "distribution for {} family {} has been unable to generate a fracture with radius within set parameters after 1000 consecutive tries.",
                                     shape_type(shape_fam),
-                                    get_family_number(global.nFamEll, family_index, shape_fam.shape_family),
+                                    get_family_number(n_fam_ell, family_index, shape_fam.shape_family),
                                 )
                         }
                     }
@@ -109,7 +110,14 @@ pub fn generate_poly(
     family_index: isize,
     use_list: bool,
 ) -> Poly {
-    let radius = generate_radius(global, shape_fam, generator.clone(), family_index, use_list);
+    let radius = generate_radius(
+        global.h,
+        global.nFamEll,
+        shape_fam,
+        generator.clone(),
+        family_index,
+        use_list,
+    );
 
     let boundary = poly_boundary(
         &global.domainSize,
