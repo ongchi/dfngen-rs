@@ -416,32 +416,6 @@ pub fn re_translate_poly(
     }
 }
 
-// **********************************************************************
-// *************  Check if Target P32 Has Been Met  *********************
-// For th  P32 stopping option (see input file)
-// Function checks the status of the fractures families target P32
-// The 'p32Status' array is 1 to 1 with the total number of families
-// When a family's P32 requirement has been met, it's corresponding
-// element in 'p32Status' is set to '1'
-// For example, the status for shapeFamiliy[0] is in p32Status[0].
-// If p32Status[0] = 1, shapeFamily[0] has met its p32/fracture intensity target,
-// else it has not and will keep inserting more fractures
-//
-// Arg 1: Size of 'p32Status' array (same size as the shapeFamilies array)
-// Return: True once ALL p32 targets have been met for all families
-//         False otherwise
-pub fn p32_complete(input: &Input, size: usize) -> bool {
-    // Check if p32Status array is all 1's, if not return 0
-    for i in 0..size {
-        if !input.p32Status[i] {
-            return false;
-        }
-    }
-
-    // If function has not returned yet, array is all 1's
-    true
-}
-
 // ***************************************************************************
 // **********************  Print Rejection Reson  ****************************
 // Function prints fracture rejection reasons to user based on reject code

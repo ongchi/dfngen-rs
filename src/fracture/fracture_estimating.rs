@@ -8,7 +8,7 @@ use crate::{
     distribution::{TruncExp, TruncLogNormal, TruncPowerLaw},
     fracture::insert_shape::{
         generate_poly, generate_poly_with_radius, get_family_number, get_largest_fracture_radius,
-        p32_complete, re_translate_poly, shape_type,
+        re_translate_poly, shape_type,
     },
     io::input::Input,
     math_functions::{
@@ -238,7 +238,7 @@ pub fn dry_run(
     let mut family_index; // Holds index to shape family of fracture being generated
     let mut force_large_fract_count = 0;
 
-    while !p32_complete(input, total_families) {
+    while input.p32Status.iter().any(|p| !p) {
         // Index to CDF array of current family being inserted
         let mut cdf_idx = 0;
         let mut reject_counter = 0;

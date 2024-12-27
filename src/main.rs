@@ -14,8 +14,7 @@ use crate::{
         add_radii_to_lists, dry_run, generate_radii_lists_n_poly_option, sort_radii,
     },
     fracture::insert_shape::{
-        generate_poly, get_family_number, p32_complete, print_reject_reason, re_translate_poly,
-        shape_type,
+        generate_poly, get_family_number, print_reject_reason, re_translate_poly, shape_type,
     },
     fracture::insert_user_ell::insert_user_ell,
     fracture::insert_user_ell_by_coord::insert_user_ell_by_coord,
@@ -298,7 +297,7 @@ fn main() {
         // p32Complete() only needs argument of the number of defined shape families
         // ********* Begin stochastic fracture insertion ***********
         while ((input.stopCondition == 0 && pstats.accepted_poly_count < input.nPoly)
-            || (input.stopCondition == 1 && !p32_complete(&input, total_families)))
+            || (input.stopCondition == 1 && input.p32Status.iter().any(|p| !p)))
             && key != '~'
         {
             // cdfIdx holds the index to the CDF array for the current shape family being inserted
