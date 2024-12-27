@@ -282,7 +282,14 @@ pub fn dry_run(
                     &mut cdf_idx,
                 );
                 generate_poly(
-                    input,
+                    input.h,
+                    input.nFamEll,
+                    &input.domainSize,
+                    &input.domainSizeIncrease,
+                    &input.layers,
+                    &input.regions,
+                    input.orientationOption,
+                    input.eps,
                     &mut shape_families[family_index],
                     generator.clone(),
                     family_index as isize,

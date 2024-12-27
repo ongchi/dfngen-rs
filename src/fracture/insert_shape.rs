@@ -103,16 +103,24 @@ fn generate_radius(
 //                which estimates number of fractures needed when using
 //                p32 option and generates the radii lists)
 // Return: Random polygon/fracture based from 'shapeFam'
+#[allow(clippy::too_many_arguments)]
 pub fn generate_poly(
-    global: &Input,
+    h: f64,
+    n_fam_ell: usize,
+    domain_size: &Vector3<f64>,
+    domain_size_increase: &Vector3<f64>,
+    layers: &[f64],
+    regions: &[f64],
+    orientation_option: u8,
+    eps: f64,
     shape_fam: &mut Shape,
     generator: Rc<RefCell<Mt19937GenRand64>>,
     family_index: isize,
     use_list: bool,
 ) -> Poly {
     let radius = generate_radius(
-        global.h,
-        global.nFamEll,
+        h,
+        n_fam_ell,
         shape_fam,
         generator.clone(),
         family_index,
@@ -120,15 +128,15 @@ pub fn generate_poly(
     );
 
     let boundary = poly_boundary(
-        &global.domainSize,
-        &global.domainSizeIncrease,
-        &global.layers,
-        &global.regions,
+        domain_size,
+        domain_size_increase,
+        layers,
+        regions,
         shape_fam,
     );
     generate_poly_with_radius(
-        global.orientationOption,
-        global.eps,
+        orientation_option,
+        eps,
         radius,
         shape_fam,
         boundary,
