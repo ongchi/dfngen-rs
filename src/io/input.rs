@@ -11,88 +11,88 @@ use crate::{distribution::generating_points::generate_theta, structures::Shape};
 #[allow(non_snake_case)]
 #[derive(Default, Debug)]
 pub struct Input {
-    // DFN generation stop condition. 0 - nPoly option, 1 - P32 option.
+    /// DFN generation stop condition. 0 - nPoly option, 1 - P32 option.
     pub stopCondition: u8,
 
-    // Number of polygons to place in the DFN when uisng nPoly stopCondition option.
+    /// Number of polygons to place in the DFN when uisng nPoly stopCondition option.
     pub nPoly: usize,
 
-    // Domain size with dimension x*y*z for DFN, centered at the origin.
+    /// Domain size with dimension x*y*z for DFN, centered at the origin.
     pub domainSize: Vector3<f64>,
 
-    // Minimum feature size, FRAM parameter.
+    /// Minimum feature size, FRAM parameter.
     pub h: f64,
 
-    // epsilon
+    /// epsilon
     pub eps: f64,
 
-    // Percent to increase the size of the pre-generated radii lists, per family.
-    // Example: 0.2 will increase the size of the list by %20. See example input files
-    // for more details.
+    /// Percent to increase the size of the pre-generated radii lists, per family.
+    /// Example: 0.2 will increase the size of the list by %20. See example input files
+    /// for more details.
     pub radiiListIncrease: f64,
 
-    // This option disables the FRAM algorithm. There will be no
-    // fracture rejections or fine mesh. Defaults visualizationMode to 1
+    /// This option disables the FRAM algorithm. There will be no
+    /// fracture rejections or fine mesh. Defaults visualizationMode to 1
     pub disableFram: bool,
 
-    //  Used during meshing:
-    //      0 - Creates a fine mesh, according to h parameter;
-    //      1 - Produce only first round of triangulations. In this case no
-    //          modeling of flow and transport is possible.
+    ///  Used during meshing:
+    ///      0 - Creates a fine mesh, according to h parameter;
+    ///      1 - Produce only first round of triangulations. In this case no
+    ///          modeling of flow and transport is possible.
     pub visualizationMode: bool,
 
-    // This option uses a relaxed version of the FRAM algorithm. The mesh may not
-    // be perfectly conforming
+    /// This option uses a relaxed version of the FRAM algorithm. The mesh may not
+    /// be perfectly conforming
     pub rFram: bool,
 
-    // Accept or reject triple intersections
-    //     False - Off (Reject)
-    //     True  - On  (Accept)
+    /// Accept or reject triple intersections
+    ///     False - Off (Reject)
+    ///     True  - On  (Accept)
     pub tripleIntersections: bool,
 
-    // DFN will only keep clusters with connections to
-    // domain boundaries which are set to 1:
-    //
-    // boundaryFaces[0] = +X domain boundary
-    // boundaryFaces[1] = -X domain boundary
-    // boundaryFaces[2] = +Y domain boundary
-    // boundaryFaces[3] = -Y domain boundary
-    // boundaryFaces[4] = +Z domain boundary
-    // boundaryFaces[5] = -Z domain boundary
+    /// DFN will only keep clusters with connections to
+    /// domain boundaries which are set to 1:
+    ///
+    /// boundaryFaces[0] = +X domain boundary
+    /// boundaryFaces[1] = -X domain boundary
+    /// boundaryFaces[2] = +Y domain boundary
+    /// boundaryFaces[3] = -Y domain boundary
+    /// boundaryFaces[4] = +Z domain boundary
+    /// boundaryFaces[5] = -Z domain boundary
     pub boundaryFaces: [bool; 6],
 
-    // 0 - Keep any clusters which connects the specified
-    //     boundary faces in boundaryFaces option below
-    // 1 - Keep only the largest cluster which connects
-    //     the specified boundary faces in boundaryFaces option below.
-    //
-    // If ignoreBoundaryFaces is also set to 1, DFNGen will keep the largest
-    // cluster which connects at least any two sides of the domain.
+    /// 0 - Keep any clusters which connects the specified
+    ///     boundary faces in boundaryFaces option below
+    /// 1 - Keep only the largest cluster which connects
+    ///     the specified boundary faces in boundaryFaces option below.
+    ///
+    /// If ignoreBoundaryFaces is also set to 1, DFNGen will keep the largest
+    /// cluster which connects at least any two sides of the domain.
     pub keepOnlyLargestCluster: bool,
 
-    // 0 - remove isolated fractures and clusters
-    // 1 - Keep isolated fractures and clusters
+    /// 0 - remove isolated fractures and clusters
+    /// 1 - Keep isolated fractures and clusters
     pub keepIsolatedFractures: bool,
 
-    // Useful for debugging,
-    // This option will print all fracture rejection reasons as they occur.
-    //     0 - Disable
-    //     1 - Print all rejection reasons to screen
+    /// Useful for debugging,
+    /// This option will print all fracture rejection reasons as they occur.
+    ///     0 - Disable
+    ///     1 - Print all rejection reasons to screen
     pub printRejectReasons: bool,
 
-    // Outputs radii files after isolated fracture removal.
-    // One file per family.
-    //     0: Do not create output files of radii per family
-    //     1: Creates output files per family, containing a list
-    //        of the family's fracture radii that is in the final DFN
+    /// Outputs radii files after isolated fracture removal.
+    /// One file per family.
+    ///     0: Do not create output files of radii per family
+    ///     1: Creates output files per family, containing a list
+    ///        of the family's fracture radii that is in the final DFN
     pub outputFinalRadiiPerFamily: bool,
 
-    // Outputs radii files before isolated fracture removal.
-    // One file per family.
-    //     0: Do not create output files of radii per family
-    //     1: Creates output files per family, containing a list
-    //        of the family's fracture radii in the domain before isolated
-    //        fracture removal.
+    /// Outputs radii files before isolated fracture removal.
+    /// One file per family.
+    ///     0: Do not create output files of radii per family
+    ///     1: Creates output files per family, containing a list
+    ///        of the family's fracture radii in the domain before isolated
+    ///        fracture removal.
     pub outputAcceptedRadiiPerFamily: bool,
 
     // Only output select files for ECPM upscaling
@@ -101,449 +101,447 @@ pub struct Input {
     //     polygon.dat, radii_final.dat
     // ecpmOutput: bool,
     // ecpmOutput:bool = false,
-
-    // Beta is the rotation around the polygon's normal vector
-    //     0 - Uniform distribution [0, 2PI)
-    //     1 - Constant angle (specefied below by 'ebeta')
+    /// Beta is the rotation around the polygon's normal vector
+    ///     0 - Uniform distribution [0, 2PI)
+    ///     1 - Constant angle (specefied below by 'ebeta')
     ebetaDistribution: Vec<bool>,
 
-    // Beta is the rotation around the polygon's normal vector
-    //     0: Uniform distribution [0, 2PI)
-    //     1: Constant angle (specefied below by 'rbeta')
+    /// Beta is the rotation around the polygon's normal vector
+    ///     0: Uniform distribution [0, 2PI)
+    ///     1: Constant angle (specefied below by 'rbeta')
     rbetaDistribution: Vec<bool>,
 
-    // False - User ellipses will be inserted first
-    // True  - User rectangles will be inserted first
+    /// False - User ellipses will be inserted first
+    /// True  - User rectangles will be inserted first
     pub insertUserRectanglesFirst: bool,
 
-    // Inserts the largest possible fracture for each defined fracture family,
-    // defined by the user-defined maxium radius
-    //     0 - Off (Do not force insertion of larest fractures)
-    //     1 - On  (Force insertion of largest fractures)
+    /// Inserts the largest possible fracture for each defined fracture family,
+    /// defined by the user-defined maxium radius
+    ///     0 - Off (Do not force insertion of larest fractures)
+    ///     1 - On  (Force insertion of largest fractures)
     pub forceLargeFractures: bool,
 
-    // Seed for random generator.
+    /// Seed for random generator.
     pub seed: u64,
 
-    // Size increase for inserting fracture centers outside the domain.
-    // Fracture will be truncated based on domainSize above.
-    // Increases the entire width by this ammount. So, {1,1,1} will increase
-    // the domain by adding .5 to the +x, and subbtracting .5 to the -x, etc
+    /// Size increase for inserting fracture centers outside the domain.
+    /// Fracture will be truncated based on domainSize above.
+    /// Increases the entire width by this ammount. So, {1,1,1} will increase
+    /// the domain by adding .5 to the +x, and subbtracting .5 to the -x, etc
     pub domainSizeIncrease: Vector3<f64>,
 
-    // Selection of orientation Option
-    // 0 - spherical coordinates
-    // 1 - trend / plunge
-    // 2 - dip / strike
+    /// Selection of orientation Option
+    /// 0 - spherical coordinates
+    /// 1 - trend / plunge
+    /// 2 - dip / strike
     pub orientationOption: u8,
 
-    // Number of rectangular families defined below.
-    // Having this option = 0 will ignore all rectangular family variables.
+    /// Number of rectangular families defined below.
+    /// Having this option = 0 will ignore all rectangular family variables.
     pub nFamRect: usize,
 
-    // Number of ellipse families defined below.
-    // Having this option = 0 will ignore all rectangle family variables.
+    /// Number of ellipse families defined below.
+    /// Having this option = 0 will ignore all rectangle family variables.
     pub nFamEll: usize,
 
-    // Each element is the probability of chosing a fracture from
-    // the element's corresponding family to be inserted into the DFN.
-    //
-    // The famProb elements should add up to 1.0 (for %100).
-    // The probabilities are listed in order of families starting with all
-    // stochastic ellipses, and then all stochastic rectangles.
-    //
-    // For example:
-    // If  then there are two ellipse families, each with probabiliy .3,
-    // and two rectangle families, each with probabiliy .2, famProb will be:
-    // famProb: {.3,.3,.2,.2}, famProb elements must add to 1
+    /// Each element is the probability of chosing a fracture from
+    /// the element's corresponding family to be inserted into the DFN.
+    ///
+    /// The famProb elements should add up to 1.0 (for %100).
+    /// The probabilities are listed in order of families starting with all
+    /// stochastic ellipses, and then all stochastic rectangles.
+    ///
+    /// For example:
+    /// If  then there are two ellipse families, each with probabiliy .3,
+    /// and two rectangle families, each with probabiliy .2, famProb will be:
+    /// famProb: {.3,.3,.2,.2}, famProb elements must add to 1
     pub famProb: Vec<f64>,
 
-    // Holds a copy of famProb. famProb elements can change as different families
-    // hit their P32 requirement when using the P32 stopCondition option.
+    /// Holds a copy of famProb. famProb elements can change as different families
+    /// hit their P32 requirement when using the P32 stopCondition option.
     pub famProbOriginal: Vec<f64>,
 
-    // Mandatory parameter if using statistically generated ellipses.
-    // Statistical distribution options:
-    //
-    // Holds number of elements equal to the number of shape families.
-    //
-    //     1 - Log-normal distribution
-    //     2 - Truncated power law distribution
-    //     3 - Exponential distribution
-    //     4 - Constant
+    /// Mandatory parameter if using statistically generated ellipses.
+    /// Statistical distribution options:
+    ///
+    /// Holds number of elements equal to the number of shape families.
+    ///
+    ///     1 - Log-normal distribution
+    ///     2 - Truncated power law distribution
+    ///     3 - Exponential distribution
+    ///     4 - Constant
     edistr: Vec<u8>,
 
-    // Aspect ratio array for stochastic ellipses.
+    /// Aspect ratio array for stochastic ellipses.
     easpect: Vec<f64>,
 
-    // Number of vertices used in creating each elliptical
-    // fracture family. Number of elements must match number
-    // of ellipse families
-    //
-    // Holds number of elements equal to the number of ellipse families.
+    /// Number of vertices used in creating each elliptical
+    /// fracture family. Number of elements must match number
+    /// of ellipse families
+    ///
+    /// Holds number of elements equal to the number of ellipse families.
     enumPoints: Vec<usize>,
 
-    // All angles for ellipses are in:
-    //     0 - degrees
-    //     1 - radians (Must use numerical value for PI)
+    /// All angles for ellipses are in:
+    ///     0 - degrees
+    ///     1 - radians (Must use numerical value for PI)
     eAngleOption: bool,
 
-    // First Ellipse fracture orientation.
-    // If orientationOption = 0 (Spherical coordinates)
-    // This The angle the normal vector makes with the z-axis
-    // If  orientationOption = 1
-    // This is the trend of Ellipse fracture orientation.
-    // If  orientationOption = 2
-    // This is the mean dip of Ellipse fracture orientation.
+    /// First Ellipse fracture orientation.
+    /// If orientationOption = 0 (Spherical coordinates)
+    /// This The angle the normal vector makes with the z-axis
+    /// If  orientationOption = 1
+    /// This is the trend of Ellipse fracture orientation.
+    /// If  orientationOption = 2
+    /// This is the mean dip of Ellipse fracture orientation.
     eAngleOne: Vec<f64>,
 
-    // Second Ellipse fracture orientation.
-    // If orientationOption = 0 (Spherical coordinates)
-    // The angle the projection of the normal
-    // onto the x-y plane makes with the x-axis
-    // If  orientationOption = 1
-    // This is the plunge of Ellipse fracture orientation.
-    // If  orientationOption = 2
-    // This is the mean strike of Ellipse fracture orientation.
+    /// Second Ellipse fracture orientation.
+    /// If orientationOption = 0 (Spherical coordinates)
+    /// The angle the projection of the normal
+    /// onto the x-y plane makes with the x-axis
+    /// If  orientationOption = 1
+    /// This is the plunge of Ellipse fracture orientation.
+    /// If  orientationOption = 2
+    /// This is the mean strike of Ellipse fracture orientation.
     eAngleRwo: Vec<f64>,
 
-    // Rotation around the fractures' normal vector.
-    // Ellipse family parameter.
+    /// Rotation around the fractures' normal vector.
+    /// Ellipse family parameter.
     ebeta: Vec<f64>,
 
-    // Parameter for the fisher distribnShaprutions. The
-    // bigger, the more similar (less diverging) are the
-    // elliptical familiy's normal vectors.
+    /// Parameter for the fisher distribnShaprutions. The
+    /// bigger, the more similar (less diverging) are the
+    /// elliptical familiy's normal vectors.
     ekappa: Vec<f64>,
 
-    // Log-normal ellipse parameter. Mean of the underlying normal distribution.
+    /// Log-normal ellipse parameter. Mean of the underlying normal distribution.
     eLogMean: Vec<f64>,
 
-    // Log-normal ellipse parameter. Standard deviation of the underlying normal distribution
+    /// Log-normal ellipse parameter. Standard deviation of the underlying normal distribution
     esd: Vec<f64>,
 
-    // Exponential ellipse parameter. Mean values for exponential distributions, defined per family.
+    /// Exponential ellipse parameter. Mean values for exponential distributions, defined per family.
     eExpMean: Vec<f64>,
 
-    // Log-normal rectangle parameter. Minimum radius.
+    /// Log-normal rectangle parameter. Minimum radius.
     rLogMin: Vec<f64>,
 
-    // Log-normal rectangle parameter. Maximum radius.
+    /// Log-normal rectangle parameter. Maximum radius.
     rLogMax: Vec<f64>,
 
-    // Exponential rectangle parameter. Minimum radius.
+    /// Exponential rectangle parameter. Minimum radius.
     rExpMin: Vec<f64>,
 
-    // Exponential rectangle parameter. Maximum radius.
+    /// Exponential rectangle parameter. Maximum radius.
     rExpMax: Vec<f64>,
 
-    // Log-normal ellipse parameter. Minimum radius.
+    /// Log-normal ellipse parameter. Minimum radius.
     eLogMin: Vec<f64>,
 
-    // Log-normal ellipse parameter. Maximum radius.
+    /// Log-normal ellipse parameter. Maximum radius.
     eLogMax: Vec<f64>,
 
-    // Exponential ellipse parameter. Minimum radius.
+    /// Exponential ellipse parameter. Minimum radius.
     eExpMin: Vec<f64>,
 
-    // Exponential ellipse parameter. Maximum radius.
+    /// Exponential ellipse parameter. Maximum radius.
     eExpMax: Vec<f64>,
 
-    // Contant ellipse parameter. Constant radius.
+    /// Contant ellipse parameter. Constant radius.
     econst: Vec<f64>,
 
-    // Truncated power-law ellipse parameter. Minimum radius.
+    /// Truncated power-law ellipse parameter. Minimum radius.
     emin: Vec<f64>,
 
-    // Truncated power-law ellipse parameter. Maximum radius.
+    /// Truncated power-law ellipse parameter. Maximum radius.
     emax: Vec<f64>,
 
-    // Truncated power-law ellipse distribution parameter.
+    /// Truncated power-law ellipse distribution parameter.
     ealpha: Vec<f64>,
 
-    // Elliptical families target fracture intensities per family
-    // when using stopCondition = 1, P32 option.
+    /// Elliptical families target fracture intensities per family
+    /// when using stopCondition = 1, P32 option.
     e_p32Targets: Vec<f64>,
 
-    // Mandatory parameter if using statistically generated rectangles.
-    //
-    // Holds number of elements equal to the number of shape families.\
-    //
-    // Rectangle statistical distribution options:
-    //     1 - log-normal distribution
-    //     2 - truncated power law distribution
-    //     3 - exponential distribution
-    //     4 - constant
+    /// Mandatory parameter if using statistically generated rectangles.
+    ///
+    /// Holds number of elements equal to the number of shape families.\
+    ///
+    /// Rectangle statistical distribution options:
+    ///     1 - log-normal distribution
+    ///     2 - truncated power law distribution
+    ///     3 - exponential distribution
+    ///     4 - constant
     rdistr: Vec<u8>,
 
-    // Aspect ratio for stochasic rectangles.
+    /// Aspect ratio for stochasic rectangles.
     raspect: Vec<f64>,
 
-    // All angles from input file for stochastic rectangles are in:
-    //     True  - Degrees
-    //     False - Radians
+    /// All angles from input file for stochastic rectangles are in:
+    ///     True  - Degrees
+    ///     False - Radians
     rAngleOption: bool,
 
-    //  0 - Ignore this option, keep all fractures.
-    //
-    // >0 - Size of minimum fracture radius. Fractures smaller than
-    //      defined radius will be removed AFTER DFN generation.
-    //
-    //      Minimum and maximum size options under fracture family
-    //      distributions will still be used while generating the DFN.
+    ///    0 - Ignore this option, keep all fractures.
+    ///
+    /// (>0) - Size of minimum fracture radius. Fractures smaller than
+    ///        defined radius will be removed AFTER DFN generation.
+    ///
+    ///        Minimum and maximum size options under fracture family
+    ///        distributions will still be used while generating the DFN.
     pub removeFracturesLessThan: f64,
 
-    // First Rectangle fracture orientation.
-    // If orientationOption = 0 (Spherical coordinates)
-    // This The angle the normal vector makes with the z-axis
-    // If orientationOption = 1
-    // This is the trend of Rectangle fracture orientation.
-    // If orientationOption = 2
-    // This is the mean dip of Rectangle fracture orientation.
+    /// First Rectangle fracture orientation.
+    /// If orientationOption = 0 (Spherical coordinates)
+    /// This The angle the normal vector makes with the z-axis
+    /// If orientationOption = 1
+    /// This is the trend of Rectangle fracture orientation.
+    /// If orientationOption = 2
+    /// This is the mean dip of Rectangle fracture orientation.
     rAngleOne: Vec<f64>,
 
-    // Second Rectangle fracture orientation.
-    // If orientationOption = 0 (Spherical coordinates)
-    // The angle the projection of the normal
-    // onto the x-y plane makes with the x-axis
-    // If  orientationOption = 1
-    // This is the plunge of Rectangle fracture orientation.
-    // If orientationOption = 2
-    // This is the mean strike of Rectangle fracture orientation.
+    /// Second Rectangle fracture orientation.
+    /// If orientationOption = 0 (Spherical coordinates)
+    /// The angle the projection of the normal
+    /// onto the x-y plane makes with the x-axis
+    /// If  orientationOption = 1
+    /// This is the plunge of Rectangle fracture orientation.
+    /// If orientationOption = 2
+    /// This is the mean strike of Rectangle fracture orientation.
     rAngleTwo: Vec<f64>,
 
-    // Rotation around the normal vector.
+    /// Rotation around the normal vector.
     rbeta: Vec<f64>,
 
-    // Parameter for the fisher distribnShaprutions. The
-    // bigger, the more similar (less diverging) are the
-    // rectangle family's normal vectors.
+    /// Parameter for the fisher distribnShaprutions. The
+    /// bigger, the more similar (less diverging) are the
+    /// rectangle family's normal vectors.
     rkappa: Vec<f64>,
 
-    // Log-normal rectangle parameter. Standard deviation of the underlying normal distribution
+    /// Log-normal rectangle parameter. Standard deviation of the underlying normal distribution
     rLogMean: Vec<f64>,
 
-    // Log-normal rectangle parameter. Standard deviation of the underlying normal distribution
+    /// Log-normal rectangle parameter. Standard deviation of the underlying normal distribution
     rsd: Vec<f64>,
 
-    // Truncated power-law rectangle parameter. Minimum radius.
+    /// Truncated power-law rectangle parameter. Minimum radius.
     rmin: Vec<f64>,
 
-    // Truncated power-law rectangle parameter. Maximum radius.
+    /// Truncated power-law rectangle parameter. Maximum radius.
     rmax: Vec<f64>,
 
-    // Truncated power-law rectangle distribution parameter.
+    /// Truncated power-law rectangle distribution parameter.
     ralpha: Vec<f64>,
 
-    // Rectangular families target fracture intensities per family
-    // when using stopCondition = 1, P32 option.
+    /// Rectangular families target fracture intensities per family
+    /// when using stopCondition = 1, P32 option.
     r_p32Targets: Vec<f64>,
 
-    // Exponential rectangle parameter. Maximum radius.
+    /// Exponential rectangle parameter. Maximum radius.
     rExpMean: Vec<f64>,
 
-    // Constant rectangle parameter. Constant radius.
+    /// Constant rectangle parameter. Constant radius.
     rconst: Vec<f64>,
 
-    // True  - The user is using user defined ellipses.
-    // False - No user defined ellipses are being used.
+    /// True  - The user is using user defined ellipses.
+    /// False - No user defined ellipses are being used.
     pub userEllipsesOnOff: bool,
 
-    // Number of defined, user defined ellipses.
+    /// Number of defined, user defined ellipses.
     pub nUserEll: usize,
 
-    // All angles from input file for stochastic ellipses are in:
-    //     True  - Degrees
-    //     False - Radians
+    /// All angles from input file for stochastic ellipses are in:
+    ///     True  - Degrees
+    ///     False - Radians
     pub ueAngleOption: bool,
 
-    // User ellipses radii array.
+    /// User ellipses radii array.
     pub ueRadii: Vec<f64>,
 
-    // User ellipses beta array.
+    /// User ellipses beta array.
     pub ueBeta: Vec<f64>,
 
-    // User ellipses aspect ratio array.
+    /// User ellipses aspect ratio array.
     pub ueaspect: Vec<f64>,
 
-    // User ellipses translation array.
+    /// User ellipses translation array.
     pub uetranslation: Vec<f64>,
 
-    // User Orientation Option for ellipses
-    // 0 = normal vector
-    // 1 = trend / plunge
-    // 2 = dip / strike
+    /// User Orientation Option for ellipses
+    /// 0 = normal vector
+    /// 1 = trend / plunge
+    /// 2 = dip / strike
     userEllOrientationOption: u8,
 
-    // User ellipses normal vector array.
+    /// User ellipses normal vector array.
     pub uenormal: Vec<f64>,
 
-    // User ellipses trend and plunge array.
+    /// User ellipses trend and plunge array.
     ueTrendPlunge: Vec<f64>,
 
-    // User ellipses dip and strike array.
+    /// User ellipses dip and strike array.
     ueDipStrike: Vec<f64>,
 
-    // User ellipses number of points per ellipse array.
+    /// User ellipses number of points per ellipse array.
     pub uenumPoints: Vec<usize>,
 
-    // True  - The user is using user defined rectangles.
-    // False - No user defined rectangles are being used.
+    /// True  - The user is using user defined rectangles.
+    /// False - No user defined rectangles are being used.
     pub userRectanglesOnOff: bool,
 
-    // True  - User rectangles defined by coordinates are being used.
-    // False - No rectangles defined by coordinates are being used.
+    /// True  - User rectangles defined by coordinates are being used.
+    /// False - No rectangles defined by coordinates are being used.
     pub userRecByCoord: bool,
 
-    // True  - User ellipses defined by coordinates are being used.
-    // False - No ellpsies defined by coordinates are being used.
+    /// True  - User ellipses defined by coordinates are being used.
+    /// False - No ellpsies defined by coordinates are being used.
     pub userEllByCoord: bool,
 
-    // True  - User polygons defined by coordinates are being used.
-    // False - No polygons defined by coordinates are being used.
+    /// True  - User polygons defined by coordinates are being used.
+    /// False - No polygons defined by coordinates are being used.
     pub userPolygonByCoord: bool,
 
-    // Caution: Can create very large files.
-    // Outputs all fractures which were generated during
-    // DFN generation (Accepted + Rejected).
-    //     False: Do not output all radii file.
-    //     True:  Include file of all raddii, acepted + rejected fractures,
-    //            in output files (radii_All.dat).
+    /// Caution: Can create very large files.
+    /// Outputs all fractures which were generated during
+    /// DFN generation (Accepted + Rejected).
+    ///     False: Do not output all radii file.
+    ///     True:  Include file of all raddii, acepted + rejected fractures,
+    ///            in output files (radii_All.dat).
     pub outputAllRadii: bool,
 
-    // Number of user defined rectangles.
+    /// Number of user defined rectangles.
     pub nUserRect: usize,
 
-    // User rectangles radii array.
+    /// User rectangles radii array.
     pub urRadii: Vec<f64>,
 
-    // All angles from input file for stochastic rectangles are in:
-    //     True  - Degrees
-    //     False - Radians
+    /// All angles from input file for stochastic rectangles are in:
+    ///     True  - Degrees
+    ///     False - Radians
     pub urAngleOption: bool,
 
-    // User rectangles beta array.
+    /// User rectangles beta array.
     pub urBeta: Vec<f64>,
 
-    // User rectangles aspect ratio array.
+    /// User rectangles aspect ratio array.
     pub uraspect: Vec<f64>,
 
-    // User rectangles translation array.
+    /// User rectangles translation array.
     pub urtranslation: Vec<f64>,
 
-    // User Orientation Option for rectangles
-    // 0 = normal vector
-    // 1 = trend / plunge
-    // 2 = dip / strike
+    /// User Orientation Option for rectangles
+    /// 0 = normal vector
+    /// 1 = trend / plunge
+    /// 2 = dip / strike
     userRectOrientationOption: u8,
 
-    // User rectangles normal vector array.
+    /// User rectangles normal vector array.
     pub urnormal: Vec<f64>,
 
-    // User rectangles trend and plunge array.
+    /// User rectangles trend and plunge array.
     urTrendPlunge: Vec<f64>,
 
-    // User rectangles dip and strike array.
+    /// User rectangles dip and strike array.
     urDipStrike: Vec<f64>,
 
-    // Number of user rectangles defined by coordinates.
+    /// Number of user rectangles defined by coordinates.
     pub nRectByCoord: usize,
 
-    // Number of user ellipses defined by coordinates.
+    /// Number of user ellipses defined by coordinates.
     pub nEllByCoord: usize,
 
-    // Number of nodes for user defined ellipses by coordinates
+    /// Number of nodes for user defined ellipses by coordinates
     pub nEllNodes: usize,
 
-    // Array of rectangle coordiates.
-    // Number of elements = 4 * 3 * nRectByCoord
+    /// Array of rectangle coordiates.
+    /// Number of elements = 4 * 3 * nRectByCoord
     pub userRectCoordVertices: Vec<f64>,
 
-    // Array of ellipse coordiates.
-    // Number of elements =  3 * nEllNodes * nEllByCoord
+    /// Array of ellipse coordiates.
+    /// Number of elements =  3 * nEllNodes * nEllByCoord
     pub userEllCoordVertices: Vec<f64>,
 
-    // Name of userPolygon File
+    /// Name of userPolygon File
     pub polygonFile: String,
 
-    // If a fracture is rejected, it will be re-translated
-    // to a new position this number of times.
-    //
-    // This helps hit distribution targets for stochastic families
-    // families (Set to 1 to ignore this feature)
+    /// If a fracture is rejected, it will be re-translated
+    /// to a new position this number of times.
+    ///
+    /// This helps hit distribution targets for stochastic families
+    /// families (Set to 1 to ignore this feature)
     pub rejectsPerFracture: usize,
 
-    // Z - layers in the DFN
-    // Number of layers defined.
+    /// Z - layers in the DFN
+    /// Number of layers defined.
     numOfLayers: usize,
 
-    // Array of layers:
-    // e.g. {+z1, -z1, +z2, -z2, ... , +zn, -zn}
+    /// Array of layers:
+    /// e.g. {+z1, -z1, +z2, -z2, ... , +zn, -zn}
     pub layers: Vec<f64>,
 
-    // Array of volumes for each defined layer, in the same order
-    // which layers were listed.
+    /// Array of volumes for each defined layer, in the same order
+    /// which layers were listed.
     pub layerVol: Vec<f64>,
 
-    // Defines which domain, or layer, the family belongs to.
-    // Layer 0 is the entire domain ('domainSize').
-    // Layers numbered > 0 correspond to layers defined above (see 'Layers:').
-    // 1 correspond to the first layer listed, 2 is the next layer listed, etc
+    /// Defines which domain, or layer, the family belongs to.
+    /// Layer 0 is the entire domain ('domainSize').
+    /// Layers numbered > 0 correspond to layers defined above (see 'Layers:').
+    /// 1 correspond to the first layer listed, 2 is the next layer listed, etc
     rLayer: Vec<usize>,
 
-    // Defines which domain, or layer, the family belongs to.
-    // Layer 0 is the entire domain ('domainSize').
-    // Layers numbered > 0 correspond to layers defined above (see 'Layers:').
-    // 1 correspond to the first layer listed, 2 is the next layer listed, etc
+    /// Defines which domain, or layer, the family belongs to.
+    /// Layer 0 is the entire domain ('domainSize').
+    /// Layers numbered > 0 correspond to layers defined above (see 'Layers:').
+    /// 1 correspond to the first layer listed, 2 is the next layer listed, etc
     eLayer: Vec<usize>,
 
     // Regions in the DFN
-
-    // Number of regions defined.
+    /// Number of regions defined.
     numOfRegions: usize,
 
-    // Array of regions:
-    // e.g. {+z1, -z1, +z2, -z2, ... , +zn, -zn}
+    /// Array of regions:
+    /// e.g. {+z1, -z1, +z2, -z2, ... , +zn, -zn}
     pub regions: Vec<f64>,
 
-    // Array of volumes for each defined layer, in the same order
-    // which regions were listed.
+    /// Array of volumes for each defined layer, in the same order
+    /// which regions were listed.
     pub regionVol: Vec<f64>,
 
-    // Defines which domain, or regions, the family belongs to.
-    // Regions 0 is the entire domain ('domainSize').
-    // regions numbered > 0 correspond to regions defined above (see 'regions:').
-    // 1 correspond to the first layer listed, 2 is the next layer listed, etc
+    /// Defines which domain, or regions, the family belongs to.
+    /// Regions 0 is the entire domain ('domainSize').
+    /// regions numbered > 0 correspond to regions defined above (see 'regions:').
+    /// 1 correspond to the first layer listed, 2 is the next layer listed, etc
     rRegion: Vec<usize>,
 
-    // Defines which domain, or regions, the family belongs to.
-    // Layer 0 is the entire domain ('domainSize').
-    // regions numbered > 0 correspond to regions defined above (see 'regions:').
-    // 1 correspond to the first layer listed, 2 is the next layer listed, etc
+    /// Defines which domain, or regions, the family belongs to.
+    /// Layer 0 is the entire domain ('domainSize').
+    /// regions numbered > 0 correspond to regions defined above (see 'regions:').
+    /// 1 correspond to the first layer listed, 2 is the next layer listed, etc
     eRegion: Vec<usize>,
 
-    // flag if the domain is pruned down to a final domain size
-    // bool polygonBoundaryFlag = false;
+    /// flag if the domain is pruned down to a final domain size
+    /// bool polygonBoundaryFlag = false;
     pub polygonBoundaryFlag: bool,
 
-    // Number of points on the 2D boundary of the polygon domain
+    /// Number of points on the 2D boundary of the polygon domain
     pub numOfDomainVertices: usize,
 
-    // Vector of points defining the 2D boundary of the domain polygon
+    /// Vector of points defining the 2D boundary of the domain polygon
     pub domainVertices: Vec<Point3<f64>>,
 
-    // Global boolean array. Used with stopCondition = 1, P32 option.
-    // Number of elements is equal to the number of stochastic shape families.
-    // Elements correspond to families in the same order of the famProb array.
-    // Elements are initialized to false, and are set to true once the families p32
-    // requirement is met.
-    // Once all elements have values all set to true, all families have had their
-    // P32 requirement
+    /// Global boolean array. Used with stopCondition = 1, P32 option.
+    /// Number of elements is equal to the number of stochastic shape families.
+    /// Elements correspond to families in the same order of the famProb array.
+    /// Elements are initialized to false, and are set to true once the families p32
+    /// requirement is met.
+    /// Once all elements have values all set to true, all families have had their
+    /// P32 requirement
     pub p32Status: Vec<bool>,
 
-    // False - Use boundaryFaces option.
-    // True  - Ignore boundaryFaces option, keep all clusters
-    //         and remove fractures with no intersections
+    /// False - Use boundaryFaces option.
+    /// True  - Ignore boundaryFaces option, keep all clusters
+    ///         and remove fractures with no intersections
     pub ignoreBoundaryFaces: bool,
 }
 
