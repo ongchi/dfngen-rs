@@ -1,6 +1,6 @@
 use parry3d_f64::na::Vector3;
 
-use crate::{io::input::Input, structures::Poly};
+use crate::structures::Poly;
 
 /******************************************************************************/
 /***********************  Domain Truncation  **********************************/
@@ -13,7 +13,12 @@ use crate::{io::input::Input, structures::Poly};
 //              of poly truncation was not needed
 //          1 - If rejected due to being outside the domain or was truncated to
 //              less than 3 vertices
-pub fn domain_truncation(input: &Input, new_poly: &mut Poly, domain_size: &Vector3<f64>) -> bool {
+pub fn domain_truncation(
+    h: f64,
+    eps: f64,
+    new_poly: &mut Poly,
+    domain_size: &Vector3<f64>,
+) -> bool {
     let mut points = Vec::with_capacity(18);
     let mut n_nodes = 0;
     let domain_x = domain_size[0] * 0.5;
@@ -233,12 +238,12 @@ pub fn domain_truncation(input: &Input, new_poly: &mut Poly, domain_size: &Vecto
             new_poly.vertices[idx + 2] - new_poly.vertices[next + 2],
         );
 
-        if temp.magnitude() < (2. * input.h) {
+        if temp.magnitude() < (2. * h) {
             // If distance between current and next vertex < h
             // If point is NOT on a boundary, delete current indexed point, ELSE delete next point
-            if (new_poly.vertices[idx].abs() - domain_x).abs() > input.eps
-                && (new_poly.vertices[idx + 1].abs() - domain_y).abs() > input.eps
-                && (new_poly.vertices[idx + 2].abs() - domain_z).abs() > input.eps
+            if (new_poly.vertices[idx].abs() - domain_x).abs() > eps
+                && (new_poly.vertices[idx + 1].abs() - domain_y).abs() > eps
+                && (new_poly.vertices[idx + 2].abs() - domain_z).abs() > eps
             {
                 // Loop deletes a vertice by shifting elements to the right of the element, to the left
                 for j in i..n_nodes - 1 {
@@ -276,21 +281,21 @@ pub fn domain_truncation(input: &Input, new_poly: &mut Poly, domain_size: &Vecto
         // Update which boundaries newPoly touches
         let idx = (k * 3) as usize;
 
-        if new_poly.vertices[idx] >= domain_x - input.eps {
+        if new_poly.vertices[idx] >= domain_x - eps {
             new_poly.faces[0] = true;
-        } else if new_poly.vertices[idx] <= -domain_x + input.eps {
+        } else if new_poly.vertices[idx] <= -domain_x + eps {
             new_poly.faces[1] = true;
         }
 
-        if new_poly.vertices[idx + 1] >= domain_y - input.eps {
+        if new_poly.vertices[idx + 1] >= domain_y - eps {
             new_poly.faces[2] = true;
-        } else if new_poly.vertices[idx + 1] <= -domain_y + input.eps {
+        } else if new_poly.vertices[idx + 1] <= -domain_y + eps {
             new_poly.faces[3] = true;
         }
 
-        if new_poly.vertices[idx + 2] >= domain_z - input.eps {
+        if new_poly.vertices[idx + 2] >= domain_z - eps {
             new_poly.faces[4] = true;
-        } else if new_poly.vertices[idx + 2] <= -domain_z + input.eps {
+        } else if new_poly.vertices[idx + 2] <= -domain_z + eps {
             new_poly.faces[5] = true;
         }
     }

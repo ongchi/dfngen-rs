@@ -365,7 +365,7 @@ fn main() {
 
                 // Truncate poly if needed
                 // 1 if poly is outside of domain or has less than 3 vertices
-                if domain_truncation(&input, &mut new_poly, &input.domainSize) {
+                if domain_truncation(input.h, input.eps, &mut new_poly, &input.domainSize) {
                     // Poly was completely outside domain, or was truncated to less than
                     // 3 vertices due to vertices being too close together
                     pstats.rejection_reasons.outside += 1;

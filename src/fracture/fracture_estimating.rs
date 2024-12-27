@@ -302,7 +302,7 @@ pub fn dry_run(
         // Vector for storing intersection boundaries
         let mut reject = false;
 
-        while domain_truncation(input, &mut new_poly, &input.domainSize) {
+        while domain_truncation(input.h, input.eps, &mut new_poly, &input.domainSize) {
             // Poly is completely outside domain, or was truncated to
             // less than 3 vertices due to vertices being too close together
             reject_counter += 1; // Counter for re-trying a new translation

@@ -88,7 +88,7 @@ pub fn insert_user_rects(
     for i in 0..npoly {
         let mut new_poly = create_poly(input, i);
 
-        if domain_truncation(input, &mut new_poly, &input.domainSize) {
+        if domain_truncation(input.h, input.eps, &mut new_poly, &input.domainSize) {
             //poly completely outside domain
             pstats.rejection_reasons.outside += 1;
             pstats.rejected_poly_count += 1;

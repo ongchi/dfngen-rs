@@ -120,7 +120,7 @@ pub fn insert_user_polygon_by_coord(
     for i in 0..npoly {
         let mut new_poly = create_poly(&mut file);
 
-        if domain_truncation(input, &mut new_poly, &input.domainSize) {
+        if domain_truncation(input.h, input.eps, &mut new_poly, &input.domainSize) {
             // Poly completely outside domain
             pstats.rejection_reasons.outside += 1;
             pstats.rejected_poly_count += 1;
