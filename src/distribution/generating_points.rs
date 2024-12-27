@@ -59,28 +59,29 @@ pub fn discretize_line_of_intersection(
 
 /// Polygon normal vector generator by Fisher distribution
 pub fn poly_norm_gen(
-    input: &Input,
+    orientation_option: u8,
+    eps: f64,
     shape_family: &Shape,
     rng: Rc<RefCell<Mt19937GenRand64>>,
 ) -> Vector3<f64> {
-    let fisher = match input.orientationOption {
+    let fisher = match orientation_option {
         0 => Fisher::new_with_theta_phi(
             shape_family.angle_one,
             shape_family.angle_two,
             shape_family.kappa,
-            input.eps,
+            eps,
         ),
         1 => Fisher::new_with_trend_plunge(
             shape_family.angle_one,
             shape_family.angle_two,
             shape_family.kappa,
-            input.eps,
+            eps,
         ),
         2 => Fisher::new_with_dip_strike(
             shape_family.angle_one,
             shape_family.angle_two,
             shape_family.kappa,
-            input.eps,
+            eps,
         ),
         _ => unreachable!(),
     };

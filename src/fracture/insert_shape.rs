@@ -210,7 +210,12 @@ pub fn generate_poly_with_radius(
     // Angle must be in rad
     apply_rotation2_d(&mut new_poly, beta);
     // Fisher distribution / get normal vector
-    let mut norm = poly_norm_gen(global, shape_fam, generator.clone());
+    let mut norm = poly_norm_gen(
+        global.orientationOption,
+        global.eps,
+        shape_fam,
+        generator.clone(),
+    );
 
     let mag = norm.magnitude();
     if mag < 1. - global.eps || mag > 1. + global.eps {
