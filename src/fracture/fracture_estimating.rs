@@ -11,9 +11,7 @@ use crate::{
         poly_boundary, re_translate_poly, shape_type,
     },
     io::input::Input,
-    math_functions::{
-        adjust_cdf_and_fam_prob, create_cdf, get_area, index_from_prob_and_p32_status,
-    },
+    math_functions::{adjust_cdf_and_fam_prob, cumsum, get_area, index_from_prob_and_p32_status},
     structures::Shape,
 };
 
@@ -228,12 +226,11 @@ pub fn dry_run(
                                        // Create a copy of the family probablity
                                        // Algoithms used in this function modify this array,
                                        // we need to keep the original in its original state
-    let mut fam_probability = input.famProb.clone();
-    // std::copy(shapeProb, shapeProb + totalFamilies, famProbability);
-    // Init uniform dist on [0,1)
+                                       // std::copy(shapeProb, shapeProb + totalFamilies, famProbability);
+                                       // Init uniform dist on [0,1)
     let uniform_dist = Uniform::new(0., 1.);
     /******  Convert famProb to CDF  *****/
-    let mut cdf = create_cdf(&fam_probability);
+    let mut cdf = cumsum(&input.famProb);
     let mut family_index; // Holds index to shape family of fracture being generated
     let mut force_large_fract_count = 0;
 
@@ -364,7 +361,7 @@ pub fn dry_run(
             // cdfIdx = index of the family's correspongding cdf, (index to elmt to remove)
             if cdf_size > 1 {
                 // If there are still more families to insert ( cdfSize = 0 means no more families to insert)
-                adjust_cdf_and_fam_prob(&mut cdf, &mut fam_probability, &mut cdf_size, cdf_idx);
+                adjust_cdf_and_fam_prob(&mut cdf, &mut input.famProb, &mut cdf_size, cdf_idx);
             }
         }
 

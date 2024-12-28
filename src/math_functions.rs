@@ -205,23 +205,23 @@ pub fn index_from_prob_and_p32_status(
     fam_size - 1
 }
 
-// ************************  Create CDF *****************************
-// Creates CDF from famProb[]
-// Arg 1: Pointer to famProb array (see input file, and readInput())
-pub fn create_cdf(fam_prob: &[f64]) -> Vec<f64> {
-    // Convert famProb to CDF
-    let mut cdf = vec![0.; fam_prob.len()];
-    cdf[0] = fam_prob[0];
+/// Cumulative sum of the elements along a given axis
+pub fn cumsum(fam_prob: &[f64]) -> Vec<f64> {
+    let cdf: Vec<f64> = fam_prob
+        .iter()
+        .scan(0., |acc, &x| {
+            *acc += x;
+            Some(*acc)
+        })
+        .collect();
 
-    for i in 1..fam_prob.len() {
-        cdf[i] = cdf[i - 1] + fam_prob[i];
-    }
-
-    if (cdf.last().unwrap() < &0.999) || (cdf.last().unwrap() > &1.001) {
-        println!("WARNING: Familiy probabilities (famProb in input file) do not sum to 1");
-        println!("sum = {:.17}", cdf.last().unwrap());
-        println!("Please check input file.");
-    }
+    if let Some(last) = cdf.last() {
+        if (0.999..=1.001).contains(last) {
+            println!("WARNING: Familiy probabilities (famProb in input file) do not sum to 1");
+            println!("sum = {:.17}", cdf.last().unwrap());
+            println!("Please check input file.");
+        }
+    };
 
     cdf
 }
@@ -261,7 +261,7 @@ pub fn adjust_cdf_and_fam_prob(
     for (t, s) in fam_probability.iter_mut().zip(new_probs) {
         *t = s;
     }
-    for (t, s) in cdf.iter_mut().zip(create_cdf(fam_probability)) {
+    for (t, s) in cdf.iter_mut().zip(cumsum(fam_probability)) {
         *t = s;
     }
 }

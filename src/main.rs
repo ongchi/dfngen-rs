@@ -26,8 +26,7 @@ use crate::{
     io::output::write_output,
     io::read_input_functions::get_time_based_seed,
     math_functions::{
-        adjust_cdf_and_fam_prob, create_cdf, get_area, index_from_prob,
-        index_from_prob_and_p32_status,
+        adjust_cdf_and_fam_prob, cumsum, get_area, index_from_prob, index_from_prob_and_p32_status,
     },
     structures::{IntersectionPoints, Poly, Shape, Stats},
 };
@@ -271,7 +270,7 @@ fn main() {
 
     if total_families > 0 {
         // Convert famProb to CDF
-        cdf = create_cdf(&input.famProb);
+        cdf = cumsum(&input.famProb);
     }
 
     let radii_folder = format!("{}/radii", cli.output_folder);
