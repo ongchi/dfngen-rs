@@ -513,7 +513,11 @@ fn find_intersections(flag: &mut i32, poly1: &Poly, poly2: &Poly, eps: f64) -> I
 // Return: 0 (False) if accepted, 1 (True) if rejected
 #[allow(clippy::too_many_arguments)]
 fn fram(
-    input: &Input,
+    h: f64,
+    eps: f64,
+    r_fram: bool,
+    disable_fram: bool,
+    triple_intersections: bool,
     int_pts: &mut IntersectionPoints,
     count: usize,
     int_pts_list: &[IntersectionPoints],
@@ -524,26 +528,26 @@ fn fram(
     triple_points: &[Point3<f64>],
     temp_int_pts: &[IntersectionPoints],
 ) -> i32 {
-    if !input.disableFram {
+    if !disable_fram {
         /******* Check for intersection of length less than h *******/
-        if (int_pts.p1 - int_pts.p2).magnitude() < input.h {
+        if (int_pts.p1 - int_pts.p2).magnitude() < h {
             //std::cout<<"\nrejectCode = -2: Intersection of length <= h.\n";
             pstats.rejection_reasons.short_intersection += 1;
             return -2;
         }
 
-        if !input.rFram {
+        if !r_fram {
             /******************* distance to edges *****************/
             // Reject if intersection shirnks < 'shrinkLimit'
             let shrink_limit = 0.9 * (int_pts.p1 - int_pts.p2).magnitude();
 
-            if check_close_edge(new_poly, int_pts, shrink_limit, pstats, input.h, input.eps) {
+            if check_close_edge(new_poly, int_pts, shrink_limit, pstats, h, eps) {
                 // std::cout<<"\nrejectCode = -6: Fracture too close to another fracture's edge.\n";
                 pstats.rejection_reasons.close_to_edge += 1;
                 return -6;
             }
 
-            if check_close_edge(poly2, int_pts, shrink_limit, pstats, input.h, input.eps) {
+            if check_close_edge(poly2, int_pts, shrink_limit, pstats, h, eps) {
                 // std::cout<<"\nrejectCode = -6: Fracture too close to another fracture's edge.\n";
                 pstats.rejection_reasons.close_to_edge += 1;
                 return -6;
@@ -553,7 +557,7 @@ fn fram(
             // Check distance from new intersection to other intersections on
             // poly2 (fracture newPoly is intersecting with)
 
-            if check_dist_to_old_intersections(int_pts_list, int_pts, poly2, input.h, input.eps) {
+            if check_dist_to_old_intersections(int_pts_list, int_pts, poly2, h, eps) {
                 pstats.rejection_reasons.inter_close_to_inter += 1;
                 return -5;
             }
@@ -561,8 +565,7 @@ fn fram(
             // Check distance from new intersection to intersections already
             // existing on newPoly
             // Also checks for undetected triple points
-            if check_dist_to_new_intersections(temp_int_pts, int_pts, temp_data, input.h, input.eps)
-            {
+            if check_dist_to_new_intersections(temp_int_pts, int_pts, temp_data, h, eps) {
                 pstats.rejection_reasons.inter_close_to_inter += 1;
                 return -5;
             }
@@ -572,9 +575,9 @@ fn fram(
         // NOTE: for debugging, there are several rejection codes for triple intersections
         // -14 <= rejCode <= -10 are for triple intersection rejections
         let rej_code = check_for_triple_intersections(
-            input.h,
-            input.eps,
-            input.tripleIntersections,
+            h,
+            eps,
+            triple_intersections,
             int_pts,
             count,
             int_pts_list,
@@ -583,15 +586,15 @@ fn fram(
             triple_points,
         );
 
-        if rej_code != 0 && !input.rFram {
+        if rej_code != 0 && !r_fram {
             pstats.rejection_reasons.triple += 1;
             return rej_code;
         }
 
         // Check if polys intersect on same plane
-        if ((new_poly.normal[0] - poly2.normal[0]).abs()) < input.eps // If the normals are the same
-                && (new_poly.normal[1] - poly2.normal[1]).abs() < input.eps
-                && (new_poly.normal[2] - poly2.normal[2]).abs() < input.eps
+        if ((new_poly.normal[0] - poly2.normal[0]).abs()) < eps // If the normals are the same
+                && (new_poly.normal[1] - poly2.normal[1]).abs() < eps
+                && (new_poly.normal[2] - poly2.normal[2]).abs() < eps
         {
             return -7; // The intersection has already been found so we know that if the
                        // normals are the same they must be on the same plane
@@ -842,7 +845,11 @@ pub fn intersection_checking(
                 // FRAM returns 0 if no intersection problems.
                 // 'count' is number of already accepted intersections on new poly
                 let reject_code = fram(
-                    input,
+                    input.h,
+                    input.eps,
+                    input.rFram,
+                    input.disableFram,
+                    input.tripleIntersections,
                     &mut intersection,
                     count,
                     int_pts_list,
