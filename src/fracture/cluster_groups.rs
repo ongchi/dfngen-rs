@@ -1,5 +1,4 @@
 use crate::{
-    io::input::Input,
     math_functions::or,
     structures::{FractureGroups, GroupData, Poly, Stats},
 };
@@ -40,7 +39,13 @@ use crate::{
 //     Return: Array (std vsector) of indices to fractures which remained after isolated and
 //             non-matching boundary faces fracture removal.
 //
-pub fn get_cluster(input: &Input, pstats: &Stats) -> Vec<usize> {
+pub fn get_cluster(
+    keep_isolated_fractures: bool,
+    keep_only_largest_cluster: bool,
+    ignore_boundary_faces: bool,
+    boundary_faces: &[bool; 6],
+    pstats: &Stats,
+) -> Vec<usize> {
     // The max number of groups is pstats.nextGroupNum - 1
     let mut matching_groups = Vec::new();
     let mut final_poly_list = Vec::new();
@@ -49,7 +54,7 @@ pub fn get_cluster(input: &Input, pstats: &Stats) -> Vec<usize> {
     println!("Number of fractures: {}", pstats.accepted_poly_count);
     println!("Number of groups: {}", pstats.group_data.len());
 
-    if !input.keepIsolatedFractures {
+    if !keep_isolated_fractures {
         // NOTE: (groupNumber-1) = corresponding groupData structures' index of the arary
         //       similarly, the index of groupData + 1 = groupNumber (due to groupNumber starting at 1, array starting at 0)
 
@@ -59,10 +64,10 @@ pub fn get_cluster(input: &Input, pstats: &Stats) -> Vec<usize> {
             // If the data is valid, meaning that group still exists (hasn't been merged to a new group) and
             // if the group has more than 1 fracture meaning there are intersections and
             // the cluster matches the requirements of the user's boundaryFaces option
-            if !input.ignoreBoundaryFaces {
+            if !ignore_boundary_faces {
                 if pstats.group_data[i].valid
                     && pstats.group_data[i].size > 1
-                    && faces_match(&input.boundaryFaces, &pstats.group_data[i].faces)
+                    && faces_match(boundary_faces, &pstats.group_data[i].faces)
                 {
                     matching_groups.push(i + 1); //save matching group number
                 }
@@ -74,7 +79,7 @@ pub fn get_cluster(input: &Input, pstats: &Stats) -> Vec<usize> {
             }
         }
 
-        if input.keepOnlyLargestCluster && matching_groups.len() > 1 {
+        if keep_only_largest_cluster && matching_groups.len() > 1 {
             // If only keeping the largest cluster, find group with largest size
             // Initialize largestGroup
             let mut largest_group = matching_groups[0];

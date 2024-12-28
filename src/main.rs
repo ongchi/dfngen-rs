@@ -801,7 +801,13 @@ fn main() {
     // cluster matching users boundaryFaces option
     // If ignoreBoundaryFaces input option is on,
     // DFN will keep all fractures with intersections.
-    let mut final_fractures = get_cluster(&input, &pstats);
+    let mut final_fractures = get_cluster(
+        input.keepIsolatedFractures,
+        input.keepOnlyLargestCluster,
+        input.ignoreBoundaryFaces,
+        &input.boundaryFaces,
+        &pstats,
+    );
     // Sort fracture indices to retain order by acceptance
     final_fractures.sort();
     // Error check for no boundary connection
@@ -811,7 +817,13 @@ fn main() {
         print_connectivity_error = true;
         //if there is no fracture network connected users defined boundary faces
         //switch to ignore boundary faces option with notice to user that there is no connectivity
-        final_fractures = get_cluster(&input, &pstats);
+        final_fractures = get_cluster(
+            input.keepIsolatedFractures,
+            input.keepOnlyLargestCluster,
+            input.ignoreBoundaryFaces,
+            &input.boundaryFaces,
+            &pstats,
+        );
         //if still no fractures, there is no fracture network
     }
 
