@@ -2,7 +2,6 @@ use parry3d_f64::na::{distance, Point3, Translation3, Vector3};
 
 use crate::{
     fracture::cluster_groups::{assign_group, update_groups},
-    io::input::Input,
     math_functions::{max_elmt_idx, sorted_index, sum_dev_ary3},
     structures::{IntersectionPoints, Poly, Stats, TriplePtTempData},
 };
@@ -804,8 +803,13 @@ fn shrink_intersection(
 // Return: 0 - Fracture had no intersections or features violating
 //             the minimum feature size h (Passed all FRAM tests)
 //         1 - Otherwise */
+#[allow(clippy::too_many_arguments)]
 pub fn intersection_checking(
-    input: &Input,
+    h: f64,
+    eps: f64,
+    r_fram: bool,
+    disable_fram: bool,
+    triple_intersections: bool,
     new_poly: &mut Poly,
     accepted_poly: &mut [Poly],
     int_pts_list: &mut Vec<IntersectionPoints>,
@@ -835,7 +839,7 @@ pub fn intersection_checking(
         // NOTE: findIntersections() searches bounding boxes
         // Bounding box search
         if check_bounding_box(new_poly, poly) {
-            intersection = find_intersections(&mut flag, new_poly, poly, input.eps);
+            intersection = find_intersections(&mut flag, new_poly, poly, eps);
 
             if flag != 0 {
                 // If flag != 0, intersection exists
@@ -845,11 +849,11 @@ pub fn intersection_checking(
                 // FRAM returns 0 if no intersection problems.
                 // 'count' is number of already accepted intersections on new poly
                 let reject_code = fram(
-                    input.h,
-                    input.eps,
-                    input.rFram,
-                    input.disableFram,
-                    input.tripleIntersections,
+                    h,
+                    eps,
+                    r_fram,
+                    disable_fram,
+                    triple_intersections,
                     &mut intersection,
                     count,
                     int_pts_list,
@@ -919,7 +923,7 @@ pub fn intersection_checking(
         // triple intersection points will be found 3 times (3 fractures make up one triple int point)
         // We need only to save the point to the permanent triplePoints array once, and then give each intersection a
         // reference to it.
-        if input.tripleIntersections {
+        if triple_intersections {
             let trip_index = triple_points.len();
 
             for (j, tri_pt_tmp) in temp_data.iter().enumerate() {

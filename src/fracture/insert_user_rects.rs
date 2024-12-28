@@ -105,7 +105,11 @@ pub fn insert_user_rects(
         create_bounding_box(&mut new_poly);
         // Line of intersection and FRAM
         let reject_code = intersection_checking(
-            input,
+            input.h,
+            input.eps,
+            input.rFram,
+            input.disableFram,
+            input.tripleIntersections,
             &mut new_poly,
             accepted_poly,
             intpts,

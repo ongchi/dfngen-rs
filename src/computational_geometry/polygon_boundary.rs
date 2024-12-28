@@ -120,7 +120,11 @@ pub fn polygon_boundary(
             0
         } else {
             intersection_checking(
-                input,
+                input.h,
+                input.eps,
+                input.rFram,
+                input.disableFram,
+                input.tripleIntersections,
                 new_poly,
                 &mut final_poly_list,
                 int_pts,

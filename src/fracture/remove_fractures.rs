@@ -59,7 +59,11 @@ pub fn remove_fractures(
         new_poly.intersection_index.clear(); // Remove ref to old intersections
                                              // Find line of intersection and FRAM check
         let reject_code = intersection_checking(
-            input,
+            input.h,
+            input.eps,
+            input.rFram,
+            input.disableFram,
+            input.tripleIntersections,
             &mut new_poly,
             &mut final_poly_list,
             int_pts,

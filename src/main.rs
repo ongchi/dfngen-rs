@@ -399,7 +399,11 @@ fn main() {
                 // rejectCode = intersectionChecking(newPoly, acceptedPoly, intPts, pstats, triplePoints);
                 // Find line of intersection and FRAM check
                 reject_code = intersection_checking(
-                    &input,
+                    input.h,
+                    input.eps,
+                    input.rFram,
+                    input.disableFram,
+                    input.tripleIntersections,
                     &mut new_poly,
                     &mut accepted_poly,
                     &mut intersection_pts,
