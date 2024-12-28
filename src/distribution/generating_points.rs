@@ -1,6 +1,5 @@
 use std::{cell::RefCell, rc::Rc};
 
-use crate::io::input::Input;
 use crate::structures::Shape;
 use parry3d_f64::na::{Point3, Vector3};
 use rand::distributions::Uniform;
@@ -15,13 +14,14 @@ use super::Fisher;
 // Arg 2: End point 2, array of three doubles {x, y, z}
 // Return: List of 3D points of the discretized nodes, including end points */
 pub fn discretize_line_of_intersection(
-    input: &Input,
+    h: f64,
+    visualization_mode: bool,
     pt1: &Point3<f64>,
     pt2: &Point3<f64>,
     dist: f64,
 ) -> Vec<Point3<f64>> {
     // If reduced mesh, just save endpoints
-    if input.visualizationMode {
+    if visualization_mode {
         let mut points_list = Vec::new();
         let pt = Point3::new(pt1[0], pt1[1], pt1[2]);
         points_list.push(pt);
@@ -33,7 +33,7 @@ pub fn discretize_line_of_intersection(
     let v = pt2 - pt1;
     let p = *pt1;
 
-    let nprime = (2. * dist / input.h).ceil();
+    let nprime = (2. * dist / h).ceil();
     let hprime = 1. / nprime;
     let nprime = nprime as usize;
     let mut xx = Vec::with_capacity(nprime + 1);

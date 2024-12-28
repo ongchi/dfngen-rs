@@ -402,7 +402,13 @@ fn write_intersection_files(
                     let mut pt2 = temp_trip_pts[s[0]];
                     temp_point2 = triple_points[int_pts[poly_int_idx].triple_points_idx[s[0]]];
                     cur_length = distance(&temp_point1, &temp_point2);
-                    let mut points = discretize_line_of_intersection(input, &pt1, &pt2, cur_length);
+                    let mut points = discretize_line_of_intersection(
+                        input.h,
+                        input.visualizationMode,
+                        &pt1,
+                        &pt2,
+                        cur_length,
+                    );
                     // Write points to file
                     num_int_pts += points.len();
                     write_points(&mut fract_int_file, &points, 0, &mut count);
@@ -427,7 +433,13 @@ fn write_intersection_files(
                             temp_point2 =
                                 triple_points[int_pts[poly_int_idx].triple_points_idx[s[jj + 1]]];
                             cur_length = distance(&temp_point1, &temp_point2);
-                            points = discretize_line_of_intersection(input, &pt1, &pt2, cur_length);
+                            points = discretize_line_of_intersection(
+                                input.h,
+                                input.visualizationMode,
+                                &pt1,
+                                &pt2,
+                                cur_length,
+                            );
                             // Write points for first fracture to file, save second set of points to temp
                             num_int_pts += points.len() - 1;
                             write_points(&mut fract_int_file, &points, 1, &mut count);
@@ -441,7 +453,13 @@ fn write_intersection_files(
                     }
 
                     cur_length = distance(&temp_point1, &temp_point2);
-                    points = discretize_line_of_intersection(input, &pt1, &pt2, cur_length);
+                    points = discretize_line_of_intersection(
+                        input.h,
+                        input.visualizationMode,
+                        &pt1,
+                        &pt2,
+                        cur_length,
+                    );
                     num_int_pts += points.len() - 1;
                     write_points(&mut fract_int_file, &points, 1, &mut count);
                 } else {
@@ -451,7 +469,13 @@ fn write_intersection_files(
                     temp_point1 = int_pts[poly_int_idx].p1;
                     temp_point2 = int_pts[poly_int_idx].p2;
                     cur_length = distance(&temp_point1, &temp_point2);
-                    let points = discretize_line_of_intersection(input, &pt1, &pt2, cur_length);
+                    let points = discretize_line_of_intersection(
+                        input.h,
+                        input.visualizationMode,
+                        &pt1,
+                        &pt2,
+                        cur_length,
+                    );
                     num_int_pts += points.len();
                     write_points(&mut fract_int_file, &points, 0, &mut count);
                 }
