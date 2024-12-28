@@ -8,7 +8,6 @@ use rand::Rng;
 use rand_mt::Mt19937GenRand64;
 
 use crate::distribution::{TruncExp, TruncLogNormal, TruncPowerLaw};
-use crate::io::input::Input;
 use crate::{
     computational_geometry::{apply_rotation2_d, apply_rotation3_d, translate},
     distribution::generating_points::{poly_norm_gen, random_translation},
@@ -340,8 +339,13 @@ pub fn initialize_ell_vertices(
 // Arg 1: Polygon
 // Arg 2: Shape family structure which Polygon belongs to
 // Arg 3: Random Generator
+#[allow(clippy::too_many_arguments)]
 pub fn re_translate_poly(
-    global: &Input,
+    eps: f64,
+    domain_size: &Vector3<f64>,
+    domain_size_increase: &Vector3<f64>,
+    layers: &[f64],
+    regions: &[f64],
     new_poly: &mut Poly,
     shape_fam: &Shape,
     generator: Rc<RefCell<Mt19937GenRand64>>,
@@ -362,10 +366,10 @@ pub fn re_translate_poly(
 
         // Translate to new position
         let bbox = poly_boundary(
-            &global.domainSize,
-            &global.domainSizeIncrease,
-            &global.layers,
-            &global.regions,
+            domain_size,
+            domain_size_increase,
+            layers,
+            regions,
             shape_fam,
         );
         let t = random_translation(
@@ -442,15 +446,15 @@ pub fn re_translate_poly(
         // Angle must be in rad
         apply_rotation2_d(new_poly, beta);
         // Rotates poly from {0,0,1} to normalB, NEED to save normalB to newPoly.normal afterwards
-        apply_rotation3_d(new_poly, &normal_b, global.eps);
+        apply_rotation3_d(new_poly, &normal_b, eps);
         new_poly.normal = normal_b;
         // Translate to new position
         // Translate() will also set translation vector in poly structure
         let bbox = poly_boundary(
-            &global.domainSize,
-            &global.domainSizeIncrease,
-            &global.layers,
-            &global.regions,
+            domain_size,
+            domain_size_increase,
+            layers,
+            regions,
             shape_fam,
         );
         let t = random_translation(

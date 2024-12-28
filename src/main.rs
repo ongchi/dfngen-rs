@@ -379,7 +379,11 @@ fn main() {
                     } else {
                         // Retranslate poly and try again, preserving normal, size, and shape
                         re_translate_poly(
-                            &input,
+                            input.eps,
+                            &input.domainSize,
+                            &input.domainSizeIncrease,
+                            &input.layers,
+                            &input.regions,
                             &mut new_poly,
                             &shape_families[family_index],
                             generator.clone(),
@@ -534,7 +538,11 @@ fn main() {
 
                         pstats.retranslated_poly_count += 1;
                         re_translate_poly(
-                            &input,
+                            input.eps,
+                            &input.domainSize,
+                            &input.domainSizeIncrease,
+                            &input.layers,
+                            &input.regions,
                             &mut new_poly,
                             &shape_families[family_index],
                             generator.clone(),
