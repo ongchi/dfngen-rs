@@ -95,7 +95,19 @@ pub fn write_output(
     // write out userRejetedFracture information
     write_user_rejected_fracture_information(pstats, &output);
     // Write families to output Files
-    write_shape_fams(input, shape_families, &output);
+    write_shape_fams(
+        input.userEllipsesOnOff,
+        input.userRectanglesOnOff,
+        input.userPolygonByCoord,
+        input.stopCondition,
+        input.orientationOption,
+        input.nFamEll,
+        &input.layers,
+        &input.regions,
+        &input.famProbOriginal,
+        shape_families,
+        &output,
+    );
     // Write fracture translations file
     write_fracture_translations(final_fractures, accepted_poly, &output);
     // Write fracture connectivity (edge graph) file
@@ -1040,7 +1052,20 @@ fn write_user_rejected_fracture_information(pstats: &Stats, output: &str) {
 // Writes families.dat, Shape families definition file
 // Arg 1: std::vector array of all fracture shape families
 // Arg 2: Path to output folder
-fn write_shape_fams(input: &Input, shape_families: &[Shape], output: &str) {
+#[allow(clippy::too_many_arguments)]
+fn write_shape_fams(
+    user_ellipses_on_off: bool,
+    user_rectangles_on_off: bool,
+    user_polygon_by_coord: bool,
+    stop_condition: u8,
+    orientation_option: u8,
+    n_fam_ell: usize,
+    layers: &[f64],
+    regions: &[f64],
+    fam_prob_original: &[f64],
+    shape_families: &[Shape],
+    output: &str,
+) {
     let rad_to_deg = 180. / std::f64::consts::PI;
     println!("Writing Family Definitions File (families.dat)");
     let file_name = format!("{}/families.dat", output);
@@ -1048,17 +1073,17 @@ fn write_shape_fams(input: &Input, shape_families: &[Shape], output: &str) {
 
     //TODO: add stub code in families.dat for userDefined fractures, IF there are user defined fractures
 
-    if input.userEllipsesOnOff {
+    if user_ellipses_on_off {
         file.write_all("UserDefined Ellipse Family: 0\n\n".as_bytes())
             .unwrap();
     }
 
-    if input.userRectanglesOnOff {
+    if user_rectangles_on_off {
         file.write_all("UserDefined Rectangle Family: -1\n\n".as_bytes())
             .unwrap();
     }
 
-    if input.userPolygonByCoord {
+    if user_polygon_by_coord {
         file.write_all("UserDefined Polygon Family: -2\n\n".as_bytes())
             .unwrap();
     }
@@ -1069,7 +1094,7 @@ fn write_shape_fams(input: &Input, shape_families: &[Shape], output: &str) {
             format!(
                 "{} Family: {}\n",
                 shape_type(shape),
-                get_family_number(input.nFamEll, i as isize, shape.shape_family)
+                get_family_number(n_fam_ell, i as isize, shape.shape_family)
             )
             .as_bytes(),
         )
@@ -1092,7 +1117,7 @@ fn write_shape_fams(input: &Input, shape_families: &[Shape], output: &str) {
             .unwrap();
 
         // p32 target
-        if input.stopCondition == 1 {
+        if stop_condition == 1 {
             file.write_all(
                 format!("P32 (Fracture Intensity) Target: {}\n", shape.p32_target).as_bytes(),
             )
@@ -1120,7 +1145,7 @@ fn write_shape_fams(input: &Input, shape_families: &[Shape], output: &str) {
             .unwrap();
         }
 
-        if input.orientationOption == 0 {
+        if orientation_option == 0 {
             // Theta (angle normal makes with z axis
             file.write_all(format!("Theta-rad: {}\n", shape.angle_one).as_bytes())
                 .unwrap();
@@ -1131,7 +1156,7 @@ fn write_shape_fams(input: &Input, shape_families: &[Shape], output: &str) {
                 .unwrap();
             file.write_all(format!("Phi-deg: {}\n", shape.angle_two * rad_to_deg).as_bytes())
                 .unwrap();
-        } else if input.orientationOption == 1 {
+        } else if orientation_option == 1 {
             file.write_all(format!("Trend-rad: {}\n", shape.angle_one).as_bytes())
                 .unwrap();
             file.write_all(format!("Trend-deg: {}\n", shape.angle_one * rad_to_deg).as_bytes())
@@ -1141,7 +1166,7 @@ fn write_shape_fams(input: &Input, shape_families: &[Shape], output: &str) {
                 .unwrap();
             file.write_all(format!("Plunge-deg: {}\n", shape.angle_two * rad_to_deg).as_bytes())
                 .unwrap();
-        } else if input.orientationOption == 2 {
+        } else if orientation_option == 2 {
             file.write_all(format!("Dip-rad: {}\n", shape.angle_one).as_bytes())
                 .unwrap();
             file.write_all(format!("Dip-deg: {}\n", shape.angle_one * rad_to_deg).as_bytes())
@@ -1164,15 +1189,8 @@ fn write_shape_fams(input: &Input, shape_families: &[Shape], output: &str) {
             let idx = (shape.layer - 1) * 2;
             file.write_all(format!("Layer Number: {}\n", shape.layer).as_bytes())
                 .unwrap();
-            file.write_all(
-                format!(
-                    "Layer: {{{}, {}}}\n",
-                    input.layers[idx],
-                    input.layers[idx + 1]
-                )
-                .as_bytes(),
-            )
-            .unwrap();
+            file.write_all(format!("Layer: {{{}, {}}}\n", layers[idx], layers[idx + 1]).as_bytes())
+                .unwrap();
         }
 
         // Print layer family belongs to
@@ -1186,12 +1204,12 @@ fn write_shape_fams(input: &Input, shape_families: &[Shape], output: &str) {
             file.write_all(
                 format!(
                     "Region: {{{}, {}, {}, {}, {}, {}}}\n",
-                    input.regions[idx],
-                    input.regions[idx + 1],
-                    input.regions[idx + 2],
-                    input.regions[idx + 3],
-                    input.regions[idx + 4],
-                    input.regions[idx + 5]
+                    regions[idx],
+                    regions[idx + 1],
+                    regions[idx + 2],
+                    regions[idx + 3],
+                    regions[idx + 4],
+                    regions[idx + 5]
                 )
                 .as_bytes(),
             )
@@ -1252,11 +1270,7 @@ fn write_shape_fams(input: &Input, shape_families: &[Shape], output: &str) {
         }
 
         file.write_all(
-            format!(
-                "Family Insertion Probability: {}\n\n",
-                input.famProbOriginal[i]
-            )
-            .as_bytes(),
+            format!("Family Insertion Probability: {}\n\n", fam_prob_original[i]).as_bytes(),
         )
         .unwrap();
     }
