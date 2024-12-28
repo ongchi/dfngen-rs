@@ -76,7 +76,14 @@ pub fn write_output(
     // Write polys.inp
     write_polys_inp(final_fractures, accepted_poly, &poly_folder);
     // Write params.txt
-    write_params_file(input, final_fractures, pstats, &output);
+    write_params_file(
+        input.h,
+        input.visualizationMode,
+        &input.domainSize,
+        final_fractures,
+        pstats,
+        &output,
+    );
     // Write aperture file
     // writeApertureFile(finalFractures, acceptedPoly, output);
     // Write permability file
@@ -618,18 +625,23 @@ fn write_polys_inp(final_fractures: &[usize], accepted_poly: &[Poly], output: &s
 // Arg 2: std::vector array of all accetped fractures
 // Arg 3: std::vector array of fracture families
 // Arg 4: Path to output folder
-fn write_params_file(input: &Input, final_fractures: &[usize], pstats: &Stats, output: &str) {
+fn write_params_file(
+    h: f64,
+    visualization_mode: bool,
+    domain_size: &Vector3<f64>,
+    final_fractures: &[usize],
+    pstats: &Stats,
+    output: &str,
+) {
     let params_output_file = format!("{}/../params.txt", output);
     let mut params = File::create(&params_output_file).unwrap();
     println!("Writing {}", &params_output_file);
     params
         .write_all(format!("{}\n", final_fractures.len()).as_bytes())
         .unwrap();
+    params.write_all(format!("{}\n", h).as_bytes()).unwrap();
     params
-        .write_all(format!("{}\n", input.h).as_bytes())
-        .unwrap();
-    params
-        .write_all(format!("{}\n", input.visualizationMode as u8).as_bytes())
+        .write_all(format!("{}\n", visualization_mode as u8).as_bytes())
         .unwrap(); // Production mode
     params
         .write_all(
@@ -641,13 +653,13 @@ fn write_params_file(input: &Input, final_fractures: &[usize], pstats: &Stats, o
         )
         .unwrap();
     params
-        .write_all(format!("{}\n", input.domainSize[0]).as_bytes())
+        .write_all(format!("{}\n", domain_size[0]).as_bytes())
         .unwrap();
     params
-        .write_all(format!("{}\n", input.domainSize[1]).as_bytes())
+        .write_all(format!("{}\n", domain_size[1]).as_bytes())
         .unwrap();
     params
-        .write_all(format!("{}\n", input.domainSize[2]).as_bytes())
+        .write_all(format!("{}\n", domain_size[2]).as_bytes())
         .unwrap();
 }
 
