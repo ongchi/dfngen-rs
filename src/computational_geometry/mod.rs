@@ -572,7 +572,9 @@ fn fram(
         // NOTE: for debugging, there are several rejection codes for triple intersections
         // -14 <= rejCode <= -10 are for triple intersection rejections
         let rej_code = check_for_triple_intersections(
-            input,
+            input.h,
+            input.eps,
+            input.tripleIntersections,
             int_pts,
             count,
             int_pts_list,
@@ -1267,8 +1269,11 @@ fn line_seg_to_line_seg_sep(line1: &[Point3<f64>; 2], line2: &[Point3<f64>; 2], 
 //     -12 = triple_smallIntersectionAngle
 //     -13 = triple_closeEndPoint   (triple intersection point too close to an endpoint)
 //     -14 = triple_closeToTriplePt  (new triple point too close to previous triple point) */
+#[allow(clippy::too_many_arguments)]
 fn check_for_triple_intersections(
-    input: &Input,
+    h: f64,
+    eps: f64,
+    triple_intersections: bool,
     int_pts: &IntersectionPoints,
     count: usize,
     int_pts_list: &[IntersectionPoints],
@@ -1277,7 +1282,7 @@ fn check_for_triple_intersections(
     triple_points: &[Point3<f64>],
 ) -> i32 {
     let mut pt = Point3::default();
-    let min_dist = 1.5 * input.h;
+    let min_dist = 1.5 * h;
     let int_end_pts = [int_pts.p1, int_pts.p2]; //newest intersection
                                                 // Number of intersections already on poly2
     let n = poly2.intersection_index.len();
@@ -1290,22 +1295,22 @@ fn check_for_triple_intersections(
             int_pts_list[intersection_index].p1,
             int_pts_list[intersection_index].p2,
         ];
-        let mut dist1 = line_seg_to_line_seg(&int_end_pts, &line, &mut pt, input.eps); //get distance and pt of intersection
+        let mut dist1 = line_seg_to_line_seg(&int_end_pts, &line, &mut pt, eps); //get distance and pt of intersection
 
-        if dist1 >= input.h {
+        if dist1 >= h {
             continue;
         }
 
-        if !input.tripleIntersections && dist1 < input.h {
+        if !triple_intersections && dist1 < h {
             return -10; // Triple intersections not allowed (user input option)
         }
 
-        if dist1 > input.eps && dist1 < input.h {
+        if dist1 > eps && dist1 < h {
             return -11; // Point too close to other intersection
         }
 
         // Overlaping intersections
-        if dist1 <= input.eps {
+        if dist1 <= eps {
             // ANGLE CHECK, using definition of dot product: A dot B = Mag(A)*Mag(B) * Cos(angle)
             // Normalize  A and B first. Compare to precalculated values of cos(47deg)= .681998 and cos(133deg)= -.681998
             let u = (line[1] - line[0]).normalize();
@@ -1321,14 +1326,14 @@ fn check_for_triple_intersections(
             dist1 = distance(&pt, &int_end_pts[0]);
             let mut dist2 = distance(&pt, &int_end_pts[1]);
 
-            if dist1 < input.h || dist2 < input.h {
+            if dist1 < h || dist2 < h {
                 return -13;
             }
 
             dist1 = distance(&pt, &line[0]);
             dist2 = distance(&pt, &line[1]);
 
-            if dist1 < input.h || dist2 < input.h {
+            if dist1 < h || dist2 < h {
                 return -13;
             }
 
@@ -1351,9 +1356,9 @@ fn check_for_triple_intersections(
 
             // See if the found triple pt is already saved
             while k < temp_data.len() {
-                if (pt.x - temp_data[k].triple_point.x).abs() < input.eps
-                    && (pt.y - temp_data[k].triple_point.y).abs() < input.eps
-                    && (pt.z - temp_data[k].triple_point.z).abs() < input.eps
+                if (pt.x - temp_data[k].triple_point.x).abs() < eps
+                    && (pt.y - temp_data[k].triple_point.y).abs() < eps
+                    && (pt.z - temp_data[k].triple_point.z).abs() < eps
                 {
                     duplicate = true;
                     break;
@@ -1395,7 +1400,7 @@ fn check_for_triple_intersections(
                 let point2 = &tri_pt_tmp.triple_point;
                 let dist = distance(point1, point2);
 
-                if dist < min_dist && dist > input.eps {
+                if dist < min_dist && dist > eps {
                     return -14;
                 }
             }
