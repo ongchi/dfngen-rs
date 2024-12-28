@@ -103,7 +103,8 @@ pub fn print_generating_fractures_less_than_hwarning(
 //     Arg 3: Random number generator (see std <random> library)
 //     Arg 4: Distributions class (currently only used for exponential dist)
 pub fn add_radii_to_lists(
-    input: &Input,
+    h: f64,
+    n_fam_ell: usize,
     percent: f64,
     shape_families: &mut [Shape],
     generator: Rc<RefCell<Mt19937GenRand64>>,
@@ -111,8 +112,8 @@ pub fn add_radii_to_lists(
     for (i, shape) in shape_families.iter_mut().enumerate() {
         let amount_to_add = (shape.radii_list.len() as f64 * percent).ceil() as usize;
         add_radii(
-            input.h,
-            input.nFamEll,
+            h,
+            n_fam_ell,
             amount_to_add,
             i as isize,
             shape,

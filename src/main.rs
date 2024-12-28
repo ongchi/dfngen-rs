@@ -114,7 +114,8 @@ fn main() {
         // to the radii list for each family
         if !input.disableFram {
             add_radii_to_lists(
-                &input,
+                input.h,
+                input.nFamEll,
                 input.radiiListIncrease,
                 &mut shape_families,
                 generator.clone(),
