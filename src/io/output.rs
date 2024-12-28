@@ -50,7 +50,14 @@ pub fn write_output(
     // Adjust Fracture numbering
     adjust_int_fract_ids(final_fractures, accepted_poly, int_pts);
     // Write out graph information
-    write_graph_data(input, final_fractures, accepted_poly, int_pts, &output);
+    write_graph_data(
+        input.eps,
+        &input.domainSize,
+        final_fractures,
+        accepted_poly,
+        int_pts,
+        &output,
+    );
     // Write polygon.dat file
     write_polys(final_fractures, accepted_poly, &output);
     // Write intersection files (must be first file written, rotates polys to x-y plane)
@@ -1412,15 +1419,16 @@ fn write_rejects_per_attempt(pstats: &Stats, output: &str) {
 // Arg 2: std::vector array of all accepted fractures (before isolated fracture removal)
 // Arg 3: std::vector array of all intersections*/
 fn write_graph_data(
-    input: &Input,
+    eps: f64,
+    domain_size: &Vector3<f64>,
     final_fractures: &[usize],
     accepted_poly: &[Poly],
     int_pts: &[IntersectionPoints],
     output: &str,
 ) {
-    let domain_x = input.domainSize[0] * 0.5;
-    let domain_y = input.domainSize[1] * 0.5;
-    let domain_z = input.domainSize[2] * 0.5;
+    let domain_x = domain_size[0] * 0.5;
+    let domain_y = domain_size[1] * 0.5;
+    let domain_z = domain_size[2] * 0.5;
     // Keeps track of current un-rotated points we are working with
     print!("\nWriting Graph Data Files\n");
     //adjustIntFractIDs(finalFractures,acceptedPoly, intPts);
@@ -1501,11 +1509,11 @@ fn write_graph_data(
             let idx = k as usize * 3;
 
             // if fracture if on right boundary
-            if accepted_poly[final_fractures[i]].vertices[idx] >= domain_x - input.eps {
+            if accepted_poly[final_fractures[i]].vertices[idx] >= domain_x - eps {
                 for kk in 0..temp {
                     let iidx = kk as usize * 3;
 
-                    if accepted_poly[final_fractures[i]].vertices[iidx] >= domain_x - input.eps
+                    if accepted_poly[final_fractures[i]].vertices[iidx] >= domain_x - eps
                         && idx != iidx
                         && !right
                     {
@@ -1527,11 +1535,11 @@ fn write_graph_data(
                 }
             }
             // if fracture if on left boundary
-            else if accepted_poly[final_fractures[i]].vertices[idx] <= -domain_x + input.eps {
+            else if accepted_poly[final_fractures[i]].vertices[idx] <= -domain_x + eps {
                 for kk in 0..temp {
                     let iidx = kk as usize * 3;
 
-                    if accepted_poly[final_fractures[i]].vertices[iidx] <= -domain_x + input.eps
+                    if accepted_poly[final_fractures[i]].vertices[iidx] <= -domain_x + eps
                         && idx != iidx
                         && !left
                     {
@@ -1554,11 +1562,11 @@ fn write_graph_data(
             }
 
             // if fracture if on front boundary
-            if accepted_poly[final_fractures[i]].vertices[idx + 1] >= domain_y - input.eps {
+            if accepted_poly[final_fractures[i]].vertices[idx + 1] >= domain_y - eps {
                 for kk in 0..temp {
                     let iidx = kk as usize * 3;
 
-                    if accepted_poly[final_fractures[i]].vertices[iidx + 1] >= domain_y - input.eps
+                    if accepted_poly[final_fractures[i]].vertices[iidx + 1] >= domain_y - eps
                         && idx != iidx
                         && !front
                     {
@@ -1580,11 +1588,11 @@ fn write_graph_data(
                 }
             }
             // if fracture if on back boundary
-            else if accepted_poly[final_fractures[i]].vertices[idx + 1] <= -domain_y + input.eps {
+            else if accepted_poly[final_fractures[i]].vertices[idx + 1] <= -domain_y + eps {
                 for kk in 0..temp {
                     let iidx = kk as usize * 3;
 
-                    if accepted_poly[final_fractures[i]].vertices[iidx + 1] <= -domain_y + input.eps
+                    if accepted_poly[final_fractures[i]].vertices[iidx + 1] <= -domain_y + eps
                         && idx != iidx
                         && !back
                     {
@@ -1606,11 +1614,11 @@ fn write_graph_data(
                 }
             }
 
-            if accepted_poly[final_fractures[i]].vertices[idx + 2] >= domain_z - input.eps {
+            if accepted_poly[final_fractures[i]].vertices[idx + 2] >= domain_z - eps {
                 for kk in 0..temp {
                     let iidx = kk as usize * 3;
 
-                    if accepted_poly[final_fractures[i]].vertices[iidx + 2] >= domain_z - input.eps
+                    if accepted_poly[final_fractures[i]].vertices[iidx + 2] >= domain_z - eps
                         && idx != iidx
                         && !top
                     {
@@ -1630,11 +1638,11 @@ fn write_graph_data(
                         break;
                     }
                 }
-            } else if accepted_poly[final_fractures[i]].vertices[idx + 2] <= -domain_z + input.eps {
+            } else if accepted_poly[final_fractures[i]].vertices[idx + 2] <= -domain_z + eps {
                 for kk in 0..temp {
                     let iidx = kk as usize * 3;
 
-                    if accepted_poly[final_fractures[i]].vertices[iidx + 2] <= -domain_z + input.eps
+                    if accepted_poly[final_fractures[i]].vertices[iidx + 2] <= -domain_z + eps
                         && idx != iidx
                         && !bottom
                     {
