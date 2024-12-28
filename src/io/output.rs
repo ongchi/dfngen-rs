@@ -62,7 +62,10 @@ pub fn write_output(
     write_polys(final_fractures, accepted_poly, &output);
     // Write intersection files (must be first file written, rotates polys to x-y plane)
     write_intersection_files(
-        input,
+        input.h,
+        input.eps,
+        input.keepIsolatedFractures,
+        input.visualizationMode,
         final_fractures,
         accepted_poly,
         int_pts,
@@ -304,8 +307,12 @@ fn adjust_int_fract_ids(
 // Arg 4: std::vector array all triple intersection points
 // Arg 5: Path to intersections folder
 // Arg 6: Stats strcture. DFNGen running program stats (keeps track of total intersecion node count)
+#[allow(clippy::too_many_arguments)]
 fn write_intersection_files(
-    input: &Input,
+    h: f64,
+    eps: f64,
+    keep_isolated_fractures: bool,
+    visualization_mode: bool,
     final_fractures: &[usize],
     accepted_poly: &mut [Poly],
     int_pts: &[IntersectionPoints],
@@ -341,7 +348,7 @@ fn write_intersection_files(
         // Go through each final fracture's intersections and write to output
         let size = accepted_poly[final_fractures[i]].intersection_index.len();
 
-        if size > 0 || !input.keepIsolatedFractures {
+        if size > 0 || !keep_isolated_fractures {
             for j in 0..size {
                 // tempTripPts holds rotated triple points for an intersection. Triple pts must be rotated 3 different
                 // ways so we cannot change the original data
@@ -359,7 +366,7 @@ fn write_intersection_files(
                     &mut accepted_poly[final_fractures[i]],
                     triple_points,
                     &mut temp_trip_pts,
-                    input.eps,
+                    eps,
                 );
                 // poly and intersection now rotated
                 let triple_pts_size = temp_trip_pts.len();
@@ -403,8 +410,8 @@ fn write_intersection_files(
                     temp_point2 = triple_points[int_pts[poly_int_idx].triple_points_idx[s[0]]];
                     cur_length = distance(&temp_point1, &temp_point2);
                     let mut points = discretize_line_of_intersection(
-                        input.h,
-                        input.visualizationMode,
+                        h,
+                        visualization_mode,
                         &pt1,
                         &pt2,
                         cur_length,
@@ -434,8 +441,8 @@ fn write_intersection_files(
                                 triple_points[int_pts[poly_int_idx].triple_points_idx[s[jj + 1]]];
                             cur_length = distance(&temp_point1, &temp_point2);
                             points = discretize_line_of_intersection(
-                                input.h,
-                                input.visualizationMode,
+                                h,
+                                visualization_mode,
                                 &pt1,
                                 &pt2,
                                 cur_length,
@@ -454,8 +461,8 @@ fn write_intersection_files(
 
                     cur_length = distance(&temp_point1, &temp_point2);
                     points = discretize_line_of_intersection(
-                        input.h,
-                        input.visualizationMode,
+                        h,
+                        visualization_mode,
                         &pt1,
                         &pt2,
                         cur_length,
@@ -470,8 +477,8 @@ fn write_intersection_files(
                     temp_point2 = int_pts[poly_int_idx].p2;
                     cur_length = distance(&temp_point1, &temp_point2);
                     let points = discretize_line_of_intersection(
-                        input.h,
-                        input.visualizationMode,
+                        h,
+                        visualization_mode,
                         &pt1,
                         &pt2,
                         cur_length,
