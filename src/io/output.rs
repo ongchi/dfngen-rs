@@ -114,7 +114,8 @@ pub fn write_output(
     write_connectivity(final_fractures, accepted_poly, int_pts, &output);
     // Write rotation data
     write_rotation_data(
-        input,
+        input.eps,
+        &input.domainSize,
         accepted_poly,
         final_fractures,
         shape_families,
@@ -1343,7 +1344,8 @@ fn write_connectivity(
 // Arg 3: Array of all fracture shape families
 // Arg 4: Path to output folder
 fn write_rotation_data(
-    input: &Input,
+    eps: f64,
+    domain_size: &Vector3<f64>,
     accepted_poly: &[Poly],
     final_fractures: &[usize],
     shape_families: &[Shape],
@@ -1352,14 +1354,14 @@ fn write_rotation_data(
     let file_output_file = format!("{}/../poly_info.dat", output);
     let mut file = File::create(file_output_file).unwrap();
     println!("Writing Rotation Data File (poly_info.dat)");
-    let mut max_domain_size = input.domainSize[0];
+    let mut max_domain_size = domain_size[0];
 
-    if max_domain_size < input.domainSize[1] {
-        max_domain_size = input.domainSize[1];
+    if max_domain_size < domain_size[1] {
+        max_domain_size = domain_size[1];
     }
 
-    if max_domain_size < input.domainSize[2] {
-        max_domain_size = input.domainSize[2];
+    if max_domain_size < domain_size[2] {
+        max_domain_size = domain_size[2];
     }
 
     max_domain_size *= 10.;
@@ -1375,7 +1377,7 @@ fn write_rotation_data(
         // Rotation into xy plane
         let mut v = e3.cross(&normal);
 
-        if !(v[0].abs() < input.eps && v[1].abs() < input.eps && v[2].abs() < input.eps) {
+        if !(v[0].abs() < eps && v[1].abs() < eps && v[2].abs() < eps) {
             //if not zero vector
             v = v.normalize();
         }
