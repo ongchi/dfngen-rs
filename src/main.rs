@@ -250,7 +250,15 @@ fn main() {
         // Insert all user ellipses by coordinates
         if input.userEllByCoord {
             insert_user_ell_by_coord(
-                &mut input,
+                input.h,
+                input.eps,
+                input.nEllNodes,
+                input.nEllByCoord,
+                input.rFram,
+                input.disableFram,
+                input.tripleIntersections,
+                &input.domainSize,
+                &mut input.userEllCoordVertices,
                 &mut accepted_poly,
                 &mut intersection_pts,
                 &mut pstats,
@@ -286,7 +294,15 @@ fn main() {
         // Insert all user ellipses by coordinates
         if input.userEllByCoord {
             insert_user_ell_by_coord(
-                &mut input,
+                input.h,
+                input.eps,
+                input.nEllNodes,
+                input.nEllByCoord,
+                input.rFram,
+                input.disableFram,
+                input.tripleIntersections,
+                &input.domainSize,
+                &mut input.userEllCoordVertices,
                 &mut accepted_poly,
                 &mut intersection_pts,
                 &mut pstats,
