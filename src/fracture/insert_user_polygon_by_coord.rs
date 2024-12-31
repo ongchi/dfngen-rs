@@ -7,10 +7,7 @@ use super::insert_shape::print_reject_reason;
 
 use crate::{
     computational_geometry::{create_bounding_box, intersection_checking},
-    io::{
-        input::Input,
-        read_input_functions::{search_var, ReadFromTextFile},
-    },
+    io::read_input_functions::{search_var, ReadFromTextFile},
     math_functions::get_area,
     structures::{IntersectionPoints, Poly, RejectedUserFracture, Stats},
 };
@@ -99,8 +96,15 @@ fn create_poly(file: &mut File) -> Poly {
 //     Arg 2: Array for all accepted intersections
 //     Arg 3: Program statistics structure
 //     Arg 4: Array of all triple intersection points */
+#[allow(clippy::too_many_arguments)]
 pub fn insert_user_polygon_by_coord(
-    input: &Input,
+    h: f64,
+    eps: f64,
+    r_fram: bool,
+    disable_fram: bool,
+    triple_intersections: bool,
+    domain_size: &Vector3<f64>,
+    polygon_file: &str,
     accepted_poly: &mut Vec<Poly>,
     intpts: &mut Vec<IntersectionPoints>,
     pstats: &mut Stats,
@@ -108,8 +112,8 @@ pub fn insert_user_polygon_by_coord(
 ) {
     let family_id = -3;
 
-    println!("Reading User Defined Polygons from {}", input.polygonFile);
-    let mut file = File::open(&input.polygonFile).unwrap();
+    println!("Reading User Defined Polygons from {}", &polygon_file);
+    let mut file = File::open(polygon_file).unwrap();
 
     search_var(&mut file, "nPolygons:");
     let mut npoly: usize = 0;
@@ -120,7 +124,7 @@ pub fn insert_user_polygon_by_coord(
     for i in 0..npoly {
         let mut new_poly = create_poly(&mut file);
 
-        if domain_truncation(input.h, input.eps, &mut new_poly, &input.domainSize) {
+        if domain_truncation(h, eps, &mut new_poly, domain_size) {
             // Poly completely outside domain
             pstats.rejection_reasons.outside += 1;
             pstats.rejected_poly_count += 1;
@@ -134,11 +138,11 @@ pub fn insert_user_polygon_by_coord(
         create_bounding_box(&mut new_poly);
         // Line of intersection and FRAM
         let reject_code = intersection_checking(
-            input.h,
-            input.eps,
-            input.rFram,
-            input.disableFram,
-            input.tripleIntersections,
+            h,
+            eps,
+            r_fram,
+            disable_fram,
+            triple_intersections,
             &mut new_poly,
             accepted_poly,
             intpts,

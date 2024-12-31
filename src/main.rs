@@ -166,7 +166,13 @@ fn main() {
     // User Polygons are always inserted first
     if input.userPolygonByCoord {
         insert_user_polygon_by_coord(
-            &input,
+            input.h,
+            input.eps,
+            input.rFram,
+            input.disableFram,
+            input.tripleIntersections,
+            &input.domainSize,
+            &input.polygonFile,
             &mut accepted_poly,
             &mut intersection_pts,
             &mut pstats,
