@@ -207,7 +207,14 @@ fn main() {
         // Insert all user rectangles by coordinates
         if input.userRecByCoord {
             insert_user_rects_by_coord(
-                &mut input,
+                input.h,
+                input.eps,
+                input.rFram,
+                input.disableFram,
+                input.tripleIntersections,
+                input.nRectByCoord,
+                &input.domainSize,
+                &mut input.userRectCoordVertices,
                 &mut accepted_poly,
                 &mut intersection_pts,
                 &mut pstats,
@@ -285,7 +292,14 @@ fn main() {
         // Insert all user rectangles by coordinates
         if input.userRecByCoord {
             insert_user_rects_by_coord(
-                &mut input,
+                input.h,
+                input.eps,
+                input.rFram,
+                input.disableFram,
+                input.tripleIntersections,
+                input.nRectByCoord,
+                &input.domainSize,
+                &mut input.userRectCoordVertices,
                 &mut accepted_poly,
                 &mut intersection_pts,
                 &mut pstats,

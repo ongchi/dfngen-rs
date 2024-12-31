@@ -5,12 +5,11 @@ use super::insert_shape::print_reject_reason;
 
 use crate::{
     computational_geometry::{create_bounding_box, intersection_checking},
-    io::input::Input,
     math_functions::get_area,
     structures::{IntersectionPoints, Poly, RejectedUserFracture, Stats},
 };
 
-fn create_poly(input: &mut Input, idx: usize) -> Poly {
+fn create_poly(user_rect_coord_vertices: &[f64], idx: usize) -> Poly {
     let mut new_poly = Poly {
         family_num: -2,
         // Set number of nodes. Needed for rotations.
@@ -24,9 +23,9 @@ fn create_poly(input: &mut Input, idx: usize) -> Poly {
     // Initialize vertices
     for j in 0..4 {
         let v_idx = j * 3;
-        new_poly.vertices[v_idx] = input.userRectCoordVertices[poly_vert_idx + v_idx];
-        new_poly.vertices[v_idx + 1] = input.userRectCoordVertices[poly_vert_idx + 1 + v_idx];
-        new_poly.vertices[v_idx + 2] = input.userRectCoordVertices[poly_vert_idx + 2 + v_idx];
+        new_poly.vertices[v_idx] = user_rect_coord_vertices[poly_vert_idx + v_idx];
+        new_poly.vertices[v_idx + 1] = user_rect_coord_vertices[poly_vert_idx + 1 + v_idx];
+        new_poly.vertices[v_idx + 2] = user_rect_coord_vertices[poly_vert_idx + 2 + v_idx];
     }
 
     // Check that rectangle lays one a single plane:
@@ -90,21 +89,29 @@ fn create_poly(input: &mut Input, idx: usize) -> Poly {
 //     Arg 2: Array for all accepted intersections
 //     Arg 3: Program statistics structure
 //     Arg 4: Array of all triple intersection points
+#[allow(clippy::too_many_arguments)]
 pub fn insert_user_rects_by_coord(
-    input: &mut Input,
+    h: f64,
+    eps: f64,
+    r_fram: bool,
+    disable_fram: bool,
+    triple_intersections: bool,
+    n_rect_by_coord: usize,
+    domain_size: &Vector3<f64>,
+    user_rect_coord_vertices: &mut Vec<f64>,
     accepted_poly: &mut Vec<Poly>,
     intpts: &mut Vec<IntersectionPoints>,
     pstats: &mut Stats,
     triple_points: &mut Vec<Point3<f64>>,
 ) {
     let family_id = -2;
-    let npoly = input.nRectByCoord;
+    let npoly = n_rect_by_coord;
     println!("{} User Rectangles By Coordinates Defined", npoly);
 
     for i in 0..npoly {
-        let mut new_poly = create_poly(input, i);
+        let mut new_poly = create_poly(user_rect_coord_vertices, i);
 
-        if domain_truncation(input.h, input.eps, &mut new_poly, &input.domainSize) {
+        if domain_truncation(h, eps, &mut new_poly, domain_size) {
             // Poly completely outside domain
             pstats.rejection_reasons.outside += 1;
             pstats.rejected_poly_count += 1;
@@ -118,11 +125,11 @@ pub fn insert_user_rects_by_coord(
         create_bounding_box(&mut new_poly);
         // Line of intersection and FRAM
         let reject_code = intersection_checking(
-            input.h,
-            input.eps,
-            input.rFram,
-            input.disableFram,
-            input.tripleIntersections,
+            h,
+            eps,
+            r_fram,
+            disable_fram,
+            triple_intersections,
             &mut new_poly,
             accepted_poly,
             intpts,
@@ -161,5 +168,5 @@ pub fn insert_user_rects_by_coord(
         }
     }
 
-    input.userRectCoordVertices.clear();
+    user_rect_coord_vertices.clear();
 }
