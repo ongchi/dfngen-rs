@@ -2,7 +2,6 @@ use parry3d_f64::na::Point3;
 
 use crate::{
     computational_geometry::intersection_checking,
-    io::input::Input,
     structures::{IntersectionPoints, Poly, Stats},
 };
 
@@ -28,8 +27,13 @@ use crate::{
 // NOTE: Must be executed before getCluster()
 //       This funciton rebuilds the DFN. Using getCluster() before this
 //       funciton executes causes undefined behavior.
+#[allow(clippy::too_many_arguments)]
 pub fn remove_fractures(
-    input: &Input,
+    h: f64,
+    eps: f64,
+    r_fram: bool,
+    disable_fram: bool,
+    triple_intersections: bool,
     min_size: f64,
     accepted_polys: &mut Vec<Poly>,
     int_pts: &mut Vec<IntersectionPoints>,
@@ -59,11 +63,11 @@ pub fn remove_fractures(
         new_poly.intersection_index.clear(); // Remove ref to old intersections
                                              // Find line of intersection and FRAM check
         let reject_code = intersection_checking(
-            input.h,
-            input.eps,
-            input.rFram,
-            input.disableFram,
-            input.tripleIntersections,
+            h,
+            eps,
+            r_fram,
+            disable_fram,
+            triple_intersections,
             &mut new_poly,
             &mut final_poly_list,
             int_pts,

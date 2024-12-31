@@ -843,7 +843,11 @@ fn main() {
         );
         let size = accepted_poly.len();
         remove_fractures(
-            &input,
+            input.h,
+            input.eps,
+            input.rFram,
+            input.disableFram,
+            input.tripleIntersections,
             input.removeFracturesLessThan,
             &mut accepted_poly,
             &mut intersection_pts,
