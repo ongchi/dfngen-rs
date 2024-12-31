@@ -871,7 +871,13 @@ fn main() {
         );
         let size = accepted_poly.len();
         polygon_boundary(
-            &input,
+            input.h,
+            input.eps,
+            input.rFram,
+            input.disableFram,
+            input.tripleIntersections,
+            input.numOfDomainVertices,
+            &input.domainVertices,
             &mut accepted_poly,
             &mut intersection_pts,
             &mut triple_points,

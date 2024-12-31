@@ -2,11 +2,15 @@ use parry3d_f64::na::Point3;
 
 use crate::{
     computational_geometry::intersection_checking,
-    io::input::Input,
     structures::{IntersectionPoints, Poly, Stats},
 };
 
-fn in_polygon_boundary(input: &Input, x: f64, y: f64) -> bool {
+fn in_polygon_boundary(
+    num_of_domain_vertices: usize,
+    domain_vertices: &[Point3<f64>],
+    x: f64,
+    y: f64,
+) -> bool {
     // Checks if a point is within the polygon domain using a ray casting algorithm.
     // 1) create a parametric equation for a ray coming from the new Points
     // * r(x) = newPoint.x + t * 1
@@ -41,14 +45,13 @@ fn in_polygon_boundary(input: &Input, x: f64, y: f64) -> bool {
 
     let mut c = false;
     let mut i = 0;
-    let mut j = input.numOfDomainVertices - 1;
-    while i < input.numOfDomainVertices {
-        if ((input.domainVertices[i].y > y) != (input.domainVertices[j].y > y))
+    let mut j = num_of_domain_vertices - 1;
+    while i < num_of_domain_vertices {
+        if ((domain_vertices[i].y > y) != (domain_vertices[j].y > y))
             && (x
-                < (input.domainVertices[j].x - input.domainVertices[i].x)
-                    * (y - input.domainVertices[i].y)
-                    / (input.domainVertices[j].y - input.domainVertices[i].y)
-                    + input.domainVertices[i].x)
+                < (domain_vertices[j].x - domain_vertices[i].x) * (y - domain_vertices[i].y)
+                    / (domain_vertices[j].y - domain_vertices[i].y)
+                    + domain_vertices[i].x)
         {
             // flips back and forth between 0 and 1
             // will be 0 for no crossings or an even number of them
@@ -82,8 +85,15 @@ fn in_polygon_boundary(input: &Input, x: f64, y: f64) -> bool {
 // Arg 3: Array of accepted intersections
 // Arg 4: Array of all triple intersection points
 // Arg 5: Stats structure (DFN Statisctics)
+#[allow(clippy::too_many_arguments)]
 pub fn polygon_boundary(
-    input: &Input,
+    h: f64,
+    eps: f64,
+    r_fram: bool,
+    disable_fram: bool,
+    triple_intersections: bool,
+    num_of_domain_vertices: usize,
+    domain_vertices: &[Point3<f64>],
     accepted_polys: &mut Vec<Poly>,
     int_pts: &mut Vec<IntersectionPoints>,
     triple_points: &mut Vec<Point3<f64>>,
@@ -107,7 +117,7 @@ pub fn polygon_boundary(
         let y = accepted_polys[i].translation[1];
 
         // cout << "fracture " << i + 1 << " center " << x << "," << y << endl;
-        if !in_polygon_boundary(input, x, y) {
+        if !in_polygon_boundary(num_of_domain_vertices, domain_vertices, x, y) {
             accepted_polys.clear();
             continue;
         }
@@ -116,15 +126,15 @@ pub fn polygon_boundary(
         new_poly.group_num = 0; // Reset cluster group number
         new_poly.intersection_index.clear(); // Remove ref to old intersections
                                              // Find line of intersection and FRAM check
-        let reject_code = if input.disableFram {
+        let reject_code = if disable_fram {
             0
         } else {
             intersection_checking(
-                input.h,
-                input.eps,
-                input.rFram,
-                input.disableFram,
-                input.tripleIntersections,
+                h,
+                eps,
+                r_fram,
+                disable_fram,
+                triple_intersections,
                 new_poly,
                 &mut final_poly_list,
                 int_pts,
