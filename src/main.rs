@@ -184,7 +184,19 @@ fn main() {
         // Insert user rects first
         if input.userRectanglesOnOff {
             insert_user_rects(
-                &mut input,
+                input.h,
+                input.eps,
+                input.rFram,
+                input.disableFram,
+                input.tripleIntersections,
+                input.nUserRect,
+                &input.domainSize,
+                &input.urRadii,
+                &input.uraspect,
+                &input.urBeta,
+                &mut input.urnormal,
+                &input.urtranslation,
+                input.urAngleOption,
                 &mut accepted_poly,
                 &mut intersection_pts,
                 &mut pstats,
@@ -250,7 +262,19 @@ fn main() {
         // Insert user rects
         if input.userRectanglesOnOff {
             insert_user_rects(
-                &mut input,
+                input.h,
+                input.eps,
+                input.rFram,
+                input.disableFram,
+                input.tripleIntersections,
+                input.nUserRect,
+                &input.domainSize,
+                &input.urRadii,
+                &input.uraspect,
+                &input.urBeta,
+                &mut input.urnormal,
+                &input.urtranslation,
+                input.urAngleOption,
                 &mut accepted_poly,
                 &mut intersection_pts,
                 &mut pstats,
