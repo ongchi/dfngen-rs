@@ -79,16 +79,27 @@ fn create_poly(user_rect_coord_vertices: &[f64], idx: usize) -> Poly {
     new_poly
 }
 
-// *************************************************************
-// ***********  Insert User Rects By Coord  ********************
-//     Inserts user rectangles using defined coordinates
-//     provided by the user (see input file).
-//     Intersection checking, FRAM, and rejection/accptance are all contained
-//     within this function.
-//     Arg 1: Array for all accepted polygons
-//     Arg 2: Array for all accepted intersections
-//     Arg 3: Program statistics structure
-//     Arg 4: Array of all triple intersection points
+/// Insert User Rects By Coord
+///
+/// Inserts user rectangles using defined coordinates
+/// provided by the user (see input file).
+/// Intersection checking, FRAM, and rejection/accptance are all contained
+/// within this function.
+///
+/// # Arguments
+///
+/// * `h` - Minimum feature size
+/// * `eps` - Epsilon value for floating point comparisons
+/// * `r_fram` - Uses a relaxed version of the FRAM algorithm. The mesh may not be perfectly conforming
+/// * `disable_fram` - If true, FRAM is disabled
+/// * `triple_intersections` - If true, triple intersections are accepted
+/// * `n_rect_by_coord` - Number of user rectangles defined by coordinates
+/// * `domain_size` - Size of the domain
+/// * `user_rect_coord_vertices` - User defined rectangle coordinates
+/// * `accepted_poly` - Array for all accepted polygons
+/// * `intpts` - Array for all accepted intersections
+/// * `pstats` - Program statistics structure
+/// * `triple_points` - Array of all triple intersection points
 #[allow(clippy::too_many_arguments)]
 pub fn insert_user_rects_by_coord(
     h: f64,

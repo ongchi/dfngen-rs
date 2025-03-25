@@ -92,15 +92,33 @@ fn create_poly(
     new_poly
 }
 
-// ***********************************************************************
-// *********************  Insert User Ellipse  ***************************
-// Inserts a user defined ellipse into the domain.
-// Intersection checking, FRAM, and rejection/accptance are all called
-// within this function.
-// Arg 1: Array for all accepted polygons
-// Arg 2: Array for all accepted intersections
-// Arg 3: Program statistics structure
-// Arg 4: Array of all triple intersection points
+/// Insert User Ellipse
+///
+/// Inserts a user defined ellipse into the domain.
+/// Intersection checking, FRAM, and rejection/accptance are all called
+/// within this function.
+///
+/// # Arguments
+///
+/// * `h` - Minimum feature size
+/// * `eps` - Epsilon value for floating point comparisons
+/// * `n_user_ell` - Number of user defined ellipses
+/// * `ue_angle_option` - Option to use angle in degrees or radians
+/// * `r_fram` - Uses a relaxed version of the FRAM algorithm. The mesh may not be perfectly conforming
+/// * `disable_fram` - If true, FRAM is disabled
+/// * `triple_intersections` - If true, triple intersections are allowed
+/// * `domain_size` - Size of the domain
+/// * `uenum_points` - User ellipses number of points per ellipse array.
+/// * `uetranslation` - User ellipses translation array.
+/// * `ueaspect` - User ellipses aspect ratio array.
+/// * `ue_radii` - User ellipses radii array.
+/// * `ue_beta` - User ellipses beta array.
+/// * `uenormal` - User ellipses normal vector array.
+/// * `urnormal` - User rectangles normal vector array.
+/// * `accepted_poly` - Array for all accepted polygons
+/// * `intpts` - Array for all accepted intersections
+/// * `pstats` - Program statistics structure
+/// * `triple_points` - Array of all triple intersection points
 #[allow(clippy::too_many_arguments)]
 pub fn insert_user_ell(
     h: f64,

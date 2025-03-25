@@ -8,12 +8,13 @@ use text_io::read;
 
 use crate::io::input::Input;
 
-// *******************************************************************
-// *******************************************************************
-// Searches for variable in files, moves file pointer to position
-// after word. Used to read in varlable values
-// Arg 1: ifstream file object
-// Arg 2: Word to search for
+/// Searches for variable in files, moves file pointer to position
+/// after word. Used to read in varlable values
+///
+/// # Arguments
+///
+/// * `file` - File object
+/// * `search` - Word to search for
 pub fn search_var(file: &mut File, search: &str) {
     file.seek(SeekFrom::Start(0)).unwrap();
 
@@ -30,13 +31,14 @@ pub fn search_var(file: &mut File, search: &str) {
     }
 }
 
-// **********************************************************************
-// **********************************************************************
-// Used to read in rectangualr coordinates when the user is using
-// user rectangles defined by coordinates option.
-// Arg 1: ifstream file object
-// Arg 2: OUTPUT. Pointer to array to store the coordinates
-// Arg 3: Number of rectangles
+/// Used to read in rectangualr coordinates when the user is using
+/// user rectangles defined by coordinates option.
+///
+/// # Arguments
+///
+/// * `file` - file object
+/// * `var` - OUTPUT. Pointer to array to store the coordinates
+/// * `n_rectangles` - Number of rectangles
 pub fn get_rect_coords(file: &mut File, var: &mut Vec<f64>, n_rectangles: usize) {
     let mut bytes = file.bytes().map(|ch| ch.unwrap());
 
@@ -46,14 +48,15 @@ pub fn get_rect_coords(file: &mut File, var: &mut Vec<f64>, n_rectangles: usize)
     }
 }
 
-// **********************************************************************
-// **********************************************************************
-// Used to read in ellipse coordinates when the user is using
-// user ellipses defined by coordinates option.
-// Arg 1: ifstream file object
-// Arg 2: OUTPUT. Pointer to array to store the coordinates
-// Arg 3: Number of ellipses
-// Arg 4: Number of points per ellipse
+/// Used to read in ellipse coordinates when the user is using
+/// user ellipses defined by coordinates option.
+///
+/// # Arguments
+///
+/// * `file` - file object
+/// * `out_ary` - Array to store the coordinates
+/// * `n_poly` - Number of ellipses
+/// * `n_vertices` - Number of points per ellipse
 pub fn get_cords(file: &mut File, out_ary: &mut Vec<f64>, n_poly: usize, n_vertices: usize) {
     let mut bytes = file.bytes().map(|ch| ch.unwrap());
     let size = n_poly * n_vertices;
@@ -64,19 +67,9 @@ pub fn get_cords(file: &mut File, out_ary: &mut Vec<f64>, n_poly: usize, n_verti
     }
 }
 
-// *******************************************************************
-// *******************************************************************
-// Gets time based seed
-// Return: Seed based on the system clock
 pub fn get_time_based_seed() -> u64 {
     let now = SystemTime::now();
     now.duration_since(UNIX_EPOCH).map(|t| t.as_secs()).unwrap()
-}
-
-// Splits a line of text on white space and returns
-// a of strings with the words in the line
-pub fn split_on_white_space(line: &str) -> Vec<&str> {
-    line.split_whitespace().collect()
 }
 
 pub fn read_domain_vertices(global: &mut Input, filename: &str) {
@@ -88,7 +81,7 @@ pub fn read_domain_vertices(global: &mut Input, filename: &str) {
     let reader = BufReader::new(vertices_file);
     let mut lines = reader.lines();
     let line = lines.next().unwrap().unwrap();
-    let parsed_line = split_on_white_space(&line);
+    let parsed_line: Vec<&str> = line.as_str().split_whitespace().collect();
 
     // get number of cells in x and y
     let num_of_domain_vertices: usize = parsed_line[0].parse().unwrap();
@@ -100,7 +93,7 @@ pub fn read_domain_vertices(global: &mut Input, filename: &str) {
 
     for _ in 0..num_of_domain_vertices {
         let line = lines.next().unwrap().unwrap();
-        let parsed_line = split_on_white_space(&line);
+        let parsed_line: Vec<&str> = line.as_str().split_whitespace().collect();
         global.domainVertices.push(Point3::new(
             parsed_line[0].parse().unwrap(),
             parsed_line[1].parse().unwrap(),

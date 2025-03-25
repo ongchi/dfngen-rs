@@ -2,17 +2,26 @@ use parry3d_f64::na::Vector3;
 
 use crate::structures::Poly;
 
-/******************************************************************************/
-/***********************  Domain Truncation  **********************************/
-// NOTE: domainTruncation() may benefit from rewriting in a more
-//       efficient way which does not reallocate memory as often
-// Truncates polygons along the defined domain ('domainSize' in input file)
-// Arg 1: Polygon being truncated (if truncation is necessary)
-// Arg 2: Point to domain size array, 3 doubles: {x, y, z}
-// Return:  0 - If Poly is inside domain and was truncated to more than 2 vertices,
-//              of poly truncation was not needed
-//          1 - If rejected due to being outside the domain or was truncated to
-//              less than 3 vertices
+/// Domain Truncation
+///
+/// NOTE:
+///     domainTruncation() may benefit from rewriting in a more
+///     efficient way which does not reallocate memory as often
+///     Truncates polygons along the defined domain ('domainSize' in input file)
+///
+/// # Arguments
+///
+/// * `h` - Minimum feature size
+/// * `eps` - Epsilon value for floating point comparisons
+/// * `new_poly` - Polygon being truncated (if truncation is necessary)
+/// * `domain_size` - Point to domain size array, 3 doubles: {x, y, z}
+///
+/// # Returns
+///
+/// 0 - If Poly is inside domain and was truncated to more than 2 vertices,
+///     of poly truncation was not needed
+/// 1 - If rejected due to being outside the domain or was truncated to
+///     less than 3 vertices
 pub fn domain_truncation(
     h: f64,
     eps: f64,

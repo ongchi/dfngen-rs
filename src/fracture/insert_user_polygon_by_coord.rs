@@ -12,14 +12,13 @@ use crate::{
     structures::{IntersectionPoints, Poly, RejectedUserFracture, Stats},
 };
 
-// **********************************************************************
-// **********************************************************************
-// Used to read in ellipse coordinates when the user is using
-// user ellipses defined by coordinates option.
-// Arg 1: ifstream file object
-// Arg 2: OUTPUT. Pointer to array to store the coordinates
-// Arg 3: Number of ellipses
-// Arg 4: Number of points per ellipse
+/// Used to read in ellipse coordinates when the user is using
+/// user ellipses defined by coordinates option.
+///
+/// # Arguments
+///
+/// * `stream` - File stream
+/// * `n_vertices` - Number of vertices
 fn get_poly_coords(stream: &mut File, n_vertices: usize) -> Vec<f64> {
     let mut vertices = Vec::with_capacity(n_vertices * 3);
 
@@ -86,16 +85,24 @@ fn create_poly(file: &mut File) -> Poly {
     new_poly
 }
 
-// /****************************************************************/
-// /***********  Insert User Polygon By Coord  ********************/
-// /*! Inserts user polygon using defined coordinates
-//     provided by the user (see input file).
-//     Intersection checking, FRAM, and rejection/acceptance are all contained
-//     within this function.
-//     Arg 1: Array for all accepted polygons
-//     Arg 2: Array for all accepted intersections
-//     Arg 3: Program statistics structure
-//     Arg 4: Array of all triple intersection points */
+/// Inserts user polygon using defined coordinates provided by the user (see input file).
+///
+/// Intersection checking, FRAM, and rejection/acceptance are all contained
+/// within this function.
+///
+/// # Arguments
+///
+/// * `h` - Minimum feature size
+/// * `eps` - Epsilon value for floating point comparisons
+/// * `r_fram` - Uses a relaxed version of the FRAM algorithm. The mesh may not be perfectly conforming
+/// * `disable_fram` - If true, FRAM is disabled
+/// * `triple_intersections` - If true, triple intersections are accepted
+/// * `domain_size` - Domain size
+/// * `polygon_file` - File containing user defined polygons
+/// * `accepted_poly` - Array for all accepted polygons
+/// * `intpts` - Array for all accepted intersections
+/// * `pstats` - Program statistics structure
+/// * `triple_points` - Array of all triple intersection points
 #[allow(clippy::too_many_arguments)]
 pub fn insert_user_polygon_by_coord(
     h: f64,

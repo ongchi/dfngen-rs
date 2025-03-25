@@ -14,16 +14,19 @@ use crate::{
     structures::{IntersectionPoints, Poly, Shape, Stats},
 };
 
-// void writeOutput() ************************************************************************
-// Writes all output for DFNGen
-// Arg 1: c syle string (char array) path to output folder
-// Arg 2: std::vector Poly array of all accepted polygons
-// Arg 3: std::vector Intersection array of all intersections from accepted polygons
-// Arg 4: std::vector Point array of all accpeted triple intersection points
-// Arg 5: Stats strcuture, running program statistucs (see definition in structures.h)
-// Arg 6: std::vector of unsigned int - indices into the Poly array of accepted polgons
-//        which remain after isolated fractures (polys) were removed
-// Arg 7: std::vector Shape - Family structure array  of all stocastic families defined by user input
+/// Writes all output for DFNGen
+///
+/// # Arguments
+///
+/// * `input` - Input structure, contains all user input
+/// * `output_folder` - Path to output folder
+/// * `accepted_poly` - Vector of all accepted polygons
+/// * `int_pts` - Vector of all intersections from accepted polygons
+/// * `triple_points` - Vector of all accepted triple intersection points
+/// * `pstats` - Stats structure, running program statistics
+/// * `final_fractures` - indices into the Poly array of accepted polgons
+///     which remain after isolated fractures (polys) were removed
+/// * `shape_families` - Family structure array of all stocastic families defined by user input
 #[allow(clippy::too_many_arguments)]
 pub fn write_output(
     input: &Input,
@@ -190,18 +193,21 @@ pub fn write_output(
     }
 }
 
-// void writePoints() ************************************************************************
-// Helper function for writing discretized intersections
-// Function writes n points to file
-// Arg 1: Output file stream object (file we are writing to)
-// Arg 2: std::vector Point array (discretized points)
-// Arg 3: Index to point to start output to file.
-//        ARG 3 USAGE EAMPLE: When discretizing points, the program can discretize from an end
-//        point to a triple intersection point, and then from the triple intersection point to
-//        another end point. This means you have two arrays of points. The last point in the first
-//        array will be the same as the first point in the second array. In this situation, you
-//        would set start = 1 while writing the second array to avoid duplicate points in the output
-// Arg 4: Counter of poitns written. Used to rember at which node a new intersection starts
+/// Helper function for writing discretized intersections
+///
+/// Function writes n points to file
+///
+/// # Arguments
+///
+/// * `output` - Output file stream object (file we are writing to)
+/// * `points` - Vector of Point3<f64> array (discretized points)
+/// * `start` - Index to point to start output to file.
+///     When discretizing points, the program can discretize from an end
+///     point to a triple intersection point, and then from the triple intersection point to
+///     another end point. This means you have two arrays of points. The last point in the first
+///     array will be the same as the first point in the second array. In this situation, you
+///     would set start = 1 while writing the second array to avoid duplicate points in the output
+/// * `count` - Counter of poitns written. Used to rember at which node a new intersection starts
 fn write_points(output: &mut File, points: &[Point3<f64>], start: usize, count: &mut usize) {
     let n = points.len();
 
@@ -219,16 +225,18 @@ fn write_points(output: &mut File, points: &[Point3<f64>], start: usize, count: 
     }
 }
 
-// finishWritingIntFile() ********************************************************************/
-// Helper function for writing discretized intersection points
-// Writes header and line connections after points have been written
-// Arg 1: Output file stream object (intersection file)
-// Arg 2: Number, or index, of fracture whos intersection is being written
-// Arg 3: Number of intersection points on fracture
-// Arg 4: Number of intersections on fracture
-// Arg 5: std:vector array of node numbers which start an intersection. Used to generate "line"
-//        connections in intersection inp files
-// Arg 6: std::vector array of fracture id's (indices) who intersect fract1 (arg 2)
+/// Helper function for writing discretized intersection points
+/// Writes header and line connections after points have been written
+///
+/// # Arguments
+///
+/// * `fract_int_file` - Output file stream object (intersection file)
+/// * `fract1` - Number, or index, of fracture whos intersection is being written
+/// * `num_points` - Number of intersection points on fracture
+/// * `num_intersections` - Number of intersections on fracture
+/// * `int_start` - Vector array of node numbers which start an intersection.
+///     Used to generate "line" connections in intersection inp files
+/// * `intersecting_fractures` - Vector array of fracture id's (indices) who intersect fract1
 fn finish_writing_int_file(
     fract_int_file: &mut File,
     fract1: usize,
@@ -279,21 +287,23 @@ fn finish_writing_int_file(
         .unwrap();
 }
 
-// adjustIntFractIds() **********************************************************************
-// Adjust the intersectins fracture numbers. The finalFracture list is the indexes of the final polygons.
-// If finalFractures = {4, 2, 8}, the fracture ID's must be 1, 2, 3 respectively. Easiest way
-// is to adjust the fracture ID's in the corresponding intersections first, before writing output files
-// Use the negative value to keep to not loose track of what fracture id's are what (prevent aliasing).
-//
-// EXAMPLE: For triple intersections, each intersection lists three fractures which intersect.
-// Say fractures 1, 5, and 6 intersect and once adjusted the the fracture IDs become 1, 4, and 5.
-// We access the intersection structure through the polygons, so for this particular
-// intersection structure, it will be accessed three times (once for each polygon). If we adjust ID 5 to be id 4 during
-// the second access, then during the thrid access, ID 4 may be aliasing another ID and be adjusted again.
-// To prevent this, we use the negative value to prevent aliasing.
-// Arg 1: std::vector of indices to allPolys array of fractures left after isolated fracture removal
-// Arg 2: std::vector of all accepted polygons
-// Arg 3: std::vector of all intersections
+/// Adjust the intersectins fracture numbers. The finalFracture list is the indexes of the final polygons.
+/// If finalFractures = {4, 2, 8}, the fracture ID's must be 1, 2, 3 respectively. Easiest way
+/// is to adjust the fracture ID's in the corresponding intersections first, before writing output files
+/// Use the negative value to keep to not loose track of what fracture id's are what (prevent aliasing).
+///
+/// EXAMPLE: For triple intersections, each intersection lists three fractures which intersect.
+/// Say fractures 1, 5, and 6 intersect and once adjusted the the fracture IDs become 1, 4, and 5.
+/// We access the intersection structure through the polygons, so for this particular
+/// intersection structure, it will be accessed three times (once for each polygon). If we adjust ID 5 to be id 4 during
+/// the second access, then during the thrid access, ID 4 may be aliasing another ID and be adjusted again.
+/// To prevent this, we use the negative value to prevent aliasing.
+///
+/// # Arguments
+///
+/// * `final_fractures` - Vector array of indices of fractures left after isolated fracture removal
+/// * `all_polys` - Vector array of all accepted polygons
+/// * `int_pts` - Vector array of all intersections
 fn adjust_int_fract_ids(
     final_fractures: &[usize],
     all_polys: &[Poly],
@@ -315,18 +325,25 @@ fn adjust_int_fract_ids(
     }
 }
 
-// writeIntersectionFiles() ******************************************************************
 // Writes intersection inp files to output folder
+//
 // Rotates intersections, and triple intersection points to x-y plane
 // Also rotates polygons to x-y plane to save on computation during writePolysInp()
 // Rotating polygons here increases performance as we do not need to recalculate rotation matricies
-// Arg 1: std::vector array of indices to fractures (Arg 2) remaining after isolated
-//        fracture removal
-// Arg 2: std::vector array of all accepted fractures (before isolated fracture removal)
-// Arg 3: std::vector array of all intersections
-// Arg 4: std::vector array all triple intersection points
-// Arg 5: Path to intersections folder
-// Arg 6: Stats strcture. DFNGen running program stats (keeps track of total intersecion node count)
+//
+// # Arguments
+//
+/// * `h` - Minimum feature size
+/// * `eps` - Epsilon value for floating point comparison
+/// * `keep_isolated_fractures` - Flag to keep isolated fractures
+/// * `visualization_mode` - If false, creates a fine mesh, according to h parameter.
+///     If true, produce only first round of triangulations. In this case no modeling of flow and transport is possible.
+/// * `final_fractures` - Vector array of indices of fractures left after isolated fracture removal
+/// * `accepted_poly` - Vector array of all accetped fractures (before isolated fracture removal)
+/// * `int_pts` - Vector array of all intersections
+/// * `triple_points` - Vector array of all triple intersection points
+/// * `intersection_folder` - Path to intersections folder
+/// * `pstats` - Stats structure, running program statistics
 #[allow(clippy::too_many_arguments)]
 fn write_intersection_files(
     h: f64,
@@ -538,11 +555,13 @@ fn write_intersection_files(
     pstats.triple_node_count /= 6;
 }
 
-// writePolys() ****************************************************************************
-// Parses and writes all poly_x.inp files containing polygon (fracture) vertice and connectivity data
-// Arg 1: std::vector array of indices of fractures left after isolated fracture removal
-// Arg 2: std::vector array of all accetped fractures
-// Arg 3: Path to output folder
+/// Parses and writes all poly_x.inp files containing polygon (fracture) vertice and connectivity data
+///
+/// # Arguments
+///
+/// * `final_fractures` - Vector array of indices of fractures left after isolated fracture removal
+/// * `accepted_poly` - Vector array of all accetped fractures
+/// * `output` - Path to output folder
 fn write_polys(final_fractures: &[usize], accepted_poly: &[Poly], output: &str) {
     println!("Writing Polygon Files");
     let poly_count = final_fractures.len();
@@ -581,11 +600,13 @@ fn write_polys(final_fractures: &[usize], accepted_poly: &[Poly], output: &str) 
     println!("Writing Polygon Files Complete");
 }
 
-// writePolysInp() ****************************************************************************
-// Parses and writes all poly_x.inp files containing polygon (fracture) vertice and connectivity data
-// Arg 1: std::vector array of indices of fractures left after isolated fracture removal
-// Arg 2: std::vector array of all accetped fractures
-// Arg 3: Path to output folder
+/// Parses and writes all poly_x.inp files containing polygon (fracture) vertice and connectivity data
+///
+/// # Arguments
+///
+/// * `final_fractures` - Vector array of indices of fractures left after isolated fracture removal
+/// * `accepted_poly` - Vector array of all accetped fractures
+/// * `output` - Path to output folder
 fn write_polys_inp(final_fractures: &[usize], accepted_poly: &[Poly], output: &str) {
     println!("Writing poly inp files");
     let poly_count = final_fractures.len();
@@ -632,12 +653,17 @@ fn write_polys_inp(final_fractures: &[usize], accepted_poly: &[Poly], output: &s
     }
 }
 
-// writeParamsFile() **************************************************************************
 // Writes params.txt
-// Arg 1: std::vector array of indices of fractures left after isolated fracture removal
-// Arg 2: std::vector array of all accetped fractures
-// Arg 3: std::vector array of fracture families
-// Arg 4: Path to output folder
+//
+// # Arguments
+//
+/// * `h` - Minimum feature size
+/// * `visualization_mode` - If false, creates a fine mesh, according to h parameter.
+///     If true, produce only first round of triangulations. In this case no modeling of flow and transport is possible.
+/// * `domain_size` - Vector3<f64> of domain size
+/// * `final_fractures` - Vector array of indices of fractures left after isolated fracture removal
+/// * `pstats` - Stats structure, running program statistics
+/// * `output` - Path to output folder
 fn write_params_file(
     h: f64,
     visualization_mode: bool,
@@ -676,11 +702,13 @@ fn write_params_file(
         .unwrap();
 }
 
-// writeRadiiFile() ***************************************************************************
-// Writes radii.dat (Radii Data)
-// Arg 1: std::vector array of indices of fractures left after isolated fracture removal
-// Arg 2: std::vector array of all accetped fractures
-// Arg 3: Path to output folder
+/// Writes radii.dat (Radii Data)
+///
+/// # Arguments
+///
+/// * `final_fractures` - Vector array of indices of fractures left after isolated fracture removal
+/// * `accepted_poly` - Vector array of all accetped fractures
+/// * `output` - Path to output folder
 fn write_radii_file(final_fractures: &[usize], accepted_poly: &[Poly], output: &str) {
     println!("Writing Radii File (radii.dat)");
     let file = format!("{}/radii.dat", output);
@@ -717,11 +745,13 @@ fn write_radii_file(final_fractures: &[usize], accepted_poly: &[Poly], output: &
     }
 }
 
-// writeFractureTranslations() ****************************************************************
-// Wrtes translations file (translations.dat)
-// Arg 1: std::vector array of indices of fractures left after isolated fracture removal
-// Arg 2: std::vector array of all accetped fractures
-// Arg 3: Path to output folder
+/// Wrtes translations file (translations.dat)
+///
+/// # Arguments
+///
+/// * `final_fractures` - Vector array of indices of fractures left after isolated fracture removal
+/// * `accepted_poly` - Vector array of all accetped fractures
+/// * `output` - Path to output folder
 fn write_fracture_translations(final_fractures: &[usize], accepted_poly: &[Poly], output: &str) {
     println!("Writing Fracture Translations File (translations.dat)");
     let file_path = format!("{}/translations.dat", output);
@@ -758,12 +788,14 @@ fn write_fracture_translations(final_fractures: &[usize], accepted_poly: &[Poly]
     }
 }
 
-// writeFinalPolyRadii() **********************************************************************
-// Deprecated Function
-// Writes final radii file (after isoloated fractures have been removed)
-// Arg 1: std::vector array of indices of fractures left after isolated fracture removal
-// Arg 2: std::vector array of all accetped fractures
-// Arg 3: Path to output folder
+/// Deprecated Function
+/// Writes final radii file (after isoloated fractures have been removed)
+///
+/// # Arguments
+///
+/// * `final_fractures` - Vector array of indices of fractures left after isolated fracture removal
+/// * `accepted_poly` - Vector array of all accetped fractures
+/// * `output` - Path to output folder
 fn write_final_poly_radii(final_fractures: &[usize], accepted_poly: &[Poly], output: &str) {
     let file = format!("{}/radii_Final.dat", output);
     let mut radii_final = File::create(file).unwrap();
@@ -788,12 +820,14 @@ fn write_final_poly_radii(final_fractures: &[usize], accepted_poly: &[Poly], out
     }
 }
 
-// writeFinalPolyArea() **********************************************************************
-// Deprecated Function
-// Writes final radii file (after isoloated fractures have been removed)
-// Arg 1: std::vector array of indices of fractures left after isolated fracture removal
-// Arg 2: std::vector array of all accetped fractures
-// Arg 3: Path to output folder
+/// Deprecated Function
+/// Writes final radii file (after isoloated fractures have been removed)
+///
+/// # Arguments
+///
+/// * `final_fractures` - Vector array of indices of fractures left after isolated fracture removal
+/// * `accepted_poly` - Vector array of all accetped fractures
+/// * `output` - Path to output folder
 fn write_final_poly_area(final_fractures: &[usize], accepted_poly: &[Poly], output: &str) {
     let file = format!("{}/surface_area_Final.dat", output);
     let mut area_final = File::create(file).unwrap();
@@ -809,14 +843,15 @@ fn write_final_poly_area(final_fractures: &[usize], accepted_poly: &[Poly], outp
     }
 }
 
-// writeAllAcceptedRadii_OfFamily() ***********************************************************
-// Writes radii file (radii_AllAccepted_Fam_#.dat) for all accepted
-// fractures BEFORE isolated fracture removal (one file per family)
-// Arg 1: Family number for which radii file will be written for
-//        -2 - User Rectangles, -1 - User Ellipses, Family# >= 0 - Family in order of 'FamProb' in input file
-// Arg 2: std::vector array of indices of fractures left after isolated fracture removal
-// Arg 3: std::vector array of all accetped fractures
-// Arg 4: Path to output folder
+/// Writes radii file (radii_AllAccepted_Fam_#.dat) for all accepted
+/// fractures BEFORE isolated fracture removal (one file per family)
+///
+/// # Arguments
+///
+/// * `family_num` - Family number for which radii file will be written for
+///     -2 - User Rectangles, -1 - User Ellipses, Family# >= 0 - Family in order of 'FamProb' in input file
+/// * `accepted_poly` - Vector array of all accetped fractures
+/// * `output` - Path to output folder
 fn write_all_accepted_radii_of_family(family_num: isize, accepted_poly: &[Poly], output: &str) {
     let file_name = format!("{}/radii_AllAccepted_Fam_{}.dat", output, family_num + 1);
     let mut file = File::open(file_name).unwrap();
@@ -847,14 +882,16 @@ fn write_all_accepted_radii_of_family(family_num: isize, accepted_poly: &[Poly],
     }
 }
 
-// writeAllAcceptedRadii_OfFamily() ***********************************************************
-// Writes radii file (radii_AllAccepted_Fam_#.dat) for all accepted
-// fractures AFTER isolated fracture removal (one file per family)
-// Arg 1: Family number for which radii file will be written for
-//        -2 - User Rectangles, -1 - User Ellipses, Family# >= 0 - Family in order of 'FamProb' in input file
-// Arg 2: std::vector array of indices of fractures left after isolated fracture removal
-// Arg 3: std::vector array of all accetped fractures
-// Arg 4: Path to output folder */
+/// Writes radii file (radii_AllAccepted_Fam_#.dat) for all accepted
+/// fractures AFTER isolated fracture removal (one file per family)
+///
+/// # Arguments
+///
+/// * `final_fractures` - Vector array of indices of fractures left after isolated fracture removal
+/// * `family_num` - Family number for which radii file will be written for
+///    -2 - User Rectangles, -1 - User Ellipses, Family# >= 0 - Family in order of 'FamProb' in input file
+/// * `accepted_poly` - Vector array of all accetped fractures
+/// * `output` - Path to output folder
 fn write_final_radii_of_family(
     final_fractures: &[usize],
     family_num: isize,
@@ -890,13 +927,15 @@ fn write_final_radii_of_family(
     }
 }
 
-// writeAllAcceptedRadii_OfFamily() ***********************************************************
-// Writes triple intersection points to file (triple_Points.dat)
-// Arg 1: std::vector array of all triple intersection points
-// Arg 2: std::vector array of indices of fractures left after isolated fracture removal
-// Arg 3: std::vector array of all accetped fractures
-// Arg 4: std::vector array of all intersections
-// Arg 5: Path to output folder
+/// Writes triple intersection points to file (triple_Points.dat)
+///
+/// # Arguments
+///
+/// * `triple_points` - Vector array of all triple intersection points
+/// * `final_fractures` - Vector array of indices of fractures left after isolated fracture removal
+/// * `accepted_poly` - Vector array of all accetped fractures
+/// * `int_pts` - Vector array of all intersections
+/// * `output` - Path to output folder
 fn write_triple_pts(
     triple_points: &[Point3<f64>],
     final_fractures: &[usize],
@@ -966,10 +1005,12 @@ fn write_triple_pts(
     }
 }
 
-// writeRejectionStats() **********************************************************************
-// Write rejections.dat, rejection statistics
-// Arg 1: Stats structure of program statistics
-// Arg 2: Path to output folder
+/// Write rejections.dat, rejection statistics
+///
+/// # Arguments
+///
+/// * `pstats` - Stats structure of program statistics
+/// * `output` - Path to output folder
 fn write_rejection_stats(pstats: &Stats, output: &str) {
     println!("Writing Rejection Statistics File (rejections.dat)");
     let _ = std::fs::create_dir_all(output);
@@ -1023,10 +1064,12 @@ fn write_rejection_stats(pstats: &Stats, output: &str) {
     .unwrap();
 }
 
-// writeRejectionStats() **********************************************************************
-// Write rejections.dat, rejection statistics
-// Arg 1: Stats structure of program statistics
-// Arg 2: Path to output folder
+/// Write rejections.dat, rejection statistics
+///
+/// # Arguments
+///
+/// * `pstats` - Stats structure of program statistics
+/// * `output` - Path to output folder
 fn write_user_rejected_fracture_information(pstats: &Stats, output: &str) {
     if !pstats.rejected_user_fracture.is_empty() {
         println!("Writing User Fracture Rejection File (userFractureRejections.dat)");
@@ -1049,10 +1092,21 @@ fn write_user_rejected_fracture_information(pstats: &Stats, output: &str) {
     }
 }
 
-// writeShapeFams() ***************************************************************************
-// Writes families.dat, Shape families definition file
-// Arg 1: std::vector array of all fracture shape families
-// Arg 2: Path to output folder
+/// Writes families.dat, Shape families definition file
+///
+/// # Arguments
+///
+/// * `user_ellipses_on_off` - If true, user defined ellipses are used
+/// * `user_rectangles_on_off` - If true, user defined rectangles are used
+/// * `user_polygon_by_coord` - If true, user defined polygons are used
+/// * `stop_condition` - Stop condition for fracture generation (0 - nPoly, 1 - P32)
+/// * `orientation_option` - Orientation option for fracture generation
+/// * `n_fam_ell` - Number of ellipse families
+/// * `layers` - Vector array of layers
+/// * `regions` - Vector array of regions
+/// * `fam_prob_original` - Vector array of family probabilities
+/// * `shape_families` - Vector array of all fracture shape families
+/// * `output` - Path to output folder
 #[allow(clippy::too_many_arguments)]
 fn write_shape_fams(
     user_ellipses_on_off: bool,
@@ -1277,24 +1331,14 @@ fn write_shape_fams(
     }
 }
 
-// // makeDIR() **********************************************************************************
-// // Creates a directory
-// // If dir already exists, the directoy will not be overwritten
-// // Arg 1: Path to directory to be created
-// fn makeDIR(dir: &str) {
-//     if Path::new(dir).exists() {
-//         remove_dir_all(dir).unwrap();
-//     } else {
-//         create_dir_all(dir).unwrap();
-//     }
-// }
-
-// writeConnectivity() **********************************************************************************
-// Writes fracture connectivity edge graph
-// Arg 1: Array of indices to polys in 'acceptedPoly' which are left after isolated fracture removal
-// Arg 2: Array off all polygons in DFN before isolated fracture removal
-// Arg 3: Array of all intersections in DFN
-// Arg 4: Path to output folder
+/// Writes fracture connectivity edge graph
+///
+/// # Arguments
+///
+/// * `final_fractures` - Vector array of indices of fractures left after isolated fracture removal
+/// * `accepted_poly` - Vector array of all accetped fractures
+/// * `int_pts` - Vector array of all intersections
+/// * `output` - Path to output folder
 fn write_connectivity(
     final_fractures: &[usize],
     accepted_poly: &[Poly],
@@ -1336,13 +1380,17 @@ fn write_connectivity(
     }
 }
 
-// writeRotationData() ******************************************************************************
-// Writes poly_info.dat
-// Writes fracture rotation data. Also includes shape families each fracture belongs to.
-// Arg 1: Array off all polygons in DFN before isolated fracture removal
-// Arg 2: Array of indices to polys in 'acceptedPoly' which are left after isolated fracture removal
-// Arg 3: Array of all fracture shape families
-// Arg 4: Path to output folder
+/// Writes poly_info.dat
+/// Writes fracture rotation data. Also includes shape families each fracture belongs to.
+///
+/// # Arguments
+///
+/// * `eps` - Epsilon value for floating point comparisons
+/// * `domain_size` - domain size in x, y, z
+/// * `accepted_poly` - Array off all polygons in DFN before isolated fracture removal
+/// * `final_fractures` - Array of indices to polys in 'accepted_poly' which are left after isolated fracture removal
+/// * `shape_families` - Array of all fracture shape families
+/// * `output` - Path to output folder
 fn write_rotation_data(
     eps: f64,
     domain_size: &Vector3<f64>,
@@ -1421,13 +1469,16 @@ fn write_rotation_data(
     }
 }
 
-// writeNormalVectors() ******************************************************************************
-// Writes normal_vectors.dat
-// Writes fracture rotation data. Also includes shape families each fracture belongs to.
-// Arg 1: Array off all polygons in DFN before isolated fracture removal
-// Arg 2: Array of indices to polys in 'acceptedPoly' which are left after isolated fracture removal
-// Arg 3: Array of all fracture shape families
-// Arg 4: Path to output folder
+/// Writes normal_vectors.dat
+///
+/// Writes fracture rotation data. Also includes shape families each fracture belongs to.
+///
+/// # Arguments
+///
+/// * `accepted_poly` - Array off all polygons in DFN before isolated fracture removal
+/// * `final_fractures` - Array of indices to polys in 'accepted_poly' which are left after isolated fracture removal
+/// * `shape_families` - Array of all fracture shape families
+/// * `output` - Path to output folder
 fn write_normal_vectors(accepted_poly: &[Poly], final_fractures: &[usize], output: &str) {
     let file_output_file = format!("{}/normal_vectors.dat", output);
     let mut file = File::create(file_output_file).unwrap();
@@ -1451,15 +1502,18 @@ fn write_normal_vectors(accepted_poly: &[Poly], final_fractures: &[usize], outpu
     }
 }
 
-// writeRejectsPerAttempt()**************************************************************************
-// Writes rejectsPerAttempt.dat
-// Outputs a file that contains a list of integers of the number
-// of attempts per fracture.
-// For example, if the 5th number in the list is 100, it means that
-// it took 100 fracture insertion attemps for before the 5th fracture
-// was accepted.
-// Arg 1: Stats structure, program statistics
-// Arg 2: Path to output
+/// Writes rejectsPerAttempt.dat
+///
+/// Outputs a file that contains a list of integers of the number
+/// of attempts per fracture.
+/// For example, if the 5th number in the list is 100, it means that
+/// it took 100 fracture insertion attemps for before the 5th fracture
+/// was accepted.
+///
+/// # Arguments
+///
+/// * `pstats` - Stats structure of program statistics
+/// * `output` - Path to output folder
 fn write_rejects_per_attempt(pstats: &Stats, output: &str) {
     let file_output_file = format!("{}/rejectsPerAttempt.dat", output);
     let mut file = File::create(file_output_file).unwrap();
@@ -1471,12 +1525,16 @@ fn write_rejects_per_attempt(pstats: &Stats, output: &str) {
     }
 }
 
-// writeGraphData() ******************************************************************
-// Writes graph data files to intersections_list.dat and fracture_info.dat
-// Arg 1: std::vector array of indices to fractures (Arg 2) remaining after isolated
-//        fracture removal
-// Arg 2: std::vector array of all accepted fractures (before isolated fracture removal)
-// Arg 3: std::vector array of all intersections*/
+/// Writes graph data files to intersections_list.dat and fracture_info.dat
+///
+/// # Arguments
+///
+/// * `eps` - Epsilon value for floating point comparisons
+/// * `domain_size` - domain size in x, y, z
+/// * `final_fractures` - Vector array of indices of fractures left after isolated fracture removal
+/// * `accepted_poly` - Vector array of all accetped fractures (before isolated fracture removal)
+/// * `int_pts` - Vector array of all intersections
+/// * `output` - Path to output folder
 fn write_graph_data(
     eps: f64,
     domain_size: &Vector3<f64>,
@@ -1731,17 +1789,19 @@ fn write_graph_data(
     }
 }
 
-// writeMidPoint() ******************************************************************
-// Writes mid point and length of line defined by x1,y1,z1 and x2,y2,z2 into file fp
-// Arg 1: std::ofstream file to write informatino into
-// Arg 2: int fracture 1
-// Arg 3: int fracture 2
-// Arg 4: double x1 x coordinate of first endpoint
-// Arg 5: double y1 y coordinate of first endpoint
-// Arg 6: double z1 z coordinate of first endpoint
-// Arg 7: double x2 x coordinate of second endpoint
-// Arg 8: double y2 y coordinate of second endpoint
-// Arg 9: double z2 z coordinate of second endpoint
+/// Writes mid point and length of line defined by x1,y1,z1 and x2,y2,z2 into file fp
+///
+/// # Arguments
+///
+/// * `fp` - File to write information into
+/// * `fract1` - Fracture 1
+/// * `fract2` - Fracture 2
+/// * `x1` - x coordinate of first endpoint
+/// * `y1` - y coordinate of first endpoint
+/// * `z1` - z coordinate of first endpoint
+/// * `x2` - x coordinate of second endpoint
+/// * `y2` - y coordinate of second endpoint
+/// * `z2` - z coordinate of second endpoint
 #[allow(clippy::too_many_arguments)]
 fn write_mid_point(
     fp: &mut File,
@@ -1773,11 +1833,12 @@ fn write_mid_point(
     .unwrap();
 }
 
-// writeBoundaryfiles() ******************************************************************
-// Writes fracture numbers into ASCII files corresponding to which boundary they touch
-// Arg 1: std::vector array of indices to fractures (Arg 2) remaining after isolated
-//        fracture removal
-// Arg 2: std::vector array of all accepted fractures (before isolated fracture removal)
+/// Writes fracture numbers into ASCII files corresponding to which boundary they touch
+///
+/// # Arguments
+///
+/// * `final_fractures` - Vector array of indices of fractures left after isolated fracture removal
+/// * `accepted_poly` - Vector array of all accepted fractures (before isolated fracture removal)
 fn write_boundary_files(final_fractures: &[usize], accepted_poly: &[Poly], output: &str) {
     println!("Writing Boundary Files");
     let left_file_name = format!("{}/left.dat", output);

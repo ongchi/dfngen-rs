@@ -88,20 +88,34 @@ fn generate_radius(
     }
 }
 
-// **************************************************************************
-// *****************  Generate Polygon/Fracture  ****************************
-// Generates a polygon based on a stochastic fracture shape family
-// NOTE: Function does not create bouding box. The bouding box has to be
-//       created after fracture truncation
-// Arg 1: Shape family to generate fracture from
-// Arg 2: Random generator, see std <random> c++ library
-// Arg 3: Distributions class, currently used only for exponential dist.
-// Arg 4: Index of 'shapeFam' (arg 1) in the shapeFamilies array in main()
-// Arg 5: True - Use pre-calculated fracture radii list to pull radii from
-//        False - Generate random radii every time (used in dryRun()
-//                which estimates number of fractures needed when using
-//                p32 option and generates the radii lists)
-// Return: Random polygon/fracture based from 'shapeFam'
+/// Generate Polygon/Fracture
+///
+/// Generates a polygon based on a stochastic fracture shape family
+///
+/// NOTE: Function does not create bouding box. The bouding box has to be
+///       created after fracture truncation
+///
+/// # Arguments
+///
+/// * `h` - Minimum feature size
+/// * `n_fam_ell` - Number of ellipse families
+/// * `domain_size` - Size of the domain
+/// * `domain_size_increase` - Increase in domain size
+/// * `layers` - Layers in the domain
+/// * `regions` - Regions in the domain
+/// * `orientation_option` - Orientation option
+/// * `eps` - Epsilon value for floating point comparisons
+/// * `shape_fam` - Shape family to generate fracture from
+/// * `generator` - Random generator
+/// * `family_index` - Index of 'shapeFam' in the shapeFamilies array in main()
+/// * `use_list` - Use pre-calculated fracture radii list to pull radii from
+///              False - Generate random radii every time (used in dryRun()
+///              which estimates number of fractures needed when using
+///              p32 option and generates the radii lists)
+///
+/// # Returns
+///
+/// Random polygon/fracture based from 'shapeFam'
 #[allow(clippy::too_many_arguments)]
 pub fn generate_poly(
     h: f64,
@@ -191,19 +205,28 @@ pub fn poly_boundary(
     Aabb::new(mins.into(), maxs.into())
 }
 
-// **************************************************************************
-// *************  Generate Polygon/Fracture With Given Radius  **************
-// Similar to generatePoly() except the radius is passed to the function.
-// Generates a polygon
-// Shape (ell or rect) still comes from the shapes' familiy
-// NOTE: Function does not create bouding box. The bouding box has to be
-//       created after fracture truncation
-// Arg 1: Radius for polygon
-// Arg 2: Shape family to generate fracture from
-// Arg 3: Random generator, see std <random> c++ library
-// Arg 4: Distributions class, currently used only for exponential dist.
-// Arg 5: Index of 'shapeFam' (arg 1) in the shapeFamilies array in main()
-// Return: Polygond with radius passed in arg 1 and shape based on 'shapeFam'
+/// Generate Polygon/Fracture With Given Radius
+///
+/// Similar to generatePoly() except the radius is passed to the function.
+/// Generates a polygon
+/// Shape (ell or rect) still comes from the shapes' familiy
+///
+/// NOTE: Function does not create bouding box. The bouding box has to be
+///       created after fracture truncation
+///
+/// # Arguments
+///
+/// * `orientation_option` - Orientation option
+/// * `eps` - Epsilon value for floating point comparisons
+/// * `radius` - Radius for polygon
+/// * `shape_fam` - Shape family to generate fracture from
+/// * `bbox` - Bounding box
+/// * `generator` - Random generator
+/// * `family_index` - Index of 'shapeFam' in the shapeFamilies array in main()
+///
+/// # Returns
+///
+/// Polygon with radius passed in arg 1 and shape based on `shape_fam`
 pub fn generate_poly_with_radius(
     orientation_option: u8,
     eps: f64,
@@ -278,13 +301,17 @@ pub fn generate_poly_with_radius(
     new_poly
 }
 
-// **************  Initialize Rectangular Vertices  *****************
-// Initializes vertices for rectangular poly using radius (1/2 x length)
-// and aspcet ratio. (xradius = radius, yradius = radius * aspectRatio)
-// Poly will be on x-y plane
-// Arg 1: Polygon to initialize vertices
-// Arg 2: Radius (1/2 x dimension length)
-// Arg 3: Aspect ratio
+/// Initialize Rectangular Vertices
+///
+/// Initializes vertices for rectangular poly using radius (1/2 x length)
+/// and aspcet ratio. (xradius = radius, yradius = radius * aspectRatio)
+/// Poly will be on x-y plane
+///
+/// # Arguments
+///
+/// * `new_poly` - Polygon to initialize vertices
+/// * `radius` - Radius (1/2 x dimension length)
+/// * `aspect_ratio` - Aspect ratio
 pub fn initialize_rect_vertices(new_poly: &mut Poly, radius: f64, aspect_ratio: f64) {
     let x = radius;
     let y = radius * aspect_ratio;
@@ -306,12 +333,15 @@ pub fn initialize_rect_vertices(new_poly: &mut Poly, radius: f64, aspect_ratio: 
     new_poly.vertices[11] = 0.;
 }
 
-// ****************************************************************
-// ************* Initialize Ellipse Vertices **********************
-// Initializes ellipse vertices on x-y plane
-// Arg 1: Poly to initialize
-// Arg 2: Radius (xradius = radius. yradius = radius * aspectRatio)
-// Arg 3: Aspect ratio
+/// Initialize Ellipse Vertices
+///
+/// Initializes ellipse vertices on x-y plane
+///
+/// # Arguments
+///
+/// * `new_poly` - Polygon to initialize
+/// * `radius` - Radius (xradius = radius. yradius = radius * aspectRatio)
+/// * `aspect_ratio` - Aspect ratio
 pub fn initialize_ell_vertices(
     new_poly: &mut Poly,
     radius: f64,
@@ -330,15 +360,23 @@ pub fn initialize_ell_vertices(
     }
 }
 
-// **********************************************************************
-// ********************  Retranslate Polygon  ***************************
-// Re-translate poly
-// Re-initializes/re-builds (if needed) polygon at origin and translates to
-// new position preserving its size, shape, and normal vector
-// This helps hit target distributions since we reject less
-// Arg 1: Polygon
-// Arg 2: Shape family structure which Polygon belongs to
-// Arg 3: Random Generator
+/// Retranslate Polygon
+///
+/// Re-translate poly
+/// Re-initializes/re-builds (if needed) polygon at origin and translates to
+/// new position preserving its size, shape, and normal vector
+/// This helps hit target distributions since we reject less
+///
+/// # Arguments
+///
+/// * `eps` - Epsilon value for floating point comparisons
+/// * `domain_size` - Size of the domain
+/// * `domain_size_increase` - Increase in domain size
+/// * `layers` - Layers in the domain
+/// * `regions` - Regions in the domain
+/// * `new_poly` - Polygon
+/// * `shape_fam` - Shape family structure which Polygon belongs to
+/// * `generator` - Random Generator
 #[allow(clippy::too_many_arguments)]
 pub fn re_translate_poly(
     eps: f64,
@@ -471,12 +509,15 @@ pub fn re_translate_poly(
     }
 }
 
-// ***************************************************************************
-// **********************  Print Rejection Reson  ****************************
-// Function prints fracture rejection reasons to user based on reject code
-// Currtenly only used for user defined fractures.
-// Arg 1: Rejection code
-// Arg 2: Poly which was rejected
+/// Print Rejection Reson
+///
+/// Function prints fracture rejection reasons to user based on reject code
+/// Currtenly only used for user defined fractures.
+///
+/// # Arguments
+///
+/// * `reject_code` - Rejection code
+/// * `new_poly` - Poly which was rejected
 pub fn print_reject_reason(reject_code: i32, new_poly: &Poly) {
     if new_poly.family_num >= 0 {
         println!(
@@ -528,21 +569,23 @@ pub fn print_reject_reason(reject_code: i32, new_poly: &Poly) {
     }
 }
 
-// ******************************************************************
-// *********************  Get Family Number *************************
-// Turns the global family number into a number the user can more
-// easily understand. The shapeFamily array contains both rectangle
-// and ellipse families.
-// For example: If shapeFamilies array has 3 families of ellipse
-// families and 3 families of rectangle families: {ell, ell, ell, rect, rect, rect}
-// If we want the local family number for index 3, it will return family 1, meaning
-// the first rectangular family. This function is used in conjuntion with shapeType().
-//
-// Arg 1: Family index which family belings to
-//        in main()'s 'shapeFamilies' array
-// Arg 2: Rectangle or ellipse family
-//        0 - Ellipse
-//        1 - Rectangle
+/// Get Family Number
+///
+/// Turns the global family number into a number the user can more
+/// easily understand. The shapeFamily array contains both rectangle
+/// and ellipse families.
+/// For example: If shapeFamilies array has 3 families of ellipse
+/// families and 3 families of rectangle families: {ell, ell, ell, rect, rect, rect}
+/// If we want the local family number for index 3, it will return family 1, meaning
+/// the first rectangular family. This function is used in conjuntion with shapeType().
+///
+/// # Arguments
+///
+/// * `n_fam_ell` - Number of ellipse families
+/// * `family_index` - Family index which family belings to in main()'s 'shapeFamilies' array
+/// * `family_shape` - Rectangle or ellipse family
+///     0 - Ellipse
+///     1 - Rectangle
 pub fn get_family_number(n_fam_ell: usize, family_index: isize, family_shape: usize) -> isize {
     if family_shape != 0 {
         // if not ellipse family
@@ -552,10 +595,9 @@ pub fn get_family_number(n_fam_ell: usize, family_index: isize, family_shape: us
     }
 }
 
-// ******************************************************************
-// ********************  Print Shape Type  **************************
-// Print type of family (ellipse or rectangle)
-// Arg 1: Shape family
+/// Print Shape Type
+///
+/// Print type of family (ellipse or rectangle)
 pub fn shape_type(shape_fam: &Shape) -> &'static str {
     if shape_fam.shape_family == 0 {
         "Ellipse"
@@ -564,14 +606,12 @@ pub fn shape_type(shape_fam: &Shape) -> &'static str {
     }
 }
 
-// ******************************************************************
-// ************  Get Max Fracture Radii From Family  ****************
-// Returns the largest fracture radii defined by the user for
-// a fracture family.
-// This function is used for the 'forceLargeFractures' option
-// in the input file
-// Arg 1: Shape family
-// Return: User's maximum radii for shapeFam (arg 1)
+/// Get Max Fracture Radii From Family
+///
+/// Returns the largest fracture radii defined by the user for
+/// a fracture family.
+/// This function is used for the 'forceLargeFractures' option
+/// in the input file
 pub fn get_largest_fracture_radius(shape_fam: &Shape) -> f64 {
     match shape_fam.distribution_type {
         // Log-normal

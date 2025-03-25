@@ -2,40 +2,49 @@ use parry3d_f64::na::Vector3;
 
 use crate::structures::Poly;
 
-// Used for ORing arrays of bool for boundary face codes
-// Expectes array size is 6.
-// ORs dest with src, then saves to dest.
-// e.g destArray = destArray ^ srcArray
-//
-// Arg 1: dest array
-// Arg 2: souce array
+/// Used for ORing arrays of bool for boundary face codes
+/// Expectes array size is 6.
+/// ORs dest with src, then saves to dest.
+/// e.g destArray = destArray ^ srcArray
+///
+/// # Arguments
+///
+/// * `dest` - Destination array
+/// * `src` - Source array
 pub fn or(dest: &mut [bool; 6], src: &[bool; 6]) {
     for (d, s) in dest.iter_mut().zip(src.iter()) {
         *d |= *s
     }
 }
 
-// There are several spots in the code which used to use standard
-// deviation to know how to sort a list of points.
-// To increase performance, the standard deviation is now calculated without
-// the square root and division by N elements.
-// Return: The sum-deviation of array 'vec'
+/// There are several spots in the code which used to use standard
+/// deviation to know how to sort a list of points.
+/// To increase performance, the standard deviation is now calculated without
+/// the square root and division by N elements.
+/// Return: The sum-deviation of array 'vec'
 fn sum_deviation(vec: &[f64]) -> f64 {
     let mean = vec.iter().cloned().sum::<f64>() / (vec.len() as f64);
     vec.iter().cloned().map(|v| v - mean).map(|v| v * v).sum()
 }
 
-// *************  Sum deviaiton array X 3  **************************
-// Used in intersectionChecking()
-// How function is used:
-// v is a pointer to an array of 4 points, each point
-// contains x, y, and z coordinates
-// The 4 sumDeviation is computed on all points' x, y, and z coord.
-// An array of three elements is returned containing the sum deviation
-// of all x's, all y's, and all z's
-//
-// Arg 1: Array of 12 elements: 4 points, {x1, y1, z1, ... , x4, y4, z4}
-// Return: Array of 3 elements x,y,z with each stdDev, respectively */
+/// Sum deviaiton array X 3
+///
+/// Used in intersectionChecking()
+///
+/// How function is used:
+/// v is a pointer to an array of 4 points, each point
+/// contains x, y, and z coordinates
+/// The 4 sumDeviation is computed on all points' x, y, and z coord.
+/// An array of three elements is returned containing the sum deviation
+/// of all x's, all y's, and all z's
+///
+/// # Arguments
+///
+/// * `v` - Array of 12 elements: 4 points, {x1, y1, z1, ... , x4, y4, z4}
+///
+/// # Returns
+///
+/// Array of 3 elements x,y,z with each stdDev, respectively
 pub fn sum_dev_ary3(v: &[f64; 12]) -> [f64; 3] {
     let x = [v[0], v[3], v[6], v[9]];
     let y = [v[1], v[4], v[7], v[10]];
@@ -43,14 +52,20 @@ pub fn sum_dev_ary3(v: &[f64; 12]) -> [f64; 3] {
     [sum_deviation(&x), sum_deviation(&y), sum_deviation(&z)]
 }
 
-// *******************  Get Max Element's Index  ********************
-// Used to find index of element with max value from array4
-// Used in intersectionChecking()
-// Arg 1: Array of doubles
-// Arg 2: Size of array
-// Return: Max element's array index
-//
-// If elements happen to be equal, returns the first one
+/// Get Max Element's Index
+///
+/// Used to find index of element with max value from array4
+/// Used in intersectionChecking()
+///
+/// # Arguments
+///
+/// * `vec` - Array of 4 elements
+///
+/// # Returns
+///
+/// Max element's array index
+///
+/// If elements happen to be equal, returns the first one
 pub fn max_elmt_idx(vec: &[f64]) -> usize {
     vec.iter()
         .enumerate()
@@ -59,27 +74,32 @@ pub fn max_elmt_idx(vec: &[f64]) -> usize {
         .unwrap_or(0)
 }
 
-// ********************  Sort Array Indices  ************************
-// Similar to mathematica's Ordering[] funct.
-// Arg 1: Pointer to array of doubles
-// Arg 2: Size of array, number of elements
-// Return: Array of sorted indicies to elements in 'v'
-//         sorted smallest to largest  */
+/// Sort Array Indices
+///
+/// Similar to mathematica's Ordering[] funct.
+///
+/// # Arguments
+///
+/// * `vec` - Array of f64
+///
+/// # Returns
+///
+/// Array of sorted indicies to elements in 'v' sorted smallest to largest
 pub fn sorted_index(vec: &[f64]) -> Vec<usize> {
     let mut v = vec.iter().enumerate().collect::<Vec<(usize, &f64)>>();
     v.sort_by(|a, b| (a.1).partial_cmp(b.1).unwrap());
     v.into_iter().map(|(i, _)| i).collect()
 }
 
-// ********************  Get Poly's Area  ***************************
-// Calculate exact area of polygon (after truncation)
-// Summary of algorithm:
-// 1: Creates a point on the inside of the polygon (insidePt)
-// 2: Uses 'insidePt' to create vectors to all outside vertices, breaking the polygon into triangles
-// 3: Uses .5 * (magnitude of cross product) for each triangle for area calculation
-// 4: Sums the areas for each trianlge for total area of polygon
-// Arg 1: Polygon
-// Return: Area of polygon */
+/// Get Poly's Area
+///
+/// Calculate exact area of polygon (after truncation)
+///
+/// Summary of algorithm:
+/// 1: Creates a point on the inside of the polygon (insidePt)
+/// 2: Uses 'insidePt' to create vectors to all outside vertices, breaking the polygon into triangles
+/// 3: Uses .5 * (magnitude of cross product) for each triangle for area calculation
+/// 4: Sums the areas for each trianlge for total area of polygon
 pub fn get_area(poly: &Poly) -> f64 {
     if poly.number_of_nodes == 3 {
         //area = 1/2 mag of xProd
@@ -144,13 +164,20 @@ pub fn get_area(poly: &Poly) -> f64 {
     }
 }
 
-// *************  Index from Probability  ***************************
-// CDF is 1 to 1 and algined with the stochastic family
-// shapes array (std vector). This chooses the family index based
-// on a random roll (random number between 0 and 1) and 'famProb'
-// Arg 1: CDF of shape families based on famProb array in input file
-// Arg 2: Random number between 0 and 1
-// Return: Index to family based on the probability famProb  */
+/// Index from Probability
+///
+/// CDF is 1 to 1 and algined with the stochastic family
+/// shapes array (std vector). This chooses the family index based
+/// on a random roll (random number between 0 and 1) and 'famProb'
+///
+/// # Arguments
+///
+/// * `cdf` - CDF of shape families based on famProb array in input file
+/// * `roll` - Random number between 0 and 1
+///
+/// # Returns
+///
+/// Index to family based on the probability famProb
 pub fn index_from_prob(cdf: &[f64], roll: f64) -> usize {
     for (i, v) in cdf.iter().enumerate() {
         if &roll <= v {
@@ -161,15 +188,22 @@ pub fn index_from_prob(cdf: &[f64], roll: f64) -> usize {
     cdf.len() - 1
 }
 
-// ******  Choose Family Randomly Based On P32 and CDF  ***********************
-// Use with fracture intensity (p32) stopping option
-// Arg 1: Pointer to CDF array
-// Arg 2: Random variable between 0 and 1
-// Arg 3: Number of stochastic families
-// Arg 4: Number of elements in CDF array
-// Arg 5: OUTPUT, index of CDF element which was chosen randomly
-// Return: Index of chosen family based on its family probability, and p32Status
-//         (avoids inserting a fracture from a family which has already met it's fracture intensity requrement) */
+/// Choose Family Randomly Based On P32 and CDF
+///
+/// Use with fracture intensity (p32) stopping option
+///
+/// # Arguments
+///
+/// * `p32_status` - Array of bools, 1 to 1 with number of families
+/// * `cdf` - CDF of shape families based on famProb array in input file
+/// * `roll` - Random number between 0 and 1
+/// * `fam_size` - Number of stochastic families
+/// * `cdf_idx` - Index of CDF element which was chosen randomly
+///
+/// # Returns
+///
+/// Index of chosen family based on its family probability, and p32Status
+/// (avoids inserting a fracture from a family which has already met it's fracture intensity requrement)
 pub fn index_from_prob_and_p32_status(
     p32_status: &mut [bool],
     cdf: &[f64],
@@ -226,14 +260,18 @@ pub fn cumsum(fam_prob: &[f64]) -> Vec<f64> {
     cdf
 }
 
-// FIXME: vector size changed, return new vector instead of change inplace.
-// Adjusts the CDF and the famProb array. Used with P32 stopping contdition (see input file)
-// When a family's P32 requrement is met, the CDF is adjusted to remove that family from
-// the array. The famProb is also adjusted in the same way.
-// Arg 1: Pointer to CDF array
-// Arg 2: Pointer to famProb array
-// Arg 3: Number of elements in CDF array
-// Arg 4: Index to the element in the famProb array which is being removed */
+/// FIXME: vector size changed, return new vector instead of change inplace.
+///
+/// Adjusts the CDF and the famProb array. Used with P32 stopping contdition (see input file)
+/// When a family's P32 requrement is met, the CDF is adjusted to remove that family from
+/// the array. The famProb is also adjusted in the same way.
+///
+/// # Arguments
+///
+/// * `cdf` - CDF array
+/// * `fam_probability` - Probability of each family
+/// * `cdf_size` - Number of elements in CDF array
+/// * `idx2remove` - Index to the element in the famProb array which is being removed
 pub fn adjust_cdf_and_fam_prob(
     cdf: &mut [f64],
     fam_probability: &mut [f64],

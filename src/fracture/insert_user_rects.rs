@@ -74,15 +74,30 @@ fn create_poly(
     new_poly
 }
 
-// ***********************************************************************
-// ********************  Insert User Rectangles  *************************
-//     Inserts a user defined rectangle into the domain
-//     Intersection checking, FRAM, and rejection/accptance is all contained
-//     within this function.
-//     Arg 1: Array for all accepted polygons
-//     Arg 2: Array for all accepted intersections
-//     Arg 3: Program statistics structure
-//     Arg 4: Array of all triple intersection points
+/// Insert User Rectangles
+///
+/// Inserts a user defined rectangle into the domain
+/// Intersection checking, FRAM, and rejection/accptance is all contained
+/// within this function.
+///
+/// # Arguments
+///
+/// * `h` - Minimum feature size
+/// * `eps` - Epsilon value for floating point comparisons
+/// * `disable_fram` - If true, FRAM is disabled
+/// * `triple_intersections` - If true, triple intersections are accepted
+/// * `n_user_rect` - Number of user defined rectangles
+/// * `domain_size` - Size of the domain
+/// * `ur_radii` - Array of radii for user defined rectangles
+/// * `uraspect` - Array of aspect ratios for user defined rectangles
+/// * `ur_beta` - User defined rectangles beta array
+/// * `urnormal` - User defined rectangles normal array
+/// * `urtranslation` - User defined rectangles translation array
+/// * `ur_angle_option` - If true, angle is in degrees else in radians
+/// * `accepted_poly` - Array for all accepted polygons
+/// * `intpts` - Array for all accepted intersections
+/// * `pstats` - Program statistics structure
+/// * `triple_points` - Array of all triple intersection points
 #[allow(clippy::too_many_arguments)]
 pub fn insert_user_rects(
     h: f64,

@@ -5,28 +5,35 @@ use crate::{
     structures::{IntersectionPoints, Poly, Stats},
 };
 
-// ***********************************************************************
-// ***********  Remove Fractures Smaller Than Minimum Size  **************
-// Function is designed to be used AFTER DFN generation
-// Originally created to compare the difference in distributions
-// if small fractures were removed after a DFN was generated
-// as opposed limiting their insertion during DFN generation.
-//
-// The minimum size options in the input files will still be used.
-// If the user wishes to also removeFractures after DFN generation,
-// 'minSize' here must be larger than the minimum size fractures in the
-// input file. Fratrues with radii less than 'minSize' will be removed
-// after DFN has been created.
-// Arg 1: Minimum size. All fractures smaller than 'minSize' will be
-//        removed.
-// Arg 2: Array of accepted polygons
-// Arg 3: Array of accepted intersections
-// Arg 4: Array of all triple intersection points
-// Arg 5: Stats structure (DFN Statisctics)
-//
-// NOTE: Must be executed before getCluster()
-//       This funciton rebuilds the DFN. Using getCluster() before this
-//       funciton executes causes undefined behavior.
+/// Remove Fractures Smaller Than Minimum Size
+///
+/// Function is designed to be used AFTER DFN generation
+/// Originally created to compare the difference in distributions
+/// if small fractures were removed after a DFN was generated
+/// as opposed limiting their insertion during DFN generation.
+///
+/// The minimum size options in the input files will still be used.
+/// If the user wishes to also removeFractures after DFN generation,
+/// 'minSize' here must be larger than the minimum size fractures in the
+/// input file. Fratrues with radii less than 'minSize' will be removed
+/// after DFN has been created.
+///
+/// # Arguments
+///
+/// * `h` - Minimum feature size
+/// * `eps` - Epsilon value for floating point comparisons
+/// * `r_fram` - Uses a relaxed version of the FRAM algorithm. The mesh may not be perfectly conforming
+/// * `disable_fram` - If true, FRAM is disabled
+/// * `triple_intersections` - If true, triple intersections are accepted
+/// * `min_size` - Minimum size. All fractures smaller than 'minSize' will be removed.
+/// * `accepted_polys` - Array of accepted polygons
+/// * `int_pts` - Array of accepted intersections
+/// * `triple_points` - Array of all triple intersection points
+/// * `pstats` - Stats structure (DFN Statisctics)
+///
+/// NOTE: Must be executed before getCluster()
+///       This funciton rebuilds the DFN. Using getCluster() before this
+///       funciton executes causes undefined behavior.
 #[allow(clippy::too_many_arguments)]
 pub fn remove_fractures(
     h: f64,

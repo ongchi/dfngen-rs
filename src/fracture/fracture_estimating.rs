@@ -15,27 +15,36 @@ use crate::{
     structures::Shape,
 };
 
-// **********************************************************************
-// ****************  Sort Families Radii Lists  *************************
-// Uses std::sort to sort each family's radii list from largest to smallest.
-// This will allow the DFN gereration to start from largest to smallest
-// fractures.
-// Arg 1: vector<Shape> array of stochastic fracture families */
+/// Sort Families Radii Lists
+///
+/// Uses std::sort to sort each family's radii list from largest to smallest.
+/// This will allow the DFN gereration to start from largest to smallest
+/// fractures.
+///
+/// # Arguments
+///
+/// * `shape_fam` - vector<Shape> array of stochastic fracture families
 pub fn sort_radii(shape_fam: &mut Vec<Shape>) {
     for shape in shape_fam {
         shape.radii_list.sort_by(|a, b| b.partial_cmp(a).unwrap())
     }
 }
 
-// **********************************************************************
-// **********************************************************************
-// ***  Create Radii Lists for Shape Families When Using NPoly Option ***
-//     Estimates the number of fractures needed for each family and
-//     creates radii lists for each family based on their distribution.
-//     Arg 1: vector<Shape> array of stochastic fracture families
-//     Arg 2: Family probablity array ('famProb' in input file)
-//     Arg 3: Random number generator, see std <random> library
-//     Arg 4: Reference to Distributions class (used for exponential distribution)
+/// Create Radii Lists for Shape Families When Using NPoly Option
+///
+/// Estimates the number of fractures needed for each family and
+/// creates radii lists for each family based on their distribution.
+///
+/// # Arguments
+///
+/// * `force_large_fractures` - Inserts the largest possible fracture for each defined fracture family,
+///         defined by the user-defined maxium radius
+/// * `n_poly` - Number of polygons to place in the DFN when uisng nPoly stopCondition option.
+/// * `h` - Minimum feature size
+/// * `n_fam_ell` - Number of ellipse families
+/// * `shape_families` - array of stochastic fracture families
+/// * `fam_prob` - Family probablity array ('famProb' in input file)
+/// * `generator` - Random number generator
 pub fn generate_radii_lists_n_poly_option(
     force_large_fractures: bool,
     n_poly: usize,
@@ -74,13 +83,17 @@ pub fn generate_radii_lists_n_poly_option(
     println!("Building radii lists for nPoly option Complete");
 }
 
-// **********************************************************************
-// ********************  Print Warining to User  ************************
-//     This function prints a warning to the user when the random generation
-//     of fracture radii lenths is continuously smaller than the minimum defined
-//     radii allowed (defined by user in the input file)
-//     Arg 1: Index to the family in vecotr<Shape> array the warning is refering to
-//     Arg 2: Shape structure the warning is refering to
+/// Print Warining to User
+///
+/// This function prints a warning to the user when the random generation
+/// of fracture radii lenths is continuously smaller than the minimum defined
+/// radii allowed (defined by user in the input file)
+///
+/// # Arguments
+///
+/// * `n_fam_ell` - Number of ellipse families
+/// * `fam_index` - Index to the family in Vec<Shape> array the warning is refering to
+/// * `shape_fam` - Shape structure the warning is refering to
 pub fn print_generating_fractures_less_than_hwarning(
     n_fam_ell: usize,
     fam_index: isize,
@@ -93,15 +106,19 @@ pub fn print_generating_fractures_less_than_hwarning(
     );
 }
 
-// **********************************************************************
-// *********  Add Percentage More Radii To Radii Lists  *****************
-//     Function adds a percentage more radii to the fracture families
-//     radii lists based on each families distribution.
-//     This helps account for fracture rejections
-//     Arg 1: Percentage to increase the list by. eg .10 will add %10 more radii
-//     Arg 2: vector<Shape> array of stochastic fracture families
-//     Arg 3: Random number generator (see std <random> library)
-//     Arg 4: Distributions class (currently only used for exponential dist)
+/// Add Percentage More Radii To Radii Lists
+///
+/// Function adds a percentage more radii to the fracture families
+/// radii lists based on each families distribution.
+/// This helps account for fracture rejections
+///
+/// # Arguments
+///
+/// * `h` - Minimum feature size
+/// * `n_fam_ell` - Number of ellipse families
+/// * `percent` - Percentage to increase the list by. eg .10 will add %10 more radii
+/// * `shape_families` - Array of stochastic fracture families
+/// * `generator` - Random number generator
 pub fn add_radii_to_lists(
     h: f64,
     n_fam_ell: usize,
@@ -122,15 +139,19 @@ pub fn add_radii_to_lists(
     }
 }
 
-// **********************************************************************
-// ************  Add Radii To Shape Families Radii List  ****************
-//     Adds 'amountToAdd' more radii to 'shapeFam's radii list
-//     Arg 1: Number of fractures to add to the list
-//     Arg 2: Family index to the global Shape structure array ('shapeFamilies' in main())
-//            which the radii are being added to
-//     Arg 3: The 'Shape' structure which the radii are being added to
-//     Arg 4: Random number generator (see std <random> library)
-//     Arg 5: Distributions class (currently only used for exponential dist)
+/// Add Radii To Shape Families Radii List
+///
+/// Adds 'amountToAdd' more radii to 'shapeFam's radii list
+///
+/// # Arguments
+///
+/// * `h` - Minimum feature size
+/// * `n_fam_ell` - Number of ellipse families
+/// * `amount_to_add` - Number of fractures to add to the list
+/// * `fam_idx` - Family index to the global Shape structure array ('shapeFamilies' in main())
+///     which the radii are being added to
+/// * `shape_fam` - The 'Shape' structure which the radii are being added to
+/// * `generator` - Random number generator
 pub fn add_radii(
     h: f64,
     n_fam_ell: usize,
@@ -203,18 +224,19 @@ pub fn add_radii(
     }
 }
 
-// **********************************************************************
-// ********  Estimate Number of Fractures When P32 Option is Used  ******
-//     Inserts fractures into domain with FRAM disabled
-//     Simply inserts and truncates fractures on the domain
-//     until reqired P32 is met.
-//     Used to estimate and generate radii lists for each fracture
-//     family.
-//     Arg 1: vector<Shape> array of stochastic fracture families
-//     Arg 2: The probabilities for each families insertion into domain
-//            (famProb) in input file
-//     Arg 3: Random number generator (see std <random> library)
-//     Arg 4: Distributions class (currently only used for exponential dist)
+/// Estimate Number of Fractures When P32 Option is Used
+///
+/// Inserts fractures into domain with FRAM disabled
+/// Simply inserts and truncates fractures on the domain
+/// until reqired P32 is met.
+/// Used to estimate and generate radii lists for each fracture
+/// family.
+///
+/// # Arguments
+///
+/// * `input` - Input structure
+/// * `shape_families` - Array of stochastic fracture families
+/// * `generator` - Random number generator
 pub fn dry_run(
     input: &mut Input,
     shape_families: &mut [Shape],

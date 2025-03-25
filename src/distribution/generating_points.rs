@@ -8,11 +8,19 @@ use rand_mt::Mt19937GenRand64;
 
 use super::Fisher;
 
-// ********************  Discretize Intersection  ***************************
-// Discretizes intersetion
-// Arg 1: End point 1, array of three doubles {x, y, z}
-// Arg 2: End point 2, array of three doubles {x, y, z}
-// Return: List of 3D points of the discretized nodes, including end points */
+/// Discretize Intersection
+///
+/// # Arguments
+///
+/// * `h` - Minimum feature size
+/// * `visualization_mode` - If false, creates a fine mesh, according to h parameter.
+///     If true, produce only first round of triangulations. In this case no modeling of flow and transport is possible.
+/// * `pt1` - End point 1
+/// * `pt2` - End point 2
+///
+/// # Returns
+///
+/// List of 3D points of the discretized nodes, including end points
 pub fn discretize_line_of_intersection(
     h: f64,
     visualization_mode: bool,
@@ -89,16 +97,17 @@ pub fn poly_norm_gen(
     rng.borrow_mut().sample(fisher)
 }
 
-// ******************* Returns random TRANSLATION ***************************
-// Uses new[] to pass a vector/array. NEED TO USE delete[] TO FREE THE MEMORY AFTER USE
-// Arg 1: Random generator, see std c++ <random> library
-// Arg 2: minimum x for random x
-// Arg 3: maximum x for random x
-// Arg 4: maximum y for random y
-// Arg 5: minimum y for random y
-// Arg 6: maximum z for random z
-// Arg 7: minimum z for random z
-// Return: Pointer to random ranslation, array of three doubles {x, y, z}
+/// Returns random TRANSLATION
+///
+/// # Arguments
+///
+/// * `rng` - Random generator, see std c++ <random> library
+/// * `x_min` - Minimum x for random x
+/// * `x_max` - Maximum x for random x
+/// * `y_min` - Minimum y for random y
+/// * `y_max` - Maximum y for random y
+/// * `z_min` - Minimum z for random z
+/// * `z_max` - Maximum z for random z
 pub fn random_translation(
     rng: Rc<RefCell<Mt19937GenRand64>>,
     x_min: f64,
@@ -119,12 +128,16 @@ pub fn random_translation(
     Vector3::new(x, y, z)
 }
 
-// **********  Generates Theta Array for Generating Ellipses  ***************
-// Integrate diff eq for theta as function of arc length using RK2
-// Used once for each ell family, saves theta array to shape structures
-// Arg 1: OUTPUT, Theta array used for ellipse generation
-// Arg 2: Aspect ratio of ellipse family
-// Arg 3: Number of points being used for ellipse family */
+/// Generates Theta Array for Generating Ellipses
+///
+/// Integrate diff eq for theta as function of arc length using RK2
+/// Used once for each ell family, saves theta array to shape structures
+///
+/// # Arguments
+///
+/// * `theta_array` - Theta array used for ellipse generation
+/// * `aspect_ratio` - Aspect ratio of ellipse family
+/// * `n_points` - Number of points being used for ellipse family
 pub fn generate_theta(theta_array: &mut Vec<f64>, aspect_ratio: f64, n_points: usize) {
     let a = 1.;
     let b = aspect_ratio;

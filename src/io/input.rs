@@ -141,7 +141,7 @@ pub struct Input {
     pub nFamRect: usize,
 
     /// Number of ellipse families defined below.
-    /// Having this option = 0 will ignore all rectangle family variables.
+    /// Having this option = 0 will ignore all ellipse family variables.
     pub nFamEll: usize,
 
     /// Each element is the probability of chosing a fracture from
@@ -545,12 +545,14 @@ pub struct Input {
     pub ignoreBoundaryFaces: bool,
 }
 
-// Reads in all input variables.
-// Creates Shape structure array from user input if
-// using stochastic fracture families.
-//
-// Arg 1: Path to input file
-// Arg 2: OUTPUT, Shape array to store stochastic families
+/// Reads in all input variables.
+/// Creates Shape structure array from user input if
+/// using stochastic fracture families.
+///
+/// # Arguments
+///
+/// * `input` - Path to input file
+/// * `shape_family` - Shape array to store stochastic families
 pub fn read_input(input: &str, shape_family: &mut Vec<Shape>) -> Input {
     let mut input_var = Input::default();
 

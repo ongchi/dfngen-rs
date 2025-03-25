@@ -28,17 +28,15 @@ use crate::{
 //     polygons from a group we must search the fractGroups array for all matching groups
 //
 
-// *********************  Get Matching Fracture Clusters  ****************************
-//
-//     Uses boundaryFaces input option to get the wanted fracture
-//     cluster before writing output files.
-//
-//     NOTE: 'boundaryFaces' array is a global variable
-//
-//     Arg 1: Program statistics structure
-//     Return: Array (std vsector) of indices to fractures which remained after isolated and
-//             non-matching boundary faces fracture removal.
-//
+/// Get Matching Fracture Clusters
+///
+/// Uses boundaryFaces input option to get the wanted fracture cluster before writing output files.
+///
+/// NOTE: 'boundaryFaces' array is a global variable
+///
+/// # Returns
+///
+/// Vector of indices to fractures which remained after isolated and non-matching boundary faces fracture removal.
 pub fn get_cluster(
     keep_isolated_fractures: bool,
     keep_only_largest_cluster: bool,
@@ -118,16 +116,21 @@ pub fn get_cluster(
     final_poly_list
 }
 
-// *******  Test if Boundary Faces Option Match User's Desired Boundary Faces ********
-//
-//     Compares the user's faces option to a fracture cluster
-//     Arg 1: Boundary faces user input option array ('boundaryFaces' in input file)
-//     Arg 2: Fracture cluter's boundary faces array.
-//            Similar to 'boundaryFaces' input option, but denotes which faces the
-//            fracture cluster connects to.
-//     Return: 0 - If faces meet user's facesOption requirements
-//             1 - If faces do not meet requirements
-//
+/// Test if Boundary Faces Option Match User's Desired Boundary Faces
+///
+/// Compares the user's faces option to a fracture cluster
+///
+/// # Arguments
+///
+/// * `faces_option` - Boundary faces user input option array ('boundaryFaces' in input file)
+/// * `faces` - Fracture cluter's boundary faces array.
+///     Similar to 'boundaryFaces' input option, but denotes which faces the fracture cluster connects to.
+///
+/// # Returns
+///
+/// * `bool`
+///     false - If faces meet user's facesOption requirements
+///     true - If faces do not meet requirements
 fn faces_match(faces_option: &[bool; 6], faces: &[bool; 6]) -> bool {
     for i in 0..6 {
         // If the user specified the face, check if faces match
@@ -139,14 +142,16 @@ fn faces_match(faces_option: &[bool; 6], faces: &[bool; 6]) -> bool {
     true
 }
 
-// ********************  Assign New Polygon to a Cluster  ****************************
-//
-//     Assigns a new polygon/fracture to a new cluster group number.
-//     Assumes 'newPoly' does not intersect with any other fractures.
-//     Arg 1: New polygon
-//     Arg 2: Program stats structure
-//     Arg 3: Index of 'newPoly' in the 'acceptedPoly' array (array of all accepted polys)
-//
+/// Assign New Polygon to a Cluster
+///
+/// Assigns a new polygon/fracture to a new cluster group number.
+/// Assumes 'newPoly' does not intersect with any other fractures.
+///
+/// # Arguments
+///
+/// * `newPoly` - New polygon
+/// * `pstats` - Program stats structure
+/// * `newPolyIndex` - Index of 'newPoly' in the 'acceptedPoly' array (array of all accepted polys)
 pub fn assign_group(new_poly: &mut Poly, pstats: &mut Stats, new_poly_index: usize) {
     new_poly.group_num = pstats.next_group_num;
     let mut new_group_data = GroupData::new(); // Keeps fracture cluster data
@@ -161,38 +166,39 @@ pub fn assign_group(new_poly: &mut Poly, pstats: &mut Stats, new_poly_index: usi
     pstats.fract_group.push(new_group);
 }
 
-// **************************  Update Cluster Groups  ********************************/
-//
-//     Updates fracture cluster group data for the addition of 'newPoly'.
-//
-//     If 'newPoly' did not bridge any clusters together, 'newPoly' is added to the cluster of
-//     the first polygon it intersected with. The cluster groups  boundary connectivity data is
-//     updated, clusters fracture count is incremented, and 'newPoly' is added to
-//     the list of polygons.
-//
-//     If 'newPoly' bridged two or more clusters, the function also merges the multiple
-//     cluster groups into a single group. 'newPoly' is first added to group of the first
-//     fracture it intersected with. Then, any remaining cluster groups 'newPoly' intersected with
-//     will have their group number changed to match that of 'newPolys' group number (see struct FractureGroups).
-//     Inside the GroupData structure, all polygons will have their group number updated to the new group number.
-//     Once polygons and struct FractureGroups have been updated, the FractureGroups corresponding GroupData
-//     structure will have its valid bit set to false. (This is more efficient than deleting the GroupData
-//     element from its array, which causes memory re-allocation and copying).
-//
-//     The GroupData structure contains information about it's corresponding FractureGroups structure (see GroupData).
-//     To access the cooresponding GroupData structure from a cluster group number, the index to the GroupData array
-//     within the Stats structure (pstats variable) will be the the cluster group number subtracted by 1.
-//     e.g. If you need to access the GroupData structure for cluster group 10, it will be the variable:
-//          pstats.groupData[10-1]
-//     To access the corresponding FractureGroups structure for a cluster group number, you must search the FractureGroups
-//     structure array and search for ALL matching group numbers (pstats.fractGroup[i].groupNum).
-//
-//     Arg 1: Reference to new polygon
-//     Arg 2: Array of all accepted polygons
-//     Arg 3: Array of group numbers for  any other bridged fracture cluster groups
-//     Arg 4: Program statistics structure (contains fracture cluster data)
-//     Arg 5: Index of 'newPoly' once placed into the array of all accepted polygons (arg 2)
-//
+/// Update Cluster Groups
+///
+/// Updates fracture cluster group data for the addition of 'newPoly'.
+///
+/// If 'newPoly' did not bridge any clusters together, 'newPoly' is added to the cluster of
+/// the first polygon it intersected with. The cluster groups  boundary connectivity data is
+/// updated, clusters fracture count is incremented, and 'newPoly' is added to
+/// the list of polygons.
+///
+/// If 'newPoly' bridged two or more clusters, the function also merges the multiple
+/// cluster groups into a single group. 'newPoly' is first added to group of the first
+/// fracture it intersected with. Then, any remaining cluster groups 'newPoly' intersected with
+/// will have their group number changed to match that of 'newPolys' group number (see struct FractureGroups).
+/// Inside the GroupData structure, all polygons will have their group number updated to the new group number.
+/// Once polygons and struct FractureGroups have been updated, the FractureGroups corresponding GroupData
+/// structure will have its valid bit set to false. (This is more efficient than deleting the GroupData
+/// element from its array, which causes memory re-allocation and copying).
+///
+/// The GroupData structure contains information about it's corresponding FractureGroups structure (see GroupData).
+/// To access the cooresponding GroupData structure from a cluster group number, the index to the GroupData array
+/// within the Stats structure (pstats variable) will be the the cluster group number subtracted by 1.
+/// e.g. If you need to access the GroupData structure for cluster group 10, it will be the variable:
+///     pstats.groupData[10-1]
+/// To access the corresponding FractureGroups structure for a cluster group number, you must search the FractureGroups
+/// structure array and search for ALL matching group numbers (pstats.fractGroup[i].groupNum).
+///
+/// # Arguments
+///
+/// * `newPoly` - Reference to new polygon
+/// * `acceptedPoly` - Array of all accepted polygons
+/// * `encounteredGroups` - Array of group numbers for any other bridged fracture cluster groups
+/// * `pstats` - Program statistics structure (contains fracture cluster data)
+/// * `newPolyIndex` - Index of 'newPoly' once placed into the array of all accepted polygons
 pub fn update_groups(
     new_poly: &Poly,
     accepted_poly: &mut [Poly],
