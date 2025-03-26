@@ -1,4 +1,4 @@
-use rand::distributions::Distribution;
+use rand::distr::Distribution;
 use rand_distr::LogNormal;
 use rand_distr::NormalError;
 

@@ -1,4 +1,4 @@
-use rand::distributions::{Distribution, Uniform};
+use rand::distr::{Distribution, Uniform};
 use std::sync::OnceLock;
 
 use super::SamplingError;
@@ -47,7 +47,7 @@ impl TruncExp {
             min,
             max,
             lambda_inverse: 1. / lambda,
-            uniform: Uniform::new(norm_min, norm_max),
+            uniform: Uniform::new(norm_min, norm_max).unwrap(),
         })
     }
 }

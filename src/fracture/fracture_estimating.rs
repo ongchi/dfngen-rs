@@ -1,7 +1,7 @@
 use std::{cell::RefCell, rc::Rc};
 
-use rand::{distributions::Uniform, Rng};
-use rand_mt::Mt19937GenRand64;
+use rand::{distr::Uniform, Rng};
+use rand_mt::Mt64;
 
 use super::domain::domain_truncation;
 use crate::{
@@ -52,7 +52,7 @@ pub fn generate_radii_lists_n_poly_option(
     n_fam_ell: usize,
     shape_families: &mut [Shape],
     fam_prob: &[f64],
-    generator: Rc<RefCell<Mt19937GenRand64>>,
+    generator: Rc<RefCell<Mt64>>,
 ) {
     println!("Building radii lists for nPoly option...");
 
@@ -124,7 +124,7 @@ pub fn add_radii_to_lists(
     n_fam_ell: usize,
     percent: f64,
     shape_families: &mut [Shape],
-    generator: Rc<RefCell<Mt19937GenRand64>>,
+    generator: Rc<RefCell<Mt64>>,
 ) {
     for (i, shape) in shape_families.iter_mut().enumerate() {
         let amount_to_add = (shape.radii_list.len() as f64 * percent).ceil() as usize;
@@ -158,7 +158,7 @@ pub fn add_radii(
     amount_to_add: usize,
     fam_idx: isize,
     shape_fam: &mut Shape,
-    generator: Rc<RefCell<Mt19937GenRand64>>,
+    generator: Rc<RefCell<Mt64>>,
 ) {
     let min_radius = 3. * h;
 
@@ -237,11 +237,7 @@ pub fn add_radii(
 /// * `input` - Input structure
 /// * `shape_families` - Array of stochastic fracture families
 /// * `generator` - Random number generator
-pub fn dry_run(
-    input: &mut Input,
-    shape_families: &mut [Shape],
-    generator: Rc<RefCell<Mt19937GenRand64>>,
-) {
+pub fn dry_run(input: &mut Input, shape_families: &mut [Shape], generator: Rc<RefCell<Mt64>>) {
     println!("Estimating number of fractures per family for defined fracture intensities (P32)...");
     let dom_vol = input.domainSize[0] * input.domainSize[1] * input.domainSize[2];
     let total_families = shape_families.len();
@@ -251,7 +247,7 @@ pub fn dry_run(
                                        // we need to keep the original in its original state
                                        // std::copy(shapeProb, shapeProb + totalFamilies, famProbability);
                                        // Init uniform dist on [0,1)
-    let uniform_dist = Uniform::new(0., 1.);
+    let uniform_dist = Uniform::new(0., 1.).unwrap();
     /******  Convert famProb to CDF  *****/
     let mut cdf = cumsum(&input.famProb);
     let mut family_index; // Holds index to shape family of fracture being generated

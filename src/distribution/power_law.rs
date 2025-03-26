@@ -1,4 +1,4 @@
-use rand::distributions::{Distribution, Uniform};
+use rand::distr::{Distribution, Uniform};
 
 /// The truncated power-law distribution
 pub struct TruncPowerLaw {
@@ -14,7 +14,7 @@ impl TruncPowerLaw {
             min,
             max,
             alpha,
-            uniform: Uniform::new(0., 1.),
+            uniform: Uniform::new(0., 1.).unwrap(),
         }
     }
 }

@@ -2,8 +2,8 @@ use std::{cell::RefCell, fs::File, io::Write, rc::Rc, time::SystemTime};
 
 use clap::Parser;
 use parry3d_f64::na::Point3;
-use rand::{distributions::Uniform, Rng};
-use rand_mt::Mt19937GenRand64;
+use rand::{distr::Uniform, Rng};
+use rand_mt::Mt64;
 
 use crate::{
     computational_geometry::polygon_boundary::polygon_boundary,
@@ -83,7 +83,7 @@ fn main() {
         input.seed = get_time_based_seed();
     }
 
-    let generator = Rc::new(RefCell::new(Mt19937GenRand64::new(input.seed)));
+    let generator = Rc::new(RefCell::new(Mt64::new(input.seed)));
     let dom_vol = input.domainSize[0] * input.domainSize[1] * input.domainSize[2];
 
     if total_families > 0 {
@@ -372,7 +372,7 @@ fn main() {
     }
 
     // Initialize uniform distribution on [0,1]
-    let uniform_dist = Uniform::new(0., 1.);
+    let uniform_dist = Uniform::new(0., 1.).unwrap();
 
     if total_families > 0 {
         // Holds index to current 'shapeFamily' being inserted

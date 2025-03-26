@@ -1,5 +1,5 @@
 use parry3d_f64::na::Vector3;
-use rand::distributions::{Distribution, Uniform};
+use rand::distr::{Distribution, Uniform};
 
 /// The fisher distribution of polygon normal vector generation
 pub struct Fisher {
@@ -16,8 +16,8 @@ impl Fisher {
             orientation,
             kappa,
             eps,
-            uniform: Uniform::new(0., 1.),
-            theta_uniform: Uniform::new(0., 2. * std::f64::consts::PI),
+            uniform: Uniform::new(0., 1.).unwrap(),
+            theta_uniform: Uniform::new(0., 2. * std::f64::consts::PI).unwrap(),
         }
     }
 

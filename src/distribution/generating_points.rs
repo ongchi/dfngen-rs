@@ -2,9 +2,9 @@ use std::{cell::RefCell, rc::Rc};
 
 use crate::structures::Shape;
 use parry3d_f64::na::{Point3, Vector3};
-use rand::distributions::Uniform;
+use rand::distr::Uniform;
 use rand::Rng;
-use rand_mt::Mt19937GenRand64;
+use rand_mt::Mt64;
 
 use super::Fisher;
 
@@ -70,7 +70,7 @@ pub fn poly_norm_gen(
     orientation_option: u8,
     eps: f64,
     shape_family: &Shape,
-    rng: Rc<RefCell<Mt19937GenRand64>>,
+    rng: Rc<RefCell<Mt64>>,
 ) -> Vector3<f64> {
     let fisher = match orientation_option {
         0 => Fisher::new_with_theta_phi(
@@ -109,7 +109,7 @@ pub fn poly_norm_gen(
 /// * `z_min` - Minimum z for random z
 /// * `z_max` - Maximum z for random z
 pub fn random_translation(
-    rng: Rc<RefCell<Mt19937GenRand64>>,
+    rng: Rc<RefCell<Mt64>>,
     x_min: f64,
     x_max: f64,
     y_min: f64,
@@ -117,9 +117,9 @@ pub fn random_translation(
     z_min: f64,
     z_max: f64,
 ) -> Vector3<f64> {
-    let distribution_x = Uniform::new(x_min, x_max);
-    let distribution_y = Uniform::new(y_min, y_max);
-    let distribution_z = Uniform::new(z_min, z_max);
+    let distribution_x = Uniform::new(x_min, x_max).unwrap();
+    let distribution_y = Uniform::new(y_min, y_max).unwrap();
+    let distribution_z = Uniform::new(z_min, z_max).unwrap();
 
     let x = rng.borrow_mut().sample(distribution_x);
     let y = rng.borrow_mut().sample(distribution_y);

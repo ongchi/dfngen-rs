@@ -3,9 +3,9 @@ use std::rc::Rc;
 
 use parry3d_f64::bounding_volume::Aabb;
 use parry3d_f64::na::Vector3;
-use rand::distributions::Uniform;
+use rand::distr::Uniform;
 use rand::Rng;
-use rand_mt::Mt19937GenRand64;
+use rand_mt::Mt64;
 
 use crate::distribution::{TruncExp, TruncLogNormal, TruncPowerLaw};
 use crate::{
@@ -18,7 +18,7 @@ fn generate_radius(
     h: f64,
     n_fam_ell: usize,
     shape_fam: &mut Shape,
-    generator: Rc<RefCell<Mt19937GenRand64>>,
+    generator: Rc<RefCell<Mt64>>,
     family_index: isize,
     use_list: bool,
 ) -> f64 {
@@ -127,7 +127,7 @@ pub fn generate_poly(
     orientation_option: u8,
     eps: f64,
     shape_fam: &mut Shape,
-    generator: Rc<RefCell<Mt19937GenRand64>>,
+    generator: Rc<RefCell<Mt64>>,
     family_index: isize,
     use_list: bool,
 ) -> Poly {
@@ -233,7 +233,7 @@ pub fn generate_poly_with_radius(
     radius: f64,
     shape_fam: &Shape,
     bbox: Aabb,
-    generator: Rc<RefCell<Mt19937GenRand64>>,
+    generator: Rc<RefCell<Mt64>>,
     family_index: isize,
 ) -> Poly {
     // New polygon to build
@@ -261,7 +261,7 @@ pub fn generate_poly_with_radius(
 
     // Initialize beta based on distrubution type: 0 = unifrom on [0,2PI], 1 = constant
     let beta = if !shape_fam.beta_distribution {
-        let uniform_dist = Uniform::new(0., 2. * std::f64::consts::PI);
+        let uniform_dist = Uniform::new(0., 2. * std::f64::consts::PI).unwrap();
         generator.borrow_mut().sample(uniform_dist)
     } else {
         shape_fam.beta
@@ -386,7 +386,7 @@ pub fn re_translate_poly(
     regions: &[f64],
     new_poly: &mut Poly,
     shape_fam: &Shape,
-    generator: Rc<RefCell<Mt19937GenRand64>>,
+    generator: Rc<RefCell<Mt64>>,
 ) {
     if !new_poly.truncated {
         // If poly isn't truncated we can skip a lot of steps such
@@ -472,7 +472,7 @@ pub fn re_translate_poly(
         // Initialize beta based on distrubution type: 0 = unifrom on [0,2PI], 1 = constant
         let beta = if !shape_fam.beta_distribution {
             // Uniform distribution
-            let uniform_dist = Uniform::new(0., 2. * std::f64::consts::PI);
+            let uniform_dist = Uniform::new(0., 2. * std::f64::consts::PI).unwrap();
             generator.clone().borrow_mut().sample(uniform_dist)
         } else {
             // Constant

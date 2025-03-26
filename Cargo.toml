@@ -15,9 +15,9 @@ disable_shortening_int = []
 [dependencies]
 clap = { version = "4.5", features = ["derive"] }
 console = "0.15"
-parry3d-f64 = "0.17"
+parry3d-f64 = "0.18"
 paste = "1.0"
-rand = "0.8"
-rand_distr = "0.4"
-rand_mt = "4.2"
+rand = "0.9"
+rand_distr = "0.5"
+rand_mt = "5.0"
 text_io = "0.1"
