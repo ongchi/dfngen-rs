@@ -103,7 +103,6 @@ pub fn write_output(
         input.userRectanglesOnOff,
         input.userPolygonByCoord,
         input.stopCondition,
-        input.orientationOption,
         input.nFamEll,
         &input.layers,
         &input.regions,
@@ -1113,7 +1112,6 @@ fn write_shape_fams(
     user_rectangles_on_off: bool,
     user_polygon_by_coord: bool,
     stop_condition: u8,
-    orientation_option: u8,
     n_fam_ell: usize,
     layers: &[f64],
     regions: &[f64],
@@ -1200,41 +1198,7 @@ fn write_shape_fams(
             .unwrap();
         }
 
-        if orientation_option == 0 {
-            // Theta (angle normal makes with z axis
-            file.write_all(format!("Theta-rad: {}\n", shape.angle_one).as_bytes())
-                .unwrap();
-            file.write_all(format!("Theta-deg: {}\n", shape.angle_one * rad_to_deg).as_bytes())
-                .unwrap();
-            // Phi (angle the projection of normal onto x-y plane  makes with +x axis
-            file.write_all(format!("Phi-rad: {}\n", shape.angle_two).as_bytes())
-                .unwrap();
-            file.write_all(format!("Phi-deg: {}\n", shape.angle_two * rad_to_deg).as_bytes())
-                .unwrap();
-        } else if orientation_option == 1 {
-            file.write_all(format!("Trend-rad: {}\n", shape.angle_one).as_bytes())
-                .unwrap();
-            file.write_all(format!("Trend-deg: {}\n", shape.angle_one * rad_to_deg).as_bytes())
-                .unwrap();
-            // Phi (angle the projection of normal onto x-y plane  makes with +x axis
-            file.write_all(format!("Plunge-rad: {}\n", shape.angle_two).as_bytes())
-                .unwrap();
-            file.write_all(format!("Plunge-deg: {}\n", shape.angle_two * rad_to_deg).as_bytes())
-                .unwrap();
-        } else if orientation_option == 2 {
-            file.write_all(format!("Dip-rad: {}\n", shape.angle_one).as_bytes())
-                .unwrap();
-            file.write_all(format!("Dip-deg: {}\n", shape.angle_one * rad_to_deg).as_bytes())
-                .unwrap();
-            // Phi (angle the projection of normal onto x-y plane  makes with +x axis
-            file.write_all(format!("Strike-rad: {}\n", shape.angle_two).as_bytes())
-                .unwrap();
-            file.write_all(format!("Strike-deg: {}\n", shape.angle_two * rad_to_deg).as_bytes())
-                .unwrap();
-        }
-
-        // kappa
-        file.write_all(format!("Kappa: {}\n", shape.kappa).as_bytes())
+        file.write_all(shape.orientation.as_ref().unwrap().to_string().as_bytes())
             .unwrap();
 
         // Print layer family belongs to

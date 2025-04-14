@@ -1,8 +1,19 @@
+use std::fmt::{Display, Formatter};
+
 use parry3d_f64::na::Vector3;
 use rand::distr::{Distribution, Uniform};
 
+#[derive(Debug)]
+enum AngleOption {
+    ThetaPhi(f64, f64),
+    TrendPlunge(f64, f64),
+    DipStrike(f64, f64),
+}
+
 /// The fisher distribution of polygon normal vector generation
+#[derive(Debug)]
 pub struct Fisher {
+    angle_option: Option<AngleOption>,
     orientation: Vector3<f64>,
     kappa: f64,
     eps: f64,
@@ -11,13 +22,19 @@ pub struct Fisher {
 }
 
 impl Fisher {
-    pub fn new_with_orientation(orientation: Vector3<f64>, kappa: f64, eps: f64) -> Self {
+    fn new_with_orientation(
+        orientation: Vector3<f64>,
+        kappa: f64,
+        eps: f64,
+        angle_option: AngleOption,
+    ) -> Self {
         Self {
             orientation,
             kappa,
             eps,
             uniform: Uniform::new(0., 1.).unwrap(),
             theta_uniform: Uniform::new(0., 2. * std::f64::consts::PI).unwrap(),
+            angle_option: Some(angle_option),
         }
     }
 
@@ -30,6 +47,7 @@ impl Fisher {
             ),
             kappa,
             eps,
+            AngleOption::ThetaPhi(theta, phi),
         )
     }
 
@@ -42,6 +60,7 @@ impl Fisher {
             ),
             kappa,
             eps,
+            AngleOption::TrendPlunge(trend, plunge),
         )
     }
 
@@ -54,7 +73,38 @@ impl Fisher {
             ),
             kappa,
             eps,
+            AngleOption::DipStrike(dip, strike),
         )
+    }
+}
+
+impl Display for Fisher {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        let rad_to_deg = 180. / std::f64::consts::PI;
+
+        match self.angle_option {
+            Some(AngleOption::ThetaPhi(theta, phi)) => {
+                writeln!(f, "Theta-rad: {}", theta)?;
+                writeln!(f, "Theta-deg: {}", theta * rad_to_deg)?;
+                writeln!(f, "Phi-rad: {}", phi)?;
+                writeln!(f, "Phi-deg: {}", phi * rad_to_deg)?;
+            }
+            Some(AngleOption::TrendPlunge(trend, plunge)) => {
+                writeln!(f, "Trend-rad: {}", trend)?;
+                writeln!(f, "Trend-deg: {}", trend * rad_to_deg)?;
+                writeln!(f, "Plunge-rad: {}", plunge)?;
+                writeln!(f, "Plunge-deg: {}", plunge * rad_to_deg)?;
+            }
+            Some(AngleOption::DipStrike(dip, strike)) => {
+                writeln!(f, "Dip-rad: {}", dip)?;
+                writeln!(f, "Dip-deg: {}", dip * rad_to_deg)?;
+                writeln!(f, "Strike-rad: {}", strike)?;
+                writeln!(f, "Strike-deg: {}", strike * rad_to_deg)?;
+            }
+            None => unreachable!(),
+        }
+
+        writeln!(f, "Kappa: {}", self.kappa)
     }
 }
 

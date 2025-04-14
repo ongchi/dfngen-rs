@@ -1,7 +1,6 @@
 use std::fs::File;
 use std::io::{BufRead, BufReader, Read, Seek, SeekFrom};
 use std::str::FromStr;
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use parry3d_f64::na::Point3;
 use text_io::read;
@@ -65,11 +64,6 @@ pub fn get_cords(file: &mut File, out_ary: &mut Vec<f64>, n_poly: usize, n_verti
         let val = read!("{}", bytes);
         out_ary.push(val)
     }
-}
-
-pub fn get_time_based_seed() -> u64 {
-    let now = SystemTime::now();
-    now.duration_since(UNIX_EPOCH).map(|t| t.as_secs()).unwrap()
 }
 
 pub fn read_domain_vertices(global: &mut Input, filename: &str) {

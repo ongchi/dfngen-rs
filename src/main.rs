@@ -1,8 +1,13 @@
-use std::{cell::RefCell, fs::File, io::Write, rc::Rc, time::SystemTime};
+use std::cell::RefCell;
+use std::fs::File;
+use std::io::Write;
+use std::rc::Rc;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use clap::Parser;
 use parry3d_f64::na::Point3;
-use rand::{distr::Uniform, Rng};
+use rand::distr::Uniform;
+use rand::Rng;
 use rand_mt::Mt64;
 
 use crate::{
@@ -24,11 +29,10 @@ use crate::{
     fracture::remove_fractures::remove_fractures,
     io::input::read_input,
     io::output::write_output,
-    io::read_input_functions::get_time_based_seed,
     math_functions::{
         adjust_cdf_and_fam_prob, cumsum, get_area, index_from_prob, index_from_prob_and_p32_status,
     },
-    structures::{IntersectionPoints, Poly, Shape, Stats},
+    structures::{IntersectionPoints, Poly, Stats},
 };
 
 mod computational_geometry;
@@ -48,7 +52,7 @@ struct Cli {
     output_folder: String,
 }
 
-fn main() {
+fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
 
     println!("Starting DFNGen");
@@ -60,30 +64,20 @@ fn main() {
     let mut intersection_pts: Vec<IntersectionPoints> = Vec::new();
     // Vector for storing triple intersection points
     let mut triple_points: Vec<Point3<f64>> = Vec::new();
-    // Vector for shape families/ stochastic families
-    let mut shape_families: Vec<Shape> = Vec::new();
     // Statistics structure:
-    // Keeps track of DFN statistics (see definition in structures.h)
     let mut pstats = Stats::new();
-    // *********************************************************************
-    // Read Input File
-    // Initialize input variables. Most input variables are global
-    let mut input = read_input(&cli.input_file, &mut shape_families);
+
+    // Read input variables. Most input variables are global
+    let (mut input, mut shape_families) = read_input(&cli.input_file);
     println!("h: {}", input.h);
     let total_families = input.nFamEll + input.nFamRect;
 
-    // Print shape families to screen
-    // if totalFamilies > 0 {
-    //     printShapeFams(shapeFamilies);
-    // }
-
-    // Initialize random generator with seed ( see c++ <random> )
-    // Mersene Twister 19937 generator (64 bit)
-    if input.seed == 0 {
-        input.seed = get_time_based_seed();
-    }
-
-    let generator = Rc::new(RefCell::new(Mt64::new(input.seed)));
+    let generator = Rc::new(RefCell::new(Mt64::new(match input.seed {
+        0 => SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|t| t.as_secs())?,
+        seed => seed,
+    })));
     let dom_vol = input.domainSize[0] * input.domainSize[1] * input.domainSize[2];
 
     if total_families > 0 {
@@ -367,12 +361,12 @@ fn main() {
 
     if input.outputAllRadii {
         let file = radii_folder + "/radii_All.dat";
-        radii_all = Some(File::open(file).unwrap());
+        radii_all = Some(File::open(file)?);
         radii_all.as_mut().map(|f| f.write_all("Format: xRadius yRadius Family# (-1 = userRectangle, 0 = userEllipse, > 0 is family in order of famProb)\n".as_bytes()));
     }
 
     // Initialize uniform distribution on [0,1]
-    let uniform_dist = Uniform::new(0., 1.).unwrap();
+    let uniform_dist = Uniform::new(0., 1.)?;
 
     if total_families > 0 {
         // Holds index to current 'shapeFamily' being inserted
@@ -417,7 +411,6 @@ fn main() {
                 &input.domainSizeIncrease,
                 &input.layers,
                 &input.regions,
-                input.orientationOption,
                 input.eps,
                 &mut shape_families[family_index],
                 generator.clone(),
@@ -670,7 +663,7 @@ fn main() {
     // Copy end of DFN generation stats to file, as well as print to screen
     let _ = std::fs::create_dir_all(&cli.output_folder);
     let file_name = format!("{}/DFN_output.txt", cli.output_folder);
-    let mut file = File::create(file_name).unwrap();
+    let mut file = File::create(file_name)?;
     let now = SystemTime::now();
     log_msg(
         &mut file,
@@ -1337,6 +1330,8 @@ fn main() {
     );
 
     println!("DFNGen - Complete");
+
+    Ok(())
 }
 
 fn log_msg(file: &mut File, message: &str) {

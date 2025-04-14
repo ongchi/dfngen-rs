@@ -10,7 +10,7 @@ use rand_mt::Mt64;
 use crate::distribution::{TruncExp, TruncLogNormal, TruncPowerLaw};
 use crate::{
     computational_geometry::{apply_rotation2_d, apply_rotation3_d, translate},
-    distribution::generating_points::{poly_norm_gen, random_translation},
+    distribution::generating_points::random_translation,
     structures::{Poly, Shape},
 };
 
@@ -124,7 +124,6 @@ pub fn generate_poly(
     domain_size_increase: &Vector3<f64>,
     layers: &[f64],
     regions: &[f64],
-    orientation_option: u8,
     eps: f64,
     shape_fam: &mut Shape,
     generator: Rc<RefCell<Mt64>>,
@@ -147,15 +146,7 @@ pub fn generate_poly(
         regions,
         shape_fam,
     );
-    generate_poly_with_radius(
-        orientation_option,
-        eps,
-        radius,
-        shape_fam,
-        boundary,
-        generator,
-        family_index,
-    )
+    generate_poly_with_radius(eps, radius, shape_fam, boundary, generator, family_index)
 }
 
 pub fn poly_boundary(
@@ -228,7 +219,6 @@ pub fn poly_boundary(
 ///
 /// Polygon with radius passed in arg 1 and shape based on `shape_fam`
 pub fn generate_poly_with_radius(
-    orientation_option: u8,
     eps: f64,
     radius: f64,
     shape_fam: &Shape,
@@ -271,8 +261,7 @@ pub fn generate_poly_with_radius(
     // assumes polygon on x-y plane
     // Angle must be in rad
     apply_rotation2_d(&mut new_poly, beta);
-    // Fisher distribution / get normal vector
-    let mut norm = poly_norm_gen(orientation_option, eps, shape_fam, generator.clone());
+    let mut norm = shape_fam.normal_vector(generator.clone());
 
     let mag = norm.magnitude();
     if mag < 1. - eps || mag > 1. + eps {

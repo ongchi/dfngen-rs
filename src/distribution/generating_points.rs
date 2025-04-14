@@ -1,12 +1,9 @@
 use std::{cell::RefCell, rc::Rc};
 
-use crate::structures::Shape;
 use parry3d_f64::na::{Point3, Vector3};
 use rand::distr::Uniform;
 use rand::Rng;
 use rand_mt::Mt64;
-
-use super::Fisher;
 
 /// Discretize Intersection
 ///
@@ -63,38 +60,6 @@ pub fn discretize_line_of_intersection(
     }
 
     points_list
-}
-
-/// Polygon normal vector generator by Fisher distribution
-pub fn poly_norm_gen(
-    orientation_option: u8,
-    eps: f64,
-    shape_family: &Shape,
-    rng: Rc<RefCell<Mt64>>,
-) -> Vector3<f64> {
-    let fisher = match orientation_option {
-        0 => Fisher::new_with_theta_phi(
-            shape_family.angle_one,
-            shape_family.angle_two,
-            shape_family.kappa,
-            eps,
-        ),
-        1 => Fisher::new_with_trend_plunge(
-            shape_family.angle_one,
-            shape_family.angle_two,
-            shape_family.kappa,
-            eps,
-        ),
-        2 => Fisher::new_with_dip_strike(
-            shape_family.angle_one,
-            shape_family.angle_two,
-            shape_family.kappa,
-            eps,
-        ),
-        _ => unreachable!(),
-    };
-
-    rng.borrow_mut().sample(fisher)
 }
 
 /// Returns random TRANSLATION

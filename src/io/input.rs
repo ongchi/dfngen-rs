@@ -1,12 +1,16 @@
 use std::fs::File;
 
+use itertools::zip_eq;
 use parry3d_f64::na::{Point3, Vector3};
 
 use super::read_input_functions::{
     get_cords, get_rect_coords, read_domain_vertices, search_var, ReadFromTextFile,
 };
 
-use crate::{distribution::generating_points::generate_theta, structures::Shape};
+use crate::{
+    distribution::{generating_points::generate_theta, Fisher},
+    structures::Shape,
+};
 
 #[allow(non_snake_case)]
 #[derive(Default, Debug)]
@@ -182,30 +186,6 @@ pub struct Input {
     /// Holds number of elements equal to the number of ellipse families.
     enumPoints: Vec<usize>,
 
-    /// All angles for ellipses are in:
-    ///     0 - degrees
-    ///     1 - radians (Must use numerical value for PI)
-    eAngleOption: bool,
-
-    /// First Ellipse fracture orientation.
-    /// If orientationOption = 0 (Spherical coordinates)
-    /// This The angle the normal vector makes with the z-axis
-    /// If  orientationOption = 1
-    /// This is the trend of Ellipse fracture orientation.
-    /// If  orientationOption = 2
-    /// This is the mean dip of Ellipse fracture orientation.
-    eAngleOne: Vec<f64>,
-
-    /// Second Ellipse fracture orientation.
-    /// If orientationOption = 0 (Spherical coordinates)
-    /// The angle the projection of the normal
-    /// onto the x-y plane makes with the x-axis
-    /// If  orientationOption = 1
-    /// This is the plunge of Ellipse fracture orientation.
-    /// If  orientationOption = 2
-    /// This is the mean strike of Ellipse fracture orientation.
-    eAngleRwo: Vec<f64>,
-
     /// Rotation around the fractures' normal vector.
     /// Ellipse family parameter.
     ebeta: Vec<f64>,
@@ -278,11 +258,6 @@ pub struct Input {
     /// Aspect ratio for stochasic rectangles.
     raspect: Vec<f64>,
 
-    /// All angles from input file for stochastic rectangles are in:
-    ///     True  - Degrees
-    ///     False - Radians
-    rAngleOption: bool,
-
     ///    0 - Ignore this option, keep all fractures.
     ///
     /// (>0) - Size of minimum fracture radius. Fractures smaller than
@@ -291,25 +266,6 @@ pub struct Input {
     ///        Minimum and maximum size options under fracture family
     ///        distributions will still be used while generating the DFN.
     pub removeFracturesLessThan: f64,
-
-    /// First Rectangle fracture orientation.
-    /// If orientationOption = 0 (Spherical coordinates)
-    /// This The angle the normal vector makes with the z-axis
-    /// If orientationOption = 1
-    /// This is the trend of Rectangle fracture orientation.
-    /// If orientationOption = 2
-    /// This is the mean dip of Rectangle fracture orientation.
-    rAngleOne: Vec<f64>,
-
-    /// Second Rectangle fracture orientation.
-    /// If orientationOption = 0 (Spherical coordinates)
-    /// The angle the projection of the normal
-    /// onto the x-y plane makes with the x-axis
-    /// If  orientationOption = 1
-    /// This is the plunge of Rectangle fracture orientation.
-    /// If orientationOption = 2
-    /// This is the mean strike of Rectangle fracture orientation.
-    rAngleTwo: Vec<f64>,
 
     /// Rotation around the normal vector.
     rbeta: Vec<f64>,
@@ -552,9 +508,18 @@ pub struct Input {
 /// # Arguments
 ///
 /// * `input` - Path to input file
-/// * `shape_family` - Shape array to store stochastic families
-pub fn read_input(input: &str, shape_family: &mut Vec<Shape>) -> Input {
+pub fn read_input(input: &str) -> (Input, Vec<Shape>) {
     let mut input_var = Input::default();
+    let mut shape_family = Vec::new();
+
+    let mut e_angle_option = false;
+    let mut e_angle1: Vec<f64> = Vec::new();
+    let mut e_angle2: Vec<f64> = Vec::new();
+    let mut e_orientation = Vec::new();
+    let mut r_angle_option = false;
+    let mut r_angle1: Vec<f64> = Vec::new();
+    let mut r_angle2: Vec<f64> = Vec::new();
+    let mut r_orientation = Vec::new();
 
     println!("DFN Generator Input File: {}\n", input);
     let mut input_file = File::open(input).unwrap();
@@ -720,27 +685,52 @@ pub fn read_input(input: &str, shape_family: &mut Vec<Shape>) -> Input {
         input_var!(easpect);
         input_var!(enumPoints);
         search_var(&mut input_file, "angleOption:"); // eAngleOption
-        input_var.eAngleOption.read_from_text(&mut input_file);
+        e_angle_option.read_from_text(&mut input_file);
 
         if input_var.orientationOption == 0 {
             search_var(&mut input_file, "etheta:");
-            input_var.eAngleOne.read_from_text(&mut input_file);
+            e_angle1.read_from_text(&mut input_file);
             search_var(&mut input_file, "ephi:");
-            input_var.eAngleRwo.read_from_text(&mut input_file);
+            e_angle2.read_from_text(&mut input_file);
         } else if input_var.orientationOption == 1 {
             search_var(&mut input_file, "etrend:");
-            input_var.eAngleOne.read_from_text(&mut input_file);
+            e_angle1.read_from_text(&mut input_file);
             search_var(&mut input_file, "eplunge:");
-            input_var.eAngleRwo.read_from_text(&mut input_file);
+            e_angle2.read_from_text(&mut input_file);
         } else if input_var.orientationOption == 2 {
             search_var(&mut input_file, "edip:");
-            input_var.eAngleOne.read_from_text(&mut input_file);
+            e_angle1.read_from_text(&mut input_file);
             search_var(&mut input_file, "estrike:");
-            input_var.eAngleRwo.read_from_text(&mut input_file);
+            e_angle2.read_from_text(&mut input_file);
         }
 
         input_var!(ebeta);
+
+        // Convert from degrees to radians
+        if e_angle_option {
+            let _ = e_angle1
+                .iter_mut()
+                .map(|v| *v *= std::f64::consts::PI / 180.);
+            let _ = e_angle2
+                .iter_mut()
+                .map(|v| *v *= std::f64::consts::PI / 180.);
+            let _ = input_var
+                .ebeta
+                .iter_mut()
+                .map(|v| *v *= std::f64::consts::PI / 180.);
+        }
+
         input_var!(ekappa);
+
+        for ((c1, c2), kappa) in zip_eq(zip_eq(&e_angle1, &e_angle2), &input_var.ekappa) {
+            e_orientation.push(match input_var.orientationOption {
+                0 => Fisher::new_with_theta_phi(*c1, *c2, *kappa, input_var.eps),
+                1 => Fisher::new_with_trend_plunge(*c1, *c2, *kappa, input_var.eps),
+                2 => Fisher::new_with_dip_strike(*c1, *c2, *kappa, input_var.eps),
+                _ => unreachable!(),
+            })
+        }
+
         input_var!(eLogMean);
         input_var!(esd);
         input_var!(eExpMean);
@@ -768,16 +758,13 @@ pub fn read_input(input: &str, shape_family: &mut Vec<Shape>) -> Input {
     let mut beta_count = 0;
 
     // Create shape structures from data gathered above
-    for i in 0..input_var.nFamEll {
+    for (i, orientation) in zip_eq(0..input_var.nFamEll, e_orientation) {
         let mut new_shape_fam = Shape {
             shape_family: 0, // shapFam = 0 = ellipse, 1 = rect
             distribution_type: input_var.edistr[i],
             num_points: input_var.enumPoints[i],
             aspect_ratio: input_var.easpect[i],
-            angle_one: input_var.eAngleOne[i],
-            angle_two: input_var.eAngleRwo[i],
-            kappa: input_var.ekappa[i],
-            angle_option: input_var.eAngleOption,
+            orientation: Some(orientation),
             layer: input_var.eLayer[i],
             region: input_var.eRegion[i],
             ..Default::default()
@@ -849,28 +836,52 @@ pub fn read_input(input: &str, shape_family: &mut Vec<Shape>) -> Input {
         input_var!(rLayer, input_var.nFamRect);
         input_var!(rRegion, input_var.nFamRect);
         input_var!(raspect, input_var.nFamRect);
-        search_var(&mut input_file, "angleOption:"); //rAngleOption
-        input_var.rAngleOption.read_from_text(&mut input_file);
+        search_var(&mut input_file, "angleOption:"); // rAngleOption
+        r_angle_option.read_from_text(&mut input_file);
 
         if input_var.orientationOption == 0 {
             search_var(&mut input_file, "rtheta:");
-            input_var.rAngleOne.read_from_text(&mut input_file);
+            r_angle1.read_from_text(&mut input_file);
             search_var(&mut input_file, "rphi:");
-            input_var.rAngleTwo.read_from_text(&mut input_file);
+            r_angle2.read_from_text(&mut input_file);
         } else if input_var.orientationOption == 1 {
             search_var(&mut input_file, "rtrend:");
-            input_var.rAngleOne.read_from_text(&mut input_file);
+            r_angle1.read_from_text(&mut input_file);
             search_var(&mut input_file, "rplunge:");
-            input_var.rAngleTwo.read_from_text(&mut input_file);
+            r_angle2.read_from_text(&mut input_file);
         } else if input_var.orientationOption == 2 {
             search_var(&mut input_file, "rdip:");
-            input_var.rAngleOne.read_from_text(&mut input_file);
+            r_angle1.read_from_text(&mut input_file);
             search_var(&mut input_file, "rstrike:");
-            input_var.rAngleTwo.read_from_text(&mut input_file);
+            r_angle2.read_from_text(&mut input_file);
         }
 
         input_var!(rbeta, input_var.nFamRect);
+
+        if r_angle_option {
+            let _ = r_angle1
+                .iter_mut()
+                .map(|v| *v *= std::f64::consts::PI / 180.);
+            let _ = r_angle2
+                .iter_mut()
+                .map(|v| *v *= std::f64::consts::PI / 180.);
+            let _ = input_var
+                .rbeta
+                .iter_mut()
+                .map(|v| *v *= std::f64::consts::PI / 180.);
+        }
+
         input_var!(rkappa, input_var.nFamRect);
+
+        for ((c1, c2), kappa) in zip_eq(zip_eq(&r_angle1, &r_angle2), &input_var.rkappa) {
+            r_orientation.push(match input_var.orientationOption {
+                0 => Fisher::new_with_theta_phi(*c1, *c2, *kappa, input_var.eps),
+                1 => Fisher::new_with_trend_plunge(*c1, *c2, *kappa, input_var.eps),
+                2 => Fisher::new_with_dip_strike(*c1, *c2, *kappa, input_var.eps),
+                _ => unreachable!(),
+            })
+        }
+
         input_var!(rLogMean, input_var.nFamRect);
         input_var!(rsd, input_var.nFamRect);
         input_var!(rmin, input_var.nFamRect);
@@ -911,16 +922,13 @@ pub fn read_input(input: &str, shape_family: &mut Vec<Shape>) -> Input {
     beta_count = 0;
 
     // Create shape strucutres from data gathered above
-    for i in 0..input_var.nFamRect {
+    for (i, orientation) in zip_eq(0..input_var.nFamRect, r_orientation) {
         let mut new_shape_fam = Shape {
             shape_family: 1, // shapFam = 0 = ellipse, 1 = rect
             distribution_type: input_var.rdistr[i],
             num_points: 4, // Rectangle
             aspect_ratio: input_var.raspect[i],
-            angle_one: input_var.rAngleOne[i],
-            angle_two: input_var.rAngleTwo[i],
-            kappa: input_var.rkappa[i],
-            angle_option: input_var.rAngleOption,
+            orientation: Some(orientation),
             layer: input_var.rLayer[i],
             region: input_var.rRegion[i],
             ..Default::default()
@@ -1204,17 +1212,5 @@ pub fn read_input(input: &str, shape_family: &mut Vec<Shape>) -> Input {
         input_var.nPoly = count;
     }
 
-    // Convert angles to rad if necessary, all functions and code require radians
-    for shape in shape_family.iter_mut() {
-        if shape.angle_option {
-            // Convert deg to rad
-            let temp = std::f64::consts::PI / 180.;
-            shape.beta *= temp;
-            shape.angle_one *= temp;
-            shape.angle_two *= temp;
-            shape.angle_option = false; // Angles now in radians
-        }
-    }
-
-    input_var
+    (input_var, shape_family)
 }

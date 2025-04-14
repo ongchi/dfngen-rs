@@ -277,7 +277,6 @@ pub fn dry_run(input: &mut Input, shape_families: &mut [Shape], generator: Rc<Re
                     &shape_families[force_large_fract_count - 1],
                 );
                 generate_poly_with_radius(
-                    input.orientationOption,
                     input.eps,
                     radius,
                     &shape_families[force_large_fract_count - 1],
@@ -304,7 +303,6 @@ pub fn dry_run(input: &mut Input, shape_families: &mut [Shape], generator: Rc<Re
                     &input.domainSizeIncrease,
                     &input.layers,
                     &input.regions,
-                    input.orientationOption,
                     input.eps,
                     &mut shape_families[family_index],
                     generator.clone(),

@@ -1,4 +1,11 @@
+use std::cell::RefCell;
+use std::rc::Rc;
+
 use parry3d_f64::na::{Point3, Vector3};
+use rand::Rng;
+use rand_mt::Mt64;
+
+use crate::distribution::Fisher;
 
 #[derive(Clone, Default)]
 /// The Poly structre is used to create and store fracrures/polygons.
@@ -350,11 +357,6 @@ pub struct Shape {
     /// Current P32 value for this family.
     pub current_p32: f64,
 
-    /// True = degrees, False = radians. This variable is set while readin the user's input file.
-    /// After reading in the users input file, any input in degrees
-    /// will be  changed to radians.
-    pub angle_option: bool,
-
     /// 'betaOption' is the rotation about the polygon's  normal vector
     /// True - User Specified Rotation
     /// False - Uniform Distribution
@@ -364,22 +366,7 @@ pub struct Shape {
     /// or degrees depending on 'angleOption'.
     pub beta: f64,
 
-    /// If orientationOption = 0 (Spherical coordinates)
-    /// This is the angle the normal vector makes with the z-axis (theta)
-    /// If  orientationOption = 1
-    /// This is the trend of Rectangle fracture orientation.
-    pub angle_one: f64,
-
-    /// If orientationOption = 0 (Spherical coordinates)
-    /// This is the angle the normal vector makes with the z-axis (phi)
-    /// If  orientationOption = 1
-    /// This is the trend of Rectangle fracture orientation.
-    pub angle_two: f64,
-
-    /// Parameter for fisher distributions. The
-    /// bigger, the more similar (less diverging) are the
-    /// rectangular familiy's normal vectors.
-    pub kappa: f64,
+    pub orientation: Option<Fisher>,
 
     /**************** Distribution Variables *********************/
     /*************************************************************/
@@ -436,6 +423,13 @@ pub struct Shape {
 
     /// Alpha. Used in truncated power-law distribution calculations.
     pub alpha: f64,
+}
+
+impl Shape {
+    pub fn normal_vector(&self, rng: Rc<RefCell<Mt64>>) -> Vector3<f64> {
+        let fisher = self.orientation.as_ref().unwrap();
+        rng.borrow_mut().sample(fisher)
+    }
 }
 
 impl IntersectionPoints {
