@@ -9,9 +9,9 @@ use super::input::Input;
 use crate::{
     computational_geometry::poly_and_intersection_rotation_to_xy,
     distribution::generating_points::discretize_line_of_intersection,
-    fracture::insert_shape::{get_family_number, shape_type},
+    fracture::insert_shape::get_family_number,
     math_functions::sorted_index,
-    structures::{IntersectionPoints, Poly, Shape, Stats},
+    structures::{IntersectionPoints, Poly, Shape, ShapeFamily, Stats},
 };
 
 /// Writes all output for DFNGen
@@ -1146,7 +1146,7 @@ fn write_shape_fams(
         file.write_all(
             format!(
                 "{} Family: {}\n",
-                shape_type(shape),
+                shape.shape_family,
                 get_family_number(n_fam_ell, i as isize, shape.shape_family)
             )
             .as_bytes(),
@@ -1156,13 +1156,15 @@ fn write_shape_fams(
             .unwrap();
 
         // Print vertice number
-        if shape.shape_family == 0 {
-            // If ellipse family
-            file.write_all(format!("Number of Vertices: {}\n", shape.num_points).as_bytes())
-                .unwrap();
-        } else {
-            file.write_all("Number of Vertices: 4\n".as_bytes())
-                .unwrap();
+        match shape.shape_family {
+            ShapeFamily::Ellipse(n) => {
+                file.write_all(format!("Number of Vertices: {}\n", n).as_bytes())
+                    .unwrap();
+            }
+            ShapeFamily::Rectangle => {
+                file.write_all("Number of Vertices: 4\n".as_bytes())
+                    .unwrap();
+            }
         }
 
         // aspect ratio

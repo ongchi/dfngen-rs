@@ -9,7 +9,7 @@ use super::read_input_functions::{
 
 use crate::{
     distribution::{generating_points::generate_theta, Fisher},
-    structures::Shape,
+    structures::{Shape, ShapeFamily},
 };
 
 #[allow(non_snake_case)]
@@ -760,9 +760,8 @@ pub fn read_input(input: &str) -> (Input, Vec<Shape>) {
     // Create shape structures from data gathered above
     for (i, orientation) in zip_eq(0..input_var.nFamEll, e_orientation) {
         let mut new_shape_fam = Shape {
-            shape_family: 0, // shapFam = 0 = ellipse, 1 = rect
+            shape_family: ShapeFamily::Ellipse(input_var.enumPoints[i] as u8), // shapFam = 0 = ellipse, 1 = rect
             distribution_type: input_var.edistr[i],
-            num_points: input_var.enumPoints[i],
             aspect_ratio: input_var.easpect[i],
             orientation: Some(orientation),
             layer: input_var.eLayer[i],
@@ -773,7 +772,7 @@ pub fn read_input(input: &str) -> (Input, Vec<Shape>) {
         generate_theta(
             &mut new_shape_fam.theta_list,
             new_shape_fam.aspect_ratio,
-            new_shape_fam.num_points,
+            input_var.enumPoints[i],
         );
 
         if input_var.ebetaDistribution[i] {
@@ -924,9 +923,8 @@ pub fn read_input(input: &str) -> (Input, Vec<Shape>) {
     // Create shape strucutres from data gathered above
     for (i, orientation) in zip_eq(0..input_var.nFamRect, r_orientation) {
         let mut new_shape_fam = Shape {
-            shape_family: 1, // shapFam = 0 = ellipse, 1 = rect
+            shape_family: ShapeFamily::Rectangle,
             distribution_type: input_var.rdistr[i],
-            num_points: 4, // Rectangle
             aspect_ratio: input_var.raspect[i],
             orientation: Some(orientation),
             layer: input_var.rLayer[i],

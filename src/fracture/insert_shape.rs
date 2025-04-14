@@ -8,6 +8,7 @@ use rand::Rng;
 use rand_mt::Mt64;
 
 use crate::distribution::{TruncExp, TruncLogNormal, TruncPowerLaw};
+use crate::structures::ShapeFamily;
 use crate::{
     computational_geometry::{apply_rotation2_d, apply_rotation3_d, translate},
     distribution::generating_points::random_translation,
@@ -59,7 +60,7 @@ fn generate_radius(
                             Ok(value) => value,
                             Err(_) => panic!(
                                     "distribution for {} family {} has been unable to generate a fracture with radius within set parameters after 1000 consecutive tries.",
-                                    shape_type(shape_fam),
+                                    &shape_fam.shape_family,
                                     get_family_number(n_fam_ell, family_index, shape_fam.shape_family),
                                 )
                         }
@@ -230,23 +231,23 @@ pub fn generate_poly_with_radius(
     let mut new_poly = Poly::default();
     // Initialize normal to {0,0,1}. ( All polys start on x-y plane )
     new_poly.normal = Vector3::new(0., 0., 1.);
-    new_poly.number_of_nodes = shape_fam.num_points as isize;
+    new_poly.number_of_nodes = shape_fam.shape_family.number_of_nodes() as isize;
     new_poly.vertices = Vec::with_capacity((3 * new_poly.number_of_nodes) as usize); //numPoints*{x,y,z}
     new_poly.family_num = family_index;
 
-    if shape_fam.shape_family == 1 {
-        // If rectangle shape
-        // Initialize rectangles vertices
-        initialize_rect_vertices(&mut new_poly, radius, shape_fam.aspect_ratio);
-    } else {
-        // Ellipse
-        initialize_ell_vertices(
-            &mut new_poly,
-            radius,
-            shape_fam.aspect_ratio,
-            &shape_fam.theta_list,
-            shape_fam.num_points,
-        );
+    match shape_fam.shape_family {
+        ShapeFamily::Ellipse(n) => {
+            initialize_ell_vertices(
+                &mut new_poly,
+                radius,
+                shape_fam.aspect_ratio,
+                &shape_fam.theta_list,
+                n as usize,
+            );
+        }
+        ShapeFamily::Rectangle => {
+            initialize_rect_vertices(&mut new_poly, radius, shape_fam.aspect_ratio);
+        }
     }
 
     // Initialize beta based on distrubution type: 0 = unifrom on [0,2PI], 1 = constant
@@ -413,7 +414,8 @@ pub fn re_translate_poly(
         translate(new_poly, t);
     } else {
         // Poly was truncated, need to rebuild the polygon
-        new_poly.vertices = Vec::with_capacity(shape_fam.num_points * 3);
+        new_poly.vertices =
+            Vec::with_capacity(shape_fam.shape_family.number_of_nodes() as usize * 3);
         // Reset boundary faces (0 means poly is no longer touching a boundary)
         new_poly.faces[0] = false;
         new_poly.faces[1] = false;
@@ -424,32 +426,33 @@ pub fn re_translate_poly(
         new_poly.truncated = false; // Set to 0 to mean not truncated
         new_poly.group_num = 0; // Clear cluster group information
         new_poly.intersection_index.clear(); // Clear any saved intersections
-        new_poly.number_of_nodes = shape_fam.num_points as isize;
+        new_poly.number_of_nodes = shape_fam.shape_family.number_of_nodes() as isize;
 
-        if shape_fam.shape_family == 1 {
-            // 1 is rectanglular families. rebuild rectangle
-            // Rebuild poly at origin using previous size
-            new_poly.vertices[0] = new_poly.xradius;
-            new_poly.vertices[1] = new_poly.yradius;
-            new_poly.vertices[2] = 0.;
-            new_poly.vertices[3] = -new_poly.xradius;
-            new_poly.vertices[4] = new_poly.yradius;
-            new_poly.vertices[5] = 0.;
-            new_poly.vertices[6] = -new_poly.xradius;
-            new_poly.vertices[7] = -new_poly.yradius;
-            new_poly.vertices[8] = 0.;
-            new_poly.vertices[9] = new_poly.xradius;
-            new_poly.vertices[10] = -new_poly.yradius;
-            new_poly.vertices[11] = 0.;
-        } else {
-            // Rebuild ellipse
-            initialize_ell_vertices(
-                new_poly,
-                new_poly.xradius,
-                shape_fam.aspect_ratio,
-                &shape_fam.theta_list,
-                shape_fam.num_points,
-            );
+        match shape_fam.shape_family {
+            ShapeFamily::Ellipse(n) => {
+                initialize_ell_vertices(
+                    new_poly,
+                    new_poly.xradius,
+                    shape_fam.aspect_ratio,
+                    &shape_fam.theta_list,
+                    n as usize,
+                );
+            }
+            ShapeFamily::Rectangle => {
+                // Rebuild poly at origin using previous size
+                new_poly.vertices[0] = new_poly.xradius;
+                new_poly.vertices[1] = new_poly.yradius;
+                new_poly.vertices[2] = 0.;
+                new_poly.vertices[3] = -new_poly.xradius;
+                new_poly.vertices[4] = new_poly.yradius;
+                new_poly.vertices[5] = 0.;
+                new_poly.vertices[6] = -new_poly.xradius;
+                new_poly.vertices[7] = -new_poly.yradius;
+                new_poly.vertices[8] = 0.;
+                new_poly.vertices[9] = new_poly.xradius;
+                new_poly.vertices[10] = -new_poly.yradius;
+                new_poly.vertices[11] = 0.;
+            }
         }
 
         // Save newPoly's previous normal vector and then reset poly normal to {0,0,1} for applyRotation3D function
@@ -572,26 +575,14 @@ pub fn print_reject_reason(reject_code: i32, new_poly: &Poly) {
 ///
 /// * `n_fam_ell` - Number of ellipse families
 /// * `family_index` - Family index which family belings to in main()'s 'shapeFamilies' array
-/// * `family_shape` - Rectangle or ellipse family
-///     0 - Ellipse
-///     1 - Rectangle
-pub fn get_family_number(n_fam_ell: usize, family_index: isize, family_shape: usize) -> isize {
-    if family_shape != 0 {
-        // if not ellipse family
-        family_index - n_fam_ell as isize + 1
-    } else {
-        family_index + 1
-    }
-}
-
-/// Print Shape Type
-///
-/// Print type of family (ellipse or rectangle)
-pub fn shape_type(shape_fam: &Shape) -> &'static str {
-    if shape_fam.shape_family == 0 {
-        "Ellipse"
-    } else {
-        "Rectangular"
+pub fn get_family_number(
+    n_fam_ell: usize,
+    family_index: isize,
+    family_shape: ShapeFamily,
+) -> isize {
+    match family_shape {
+        ShapeFamily::Ellipse(_) => family_index + 1,
+        ShapeFamily::Rectangle => family_index - n_fam_ell as isize + 1,
     }
 }
 

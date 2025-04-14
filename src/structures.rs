@@ -1,5 +1,6 @@
-use std::cell::RefCell;
+use std::fmt::Formatter;
 use std::rc::Rc;
+use std::{cell::RefCell, fmt::Display};
 
 use parry3d_f64::na::{Point3, Vector3};
 use rand::Rng;
@@ -317,19 +318,45 @@ pub struct Stats {
     pub rejected_user_fracture: Vec<RejectedUserFracture>,
 }
 
+#[derive(Clone, Copy)]
+pub enum ShapeFamily {
+    Ellipse(u8),
+    Rectangle,
+}
+
+impl Default for ShapeFamily {
+    fn default() -> Self {
+        ShapeFamily::Ellipse(6)
+    }
+}
+
+impl Display for ShapeFamily {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ShapeFamily::Ellipse(_) => write!(f, "Ellipse"),
+            ShapeFamily::Rectangle => write!(f, "Rectangular"),
+        }
+    }
+}
+
+impl ShapeFamily {
+    pub fn number_of_nodes(&self) -> u8 {
+        match self {
+            ShapeFamily::Ellipse(n) => *n,
+            ShapeFamily::Rectangle => 4,
+        }
+    }
+}
+
 /// Shape is used to hold varibales for all types of stochastic shapes. During getInput(),
 /// all stochastic families for both recaangles and ellipses are parsed from the user input
 /// and are placed in a Shape structure array.
 #[derive(Default)]
 pub struct Shape {
-    /// 0 = ellipse, 1 = rectangle
-    pub shape_family: usize,
+    pub shape_family: ShapeFamily,
 
     /// 1: Lognormal, 2: truncated power-law, 3: exponential, 4: constant
     pub distribution_type: u8,
-
-    /// Number of vertices used to create the polygon. Ellipse families only.
-    pub num_points: usize,
 
     /// Array of thetas to build poly from, initialized while reading input and building shape structures
     pub theta_list: Vec<f64>,

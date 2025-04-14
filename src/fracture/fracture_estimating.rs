@@ -8,7 +8,7 @@ use crate::{
     distribution::{TruncExp, TruncLogNormal, TruncPowerLaw},
     fracture::insert_shape::{
         generate_poly, generate_poly_with_radius, get_family_number, get_largest_fracture_radius,
-        poly_boundary, re_translate_poly, shape_type,
+        poly_boundary, re_translate_poly,
     },
     io::input::Input,
     math_functions::{adjust_cdf_and_fam_prob, cumsum, get_area, index_from_prob_and_p32_status},
@@ -101,7 +101,7 @@ pub fn print_generating_fractures_less_than_hwarning(
 ) {
     println!(
         "WARNING: {} Family {} is attepting to populate fracture radii lists, however many fractures are being generated with radii less than 3*h (Minimum radius). Consider adjusting distribution parameters.",
-        shape_type(shape_fam),
+        shape_fam.shape_family,
         get_family_number(n_fam_ell, fam_index, shape_fam.shape_family)
     );
 }

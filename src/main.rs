@@ -19,7 +19,7 @@ use crate::{
         add_radii_to_lists, dry_run, generate_radii_lists_n_poly_option, sort_radii,
     },
     fracture::insert_shape::{
-        generate_poly, get_family_number, print_reject_reason, re_translate_poly, shape_type,
+        generate_poly, get_family_number, print_reject_reason, re_translate_poly,
     },
     fracture::insert_user_ell::insert_user_ell,
     fracture::insert_user_ell_by_coord::insert_user_ell_by_coord,
@@ -120,14 +120,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     // Constant size
                     println!(
                         "{} family {} using constant size",
-                        shape_type(shape),
+                        shape.shape_family,
                         get_family_number(input.nFamEll, j as isize, shape.shape_family)
                     );
                 } else {
                     println!(
                         "Estimated {} fractures for {} family {}",
                         shape.radii_list.len(),
-                        shape_type(shape),
+                        shape.shape_family,
                         get_family_number(input.nFamEll, j as isize, shape.shape_family)
                     );
                 }
@@ -566,7 +566,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             if input.stopCondition == 0 {
                                 println!(
                                     "{} family {} Current P32 = {:.8}",
-                                    shape_type(shape),
+                                    shape.shape_family,
                                     get_family_number(
                                         input.nFamEll,
                                         i as isize,
@@ -577,7 +577,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             } else {
                                 println!(
                                     "{} family {} target P32 = {:.8}, Current P32 = {}",
-                                    shape_type(shape),
+                                    shape.shape_family,
                                     get_family_number(
                                         input.nFamEll,
                                         i as isize,
@@ -1271,7 +1271,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     &mut file,
                     &format!(
                         "{} Family {}\nUsing constant size\n\n",
-                        shape_type(shape),
+                        shape.shape_family,
                         get_family_number(input.nFamEll, i as isize, shape.shape_family)
                     ),
                 );
@@ -1280,7 +1280,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     &mut file,
                     &format!(
                         "{} Family {}\nEstimated: {}\n",
-                        shape_type(shape),
+                        shape.shape_family,
                         get_family_number(input.nFamEll, i as isize, shape.shape_family),
                         pstats.expected_from_fam[i]
                     ),
