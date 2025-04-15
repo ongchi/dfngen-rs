@@ -179,11 +179,6 @@ pub struct Input {
     /// Ellipse family parameter.
     ebeta: Vec<f64>,
 
-    /// Parameter for the fisher distribnShaprutions. The
-    /// bigger, the more similar (less diverging) are the
-    /// elliptical familiy's normal vectors.
-    ekappa: Vec<f64>,
-
     /// Elliptical families target fracture intensities per family
     /// when using stopCondition = 1, P32 option.
     e_p32Targets: Vec<f64>,
@@ -202,11 +197,6 @@ pub struct Input {
 
     /// Rotation around the normal vector.
     rbeta: Vec<f64>,
-
-    /// Parameter for the fisher distribnShaprutions. The
-    /// bigger, the more similar (less diverging) are the
-    /// rectangle family's normal vectors.
-    rkappa: Vec<f64>,
 
     /// Rectangular families target fracture intensities per family
     /// when using stopCondition = 1, P32 option.
@@ -423,15 +413,7 @@ pub struct Input {
 pub fn read_input(input: &str) -> (Input, Vec<Shape>) {
     let mut input_var = Input::default();
     let mut shape_family = Vec::new();
-
-    let mut e_angle_option = false;
-    let mut e_angle1: Vec<f64> = Vec::new();
-    let mut e_angle2: Vec<f64> = Vec::new();
-    let mut e_orientation = Vec::new();
-    let mut r_angle_option = false;
-    let mut r_angle1: Vec<f64> = Vec::new();
-    let mut r_angle2: Vec<f64> = Vec::new();
-    let mut r_orientation = Vec::new();
+    let mut angle_option = false;
 
     println!("DFN Generator Input File: {}\n", input);
     let mut input_file = File::open(input).unwrap();
@@ -599,51 +581,18 @@ pub fn read_input(input: &str) -> (Input, Vec<Shape>) {
         input_var!(eRegion);
         input_var!(easpect);
         input_var!(enumPoints);
-        search_var(&mut input_file, "angleOption:"); // eAngleOption
-        e_angle_option.read_from_text(&mut input_file);
 
-        if input_var.orientationOption == 0 {
-            search_var(&mut input_file, "etheta:");
-            e_angle1.read_from_text(&mut input_file);
-            search_var(&mut input_file, "ephi:");
-            e_angle2.read_from_text(&mut input_file);
-        } else if input_var.orientationOption == 1 {
-            search_var(&mut input_file, "etrend:");
-            e_angle1.read_from_text(&mut input_file);
-            search_var(&mut input_file, "eplunge:");
-            e_angle2.read_from_text(&mut input_file);
-        } else if input_var.orientationOption == 2 {
-            search_var(&mut input_file, "edip:");
-            e_angle1.read_from_text(&mut input_file);
-            search_var(&mut input_file, "estrike:");
-            e_angle2.read_from_text(&mut input_file);
-        }
+        search_var(&mut input_file, "angleOption:"); // eAngleOption
+        angle_option.read_from_text(&mut input_file);
 
         input_var!(ebeta);
 
         // Convert from degrees to radians
-        if e_angle_option {
-            let _ = e_angle1
-                .iter_mut()
-                .map(|v| *v *= std::f64::consts::PI / 180.);
-            let _ = e_angle2
-                .iter_mut()
-                .map(|v| *v *= std::f64::consts::PI / 180.);
+        if angle_option {
             let _ = input_var
                 .ebeta
                 .iter_mut()
                 .map(|v| *v *= std::f64::consts::PI / 180.);
-        }
-
-        input_var!(ekappa);
-
-        for ((c1, c2), kappa) in zip_eq(zip_eq(&e_angle1, &e_angle2), &input_var.ekappa) {
-            e_orientation.push(match input_var.orientationOption {
-                0 => Fisher::new_with_theta_phi(*c1, *c2, *kappa, input_var.eps),
-                1 => Fisher::new_with_trend_plunge(*c1, *c2, *kappa, input_var.eps),
-                2 => Fisher::new_with_dip_strike(*c1, *c2, *kappa, input_var.eps),
-                _ => unreachable!(),
-            })
         }
 
         if input_var.stopCondition == 1 {
@@ -656,16 +605,15 @@ pub fn read_input(input: &str) -> (Input, Vec<Shape>) {
     // Counters, used to place variable into correct array index
     let mut beta_count = 0;
 
+    let orien_distr = read_orientation_distributions(&mut input_file, "e");
     let radius_distr = read_radius_distributions(&mut input_file, "e");
 
     // Create shape structures from data gathered above
-    for ((i, orientation), radius) in
-        zip_eq(zip_eq(0..input_var.nFamEll, e_orientation), radius_distr)
-    {
+    for ((i, orien), radius) in zip_eq(zip_eq(0..input_var.nFamEll, orien_distr), radius_distr) {
         let mut new_shape_fam = Shape {
             shape_family: ShapeFamily::Ellipse(input_var.enumPoints[i] as u8), // shapFam = 0 = ellipse, 1 = rect
             aspect_ratio: input_var.easpect[i],
-            orientation: Some(orientation),
+            orientation: Some(orien),
             layer: input_var.eLayer[i],
             region: input_var.eRegion[i],
             radius_distribution: Some(radius),
@@ -700,50 +648,14 @@ pub fn read_input(input: &str) -> (Input, Vec<Shape>) {
         input_var!(rLayer, input_var.nFamRect);
         input_var!(rRegion, input_var.nFamRect);
         input_var!(raspect, input_var.nFamRect);
-        search_var(&mut input_file, "angleOption:"); // rAngleOption
-        r_angle_option.read_from_text(&mut input_file);
-
-        if input_var.orientationOption == 0 {
-            search_var(&mut input_file, "rtheta:");
-            r_angle1.read_from_text(&mut input_file);
-            search_var(&mut input_file, "rphi:");
-            r_angle2.read_from_text(&mut input_file);
-        } else if input_var.orientationOption == 1 {
-            search_var(&mut input_file, "rtrend:");
-            r_angle1.read_from_text(&mut input_file);
-            search_var(&mut input_file, "rplunge:");
-            r_angle2.read_from_text(&mut input_file);
-        } else if input_var.orientationOption == 2 {
-            search_var(&mut input_file, "rdip:");
-            r_angle1.read_from_text(&mut input_file);
-            search_var(&mut input_file, "rstrike:");
-            r_angle2.read_from_text(&mut input_file);
-        }
 
         input_var!(rbeta, input_var.nFamRect);
 
-        if r_angle_option {
-            let _ = r_angle1
-                .iter_mut()
-                .map(|v| *v *= std::f64::consts::PI / 180.);
-            let _ = r_angle2
-                .iter_mut()
-                .map(|v| *v *= std::f64::consts::PI / 180.);
+        if angle_option {
             let _ = input_var
                 .rbeta
                 .iter_mut()
                 .map(|v| *v *= std::f64::consts::PI / 180.);
-        }
-
-        input_var!(rkappa, input_var.nFamRect);
-
-        for ((c1, c2), kappa) in zip_eq(zip_eq(&r_angle1, &r_angle2), &input_var.rkappa) {
-            r_orientation.push(match input_var.orientationOption {
-                0 => Fisher::new_with_theta_phi(*c1, *c2, *kappa, input_var.eps),
-                1 => Fisher::new_with_trend_plunge(*c1, *c2, *kappa, input_var.eps),
-                2 => Fisher::new_with_dip_strike(*c1, *c2, *kappa, input_var.eps),
-                _ => unreachable!(),
-            })
         }
 
         if input_var.stopCondition == 1 {
@@ -768,16 +680,15 @@ pub fn read_input(input: &str) -> (Input, Vec<Shape>) {
     // Counters, used to place variable into correct array index
     beta_count = 0;
 
+    let orien_distr = read_orientation_distributions(&mut input_file, "r");
     let radius_distr = read_radius_distributions(&mut input_file, "r");
 
     // Create shape strucutres from data gathered above
-    for ((i, orientation), radius) in
-        zip_eq(zip_eq(0..input_var.nFamRect, r_orientation), radius_distr)
-    {
+    for ((i, orien), radius) in zip_eq(zip_eq(0..input_var.nFamRect, orien_distr), radius_distr) {
         let mut new_shape_fam = Shape {
             shape_family: ShapeFamily::Rectangle,
             aspect_ratio: input_var.raspect[i],
-            orientation: Some(orientation),
+            orientation: Some(orien),
             layer: input_var.rLayer[i],
             region: input_var.rRegion[i],
             radius_distribution: Some(radius),
@@ -1026,6 +937,64 @@ pub fn read_input(input: &str) -> (Input, Vec<Shape>) {
     }
 
     (input_var, shape_family)
+}
+
+fn read_orientation_distributions(input_file: &mut File, prefix: &str) -> Vec<Fisher> {
+    macro_rules! read_var {
+        ($label:expr,$var_name:ident) => {
+            search_var(input_file, &format!("{}{}:", prefix, $label));
+            $var_name.read_from_text(input_file);
+        };
+    }
+
+    let mut angle1: Vec<f64> = Vec::new();
+    let mut angle2: Vec<f64> = Vec::new();
+
+    let mut orientation: u8 = 0;
+    search_var(input_file, "orientationOption:");
+    orientation.read_from_text(input_file);
+
+    match orientation {
+        0 => {
+            read_var!("theta", angle1);
+            read_var!("phi", angle2);
+        }
+        1 => {
+            read_var!("trend", angle1);
+            read_var!("plunge", angle2);
+        }
+        2 => {
+            read_var!("dip", angle1);
+            read_var!("strike", angle2);
+        }
+        _ => panic!("Unknown orientation option"),
+    }
+
+    let mut angle_option = false;
+    search_var(input_file, "angleOption:");
+    angle_option.read_from_text(input_file);
+
+    if angle_option {
+        let _ = angle1.iter_mut().map(|v| *v = std::f64::consts::PI / 180.);
+        let _ = angle2.iter_mut().map(|v| *v = std::f64::consts::PI / 180.);
+    }
+
+    let mut kappa: Vec<f64> = Vec::new();
+    read_var!("kappa", kappa);
+
+    let mut h: f64 = 0.0;
+    search_var(input_file, "h:");
+    h.read_from_text(input_file);
+    let eps = h * 1e-8;
+
+    zip_eq(zip_eq(angle1, angle2), kappa)
+        .map(|((c1, c2), k)| match orientation {
+            0 => Fisher::new_with_theta_phi(c1, c2, k, eps),
+            1 => Fisher::new_with_trend_plunge(c1, c2, k, eps),
+            2 => Fisher::new_with_dip_strike(c1, c2, k, eps),
+            _ => unreachable!(),
+        })
+        .collect()
 }
 
 fn read_radius_distributions(input_file: &mut File, prefix: &str) -> Vec<RadiusDistribution> {

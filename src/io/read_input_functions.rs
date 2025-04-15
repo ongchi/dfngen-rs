@@ -24,7 +24,10 @@ pub fn search_var(file: &mut File, search: &str) {
         if word == search {
             break;
         } else if word.is_empty() {
-            println!("Variable not found: {}", &search[..search.len() - 1]);
+            println!(
+                "Variable not found: {}",
+                search.strip_suffix(":").unwrap_or(search)
+            );
             std::process::exit(1)
         }
     }
