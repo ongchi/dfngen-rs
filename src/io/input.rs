@@ -9,7 +9,7 @@ use super::read_input_functions::{
 
 use crate::{
     distribution::{generating_points::generate_theta, Fisher},
-    structures::{Shape, ShapeFamily},
+    structures::{RadiusDistribution, Shape, ShapeFamily},
 };
 
 #[allow(non_snake_case)]
@@ -165,17 +165,6 @@ pub struct Input {
     /// hit their P32 requirement when using the P32 stopCondition option.
     pub famProbOriginal: Vec<f64>,
 
-    /// Mandatory parameter if using statistically generated ellipses.
-    /// Statistical distribution options:
-    ///
-    /// Holds number of elements equal to the number of shape families.
-    ///
-    ///     1 - Log-normal distribution
-    ///     2 - Truncated power law distribution
-    ///     3 - Exponential distribution
-    ///     4 - Constant
-    edistr: Vec<u8>,
-
     /// Aspect ratio array for stochastic ellipses.
     easpect: Vec<f64>,
 
@@ -195,65 +184,9 @@ pub struct Input {
     /// elliptical familiy's normal vectors.
     ekappa: Vec<f64>,
 
-    /// Log-normal ellipse parameter. Mean of the underlying normal distribution.
-    eLogMean: Vec<f64>,
-
-    /// Log-normal ellipse parameter. Standard deviation of the underlying normal distribution
-    esd: Vec<f64>,
-
-    /// Exponential ellipse parameter. Mean values for exponential distributions, defined per family.
-    eExpMean: Vec<f64>,
-
-    /// Log-normal rectangle parameter. Minimum radius.
-    rLogMin: Vec<f64>,
-
-    /// Log-normal rectangle parameter. Maximum radius.
-    rLogMax: Vec<f64>,
-
-    /// Exponential rectangle parameter. Minimum radius.
-    rExpMin: Vec<f64>,
-
-    /// Exponential rectangle parameter. Maximum radius.
-    rExpMax: Vec<f64>,
-
-    /// Log-normal ellipse parameter. Minimum radius.
-    eLogMin: Vec<f64>,
-
-    /// Log-normal ellipse parameter. Maximum radius.
-    eLogMax: Vec<f64>,
-
-    /// Exponential ellipse parameter. Minimum radius.
-    eExpMin: Vec<f64>,
-
-    /// Exponential ellipse parameter. Maximum radius.
-    eExpMax: Vec<f64>,
-
-    /// Contant ellipse parameter. Constant radius.
-    econst: Vec<f64>,
-
-    /// Truncated power-law ellipse parameter. Minimum radius.
-    emin: Vec<f64>,
-
-    /// Truncated power-law ellipse parameter. Maximum radius.
-    emax: Vec<f64>,
-
-    /// Truncated power-law ellipse distribution parameter.
-    ealpha: Vec<f64>,
-
     /// Elliptical families target fracture intensities per family
     /// when using stopCondition = 1, P32 option.
     e_p32Targets: Vec<f64>,
-
-    /// Mandatory parameter if using statistically generated rectangles.
-    ///
-    /// Holds number of elements equal to the number of shape families.\
-    ///
-    /// Rectangle statistical distribution options:
-    ///     1 - log-normal distribution
-    ///     2 - truncated power law distribution
-    ///     3 - exponential distribution
-    ///     4 - constant
-    rdistr: Vec<u8>,
 
     /// Aspect ratio for stochasic rectangles.
     raspect: Vec<f64>,
@@ -275,30 +208,9 @@ pub struct Input {
     /// rectangle family's normal vectors.
     rkappa: Vec<f64>,
 
-    /// Log-normal rectangle parameter. Standard deviation of the underlying normal distribution
-    rLogMean: Vec<f64>,
-
-    /// Log-normal rectangle parameter. Standard deviation of the underlying normal distribution
-    rsd: Vec<f64>,
-
-    /// Truncated power-law rectangle parameter. Minimum radius.
-    rmin: Vec<f64>,
-
-    /// Truncated power-law rectangle parameter. Maximum radius.
-    rmax: Vec<f64>,
-
-    /// Truncated power-law rectangle distribution parameter.
-    ralpha: Vec<f64>,
-
     /// Rectangular families target fracture intensities per family
     /// when using stopCondition = 1, P32 option.
     r_p32Targets: Vec<f64>,
-
-    /// Exponential rectangle parameter. Maximum radius.
-    rExpMean: Vec<f64>,
-
-    /// Constant rectangle parameter. Constant radius.
-    rconst: Vec<f64>,
 
     /// True  - The user is using user defined ellipses.
     /// False - No user defined ellipses are being used.
@@ -530,6 +442,11 @@ pub fn read_input(input: &str) -> (Input, Vec<Shape>) {
             input_var.$var_name.read_from_text(&mut input_file);
         };
 
+        ($label:expr,$var_name:ident) => {
+            search_var(&mut input_file, &format!("{}:", $label));
+            input_var.$var_name.read_from_text(&mut input_file);
+        };
+
         ($var_name:ident,$n:expr) => {
             search_var(&mut input_file, &format!("{}:", stringify!($var_name)));
             let mut tmp: Vec<_> = Vec::new();
@@ -549,8 +466,7 @@ pub fn read_input(input: &str) -> (Input, Vec<Shape>) {
         let mut layers: Vec<f64> = Vec::with_capacity(input_var.numOfLayers * 2); // Multiply by 2 for +z and -z for each layer
         let mut layer_vol = vec![0.; input_var.numOfLayers];
 
-        search_var(&mut input_file, "layers:");
-        println!("Number of Layers: {}", input_var.numOfLayers);
+        input_var!("layers", numOfLayers);
 
         layers.read_from_text(&mut input_file);
 
@@ -681,7 +597,6 @@ pub fn read_input(input: &str) -> (Input, Vec<Shape>) {
         input_var!(ebetaDistribution);
         input_var!(eLayer);
         input_var!(eRegion);
-        input_var!(edistr);
         input_var!(easpect);
         input_var!(enumPoints);
         search_var(&mut input_file, "angleOption:"); // eAngleOption
@@ -731,18 +646,6 @@ pub fn read_input(input: &str) -> (Input, Vec<Shape>) {
             })
         }
 
-        input_var!(eLogMean);
-        input_var!(esd);
-        input_var!(eExpMean);
-        input_var!(emin);
-        input_var!(emax);
-        input_var!(ealpha);
-        input_var!(econst);
-        input_var!(eLogMin);
-        input_var!(eLogMax);
-        input_var!(eExpMin);
-        input_var!(eExpMax);
-
         if input_var.stopCondition == 1 {
             // Get temp array for ellipse p32 targets
             // Used to simplify initialization of shape family structures below
@@ -750,22 +653,22 @@ pub fn read_input(input: &str) -> (Input, Vec<Shape>) {
         }
     }
 
-    // Distribution counters
-    let mut shape1 = 0; //longnormal dist counter
-    let mut shape2 = 0; //truncated power-law dist counter
-    let mut shape3 = 0; //exponential dist counter
-    let mut shape4 = 0; //constant dist counter
+    // Counters, used to place variable into correct array index
     let mut beta_count = 0;
 
+    let radius_distr = read_radius_distributions(&mut input_file, "e");
+
     // Create shape structures from data gathered above
-    for (i, orientation) in zip_eq(0..input_var.nFamEll, e_orientation) {
+    for ((i, orientation), radius) in
+        zip_eq(zip_eq(0..input_var.nFamEll, e_orientation), radius_distr)
+    {
         let mut new_shape_fam = Shape {
             shape_family: ShapeFamily::Ellipse(input_var.enumPoints[i] as u8), // shapFam = 0 = ellipse, 1 = rect
-            distribution_type: input_var.edistr[i],
             aspect_ratio: input_var.easpect[i],
             orientation: Some(orientation),
             layer: input_var.eLayer[i],
             region: input_var.eRegion[i],
+            radius_distribution: Some(radius),
             ..Default::default()
         };
 
@@ -784,43 +687,6 @@ pub fn read_input(input: &str) -> (Input, Vec<Shape>) {
             new_shape_fam.beta_distribution = false;
         }
 
-        // dist options:1 = lognormal, 2= truncated power-law, 3= exponential, 4=constant
-        match input_var.edistr[i] {
-            // Lognormal
-            1 => {
-                new_shape_fam.mean = input_var.eLogMean[shape1];
-                new_shape_fam.sd = input_var.esd[shape1];
-                new_shape_fam.log_min = input_var.eLogMin[shape1];
-                new_shape_fam.log_max = input_var.eLogMax[shape1];
-                shape1 += 1;
-            }
-
-            // Truncated power-law
-            2 => {
-                new_shape_fam.min = input_var.emin[shape2];
-                new_shape_fam.max = input_var.emax[shape2];
-                new_shape_fam.alpha = input_var.ealpha[shape2];
-                shape2 += 1;
-            }
-
-            3 => {
-                new_shape_fam.exp_mean = input_var.eExpMean[shape3];
-                new_shape_fam.exp_lambda = 1. / input_var.eExpMean[shape3];
-                new_shape_fam.exp_min = input_var.eExpMin[shape3];
-                new_shape_fam.exp_max = input_var.eExpMax[shape3];
-                shape3 += 1;
-            }
-
-            4 => {
-                new_shape_fam.const_radi = input_var.econst[shape4];
-                shape4 += 1;
-            }
-
-            _ => {
-                unreachable!()
-            }
-        }
-
         if input_var.stopCondition == 1 {
             new_shape_fam.p32_target = input_var.e_p32Targets[i];
         }
@@ -831,7 +697,6 @@ pub fn read_input(input: &str) -> (Input, Vec<Shape>) {
 
     if input_var.nFamRect > 0 {
         input_var!(rbetaDistribution, input_var.nFamRect);
-        input_var!(rdistr, input_var.nFamRect);
         input_var!(rLayer, input_var.nFamRect);
         input_var!(rRegion, input_var.nFamRect);
         input_var!(raspect, input_var.nFamRect);
@@ -881,18 +746,6 @@ pub fn read_input(input: &str) -> (Input, Vec<Shape>) {
             })
         }
 
-        input_var!(rLogMean, input_var.nFamRect);
-        input_var!(rsd, input_var.nFamRect);
-        input_var!(rmin, input_var.nFamRect);
-        input_var!(rmax, input_var.nFamRect);
-        input_var!(ralpha, input_var.nFamRect);
-        input_var!(rExpMean, input_var.nFamRect);
-        input_var!(rconst, input_var.nFamRect);
-        input_var!(rLogMin, input_var.nFamRect);
-        input_var!(rLogMax, input_var.nFamRect);
-        input_var!(rExpMin, input_var.nFamRect);
-        input_var!(rExpMax, input_var.nFamRect);
-
         if input_var.stopCondition == 1 {
             // Get temp array for rectangle p32 targets,
             // Used to simplify initialization of shape family structures below
@@ -913,22 +766,21 @@ pub fn read_input(input: &str) -> (Input, Vec<Shape>) {
     }
 
     // Counters, used to place variable into correct array index
-    // distribution counters
-    shape1 = 0; // Longnormal dist counter
-    shape2 = 0; // Truncated power-law dist counter
-    shape3 = 0; // Exponential dist counter
-    shape4 = 0; // Constant dist counter
     beta_count = 0;
 
+    let radius_distr = read_radius_distributions(&mut input_file, "r");
+
     // Create shape strucutres from data gathered above
-    for (i, orientation) in zip_eq(0..input_var.nFamRect, r_orientation) {
+    for ((i, orientation), radius) in
+        zip_eq(zip_eq(0..input_var.nFamRect, r_orientation), radius_distr)
+    {
         let mut new_shape_fam = Shape {
             shape_family: ShapeFamily::Rectangle,
-            distribution_type: input_var.rdistr[i],
             aspect_ratio: input_var.raspect[i],
             orientation: Some(orientation),
             layer: input_var.rLayer[i],
             region: input_var.rRegion[i],
+            radius_distribution: Some(radius),
             ..Default::default()
         };
 
@@ -939,43 +791,6 @@ pub fn read_input(input: &str) -> (Input, Vec<Shape>) {
             beta_count += 1;
         } else {
             new_shape_fam.beta_distribution = false;
-        }
-
-        // dist options:1 = lognormal, 2= truncated power-law, 3= exponential, 4=constant
-        match input_var.rdistr[i] {
-            // Lognormal
-            1 => {
-                new_shape_fam.mean = input_var.rLogMean[shape1];
-                new_shape_fam.sd = input_var.rsd[shape1];
-                new_shape_fam.log_min = input_var.rLogMin[shape1];
-                new_shape_fam.log_max = input_var.rLogMax[shape1];
-                shape1 += 1;
-            }
-
-            // Truncated power-law
-            2 => {
-                new_shape_fam.min = input_var.rmin[shape2];
-                new_shape_fam.max = input_var.rmax[shape2];
-                new_shape_fam.alpha = input_var.ralpha[shape2];
-                shape2 += 1;
-            }
-
-            3 => {
-                new_shape_fam.exp_mean = input_var.rExpMean[shape3];
-                new_shape_fam.exp_lambda = 1. / input_var.rExpMean[shape3];
-                new_shape_fam.exp_min = input_var.rExpMin[shape3];
-                new_shape_fam.exp_max = input_var.rExpMax[shape3];
-                shape3 += 1;
-            }
-
-            4 => {
-                new_shape_fam.const_radi = input_var.rconst[shape4];
-                shape4 += 1;
-            }
-
-            _ => {
-                unreachable!()
-            }
         }
 
         if input_var.stopCondition == 1 {
@@ -1211,4 +1026,79 @@ pub fn read_input(input: &str) -> (Input, Vec<Shape>) {
     }
 
     (input_var, shape_family)
+}
+
+fn read_radius_distributions(input_file: &mut File, prefix: &str) -> Vec<RadiusDistribution> {
+    macro_rules! read_var {
+        ($label:expr,$var_name:ident) => {
+            let mut $var_name: Vec<f64> = Vec::new();
+            search_var(input_file, &format!("{}{}:", prefix, $label));
+            $var_name.read_from_text(input_file);
+            let mut $var_name = $var_name.into_iter();
+        };
+    }
+
+    macro_rules! next_val {
+        ($label:expr,$var_name:ident) => {
+            match $var_name.next() {
+                Some(val) => val,
+                None => panic!("Insufficient values in input file for {}{}", prefix, $label),
+            }
+        };
+    }
+
+    read_var!("LogMean", log_mean);
+    read_var!("sd", sd);
+    read_var!("LogMin", log_min);
+    read_var!("LogMax", log_max);
+
+    read_var!("alpha", alpha);
+    read_var!("min", min);
+    read_var!("max", max);
+
+    read_var!("ExpMean", exp_mean);
+    read_var!("ExpMin", exp_min);
+    read_var!("ExpMax", exp_max);
+
+    read_var!("const", const_);
+
+    let mut distr: Vec<u8> = Vec::new();
+    search_var(input_file, &format!("{}distr:", prefix));
+    distr.read_from_text(input_file);
+
+    distr
+        .into_iter()
+        .map(|dist_option| {
+            match dist_option {
+                // Lognormal
+                1 => RadiusDistribution::new_log_normal(
+                    next_val!("LogMean", log_mean),
+                    next_val!("sd", sd),
+                    next_val!("LogMin", log_min),
+                    next_val!("LogMax", log_max),
+                ),
+
+                // Truncated power-law
+                2 => RadiusDistribution::new_truncated_power_law(
+                    next_val!("alpha", alpha),
+                    next_val!("min", min),
+                    next_val!("max", max),
+                ),
+
+                // Exponential
+                3 => RadiusDistribution::new_exponential(
+                    1. / next_val!("ExpMean", exp_mean),
+                    next_val!("ExpMin", exp_min),
+                    next_val!("ExpMax", exp_max),
+                ),
+
+                // Constant
+                4 => RadiusDistribution::new_constant(next_val!("const", const_)),
+
+                _ => {
+                    panic!("Unknown distribution type: {}", dist_option)
+                }
+            }
+        })
+        .collect()
 }

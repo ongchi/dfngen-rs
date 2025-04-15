@@ -7,12 +7,12 @@ use super::domain::domain_truncation;
 use crate::{
     distribution::{TruncExp, TruncLogNormal, TruncPowerLaw},
     fracture::insert_shape::{
-        generate_poly, generate_poly_with_radius, get_family_number, get_largest_fracture_radius,
-        poly_boundary, re_translate_poly,
+        generate_poly, generate_poly_with_radius, get_family_number, poly_boundary,
+        re_translate_poly,
     },
     io::input::Input,
     math_functions::{adjust_cdf_and_fam_prob, cumsum, get_area, index_from_prob_and_p32_status},
-    structures::Shape,
+    structures::{RadiusFunction, Shape},
 };
 
 /// Sort Families Radii Lists
@@ -58,7 +58,7 @@ pub fn generate_radii_lists_n_poly_option(
 
     if force_large_fractures {
         for shape in shape_families.iter_mut() {
-            let radius = get_largest_fracture_radius(shape);
+            let radius = shape.radius_distribution.as_ref().unwrap().max;
             shape.radii_list.push(radius);
         }
     }
@@ -161,16 +161,14 @@ pub fn add_radii(
     generator: Rc<RefCell<Mt64>>,
 ) {
     let min_radius = 3. * h;
+    let radius_distribution = shape_fam.radius_distribution.as_ref().unwrap();
 
-    match shape_fam.distribution_type {
-        // Lognormal
-        1 => {
-            let log_dist =
-                TruncLogNormal::new(min_radius, f64::INFINITY, shape_fam.mean, shape_fam.sd)
-                    .unwrap();
+    match radius_distribution.function {
+        RadiusFunction::LogNormal { mu, sigma } => {
+            let distr = TruncLogNormal::new(min_radius, f64::INFINITY, mu, sigma).unwrap();
 
             for _ in 0..amount_to_add {
-                match generator.borrow_mut().sample(&log_dist) {
+                match generator.borrow_mut().sample(&distr) {
                     Ok(radius) => shape_fam.radii_list.push(radius),
                     Err(_) => {
                         print_generating_fractures_less_than_hwarning(
@@ -181,31 +179,20 @@ pub fn add_radii(
                 };
             }
         }
-
-        // Truncated power-law
-        2 => {
-            let power_law = TruncPowerLaw::new(
-                f64::max(shape_fam.min, min_radius),
-                shape_fam.max,
-                shape_fam.alpha,
+        RadiusFunction::TruncatedPowerLaw { alpha } => {
+            let distr = TruncPowerLaw::new(
+                f64::max(radius_distribution.min, min_radius),
+                radius_distribution.max,
+                alpha,
             );
 
             for _ in 0..amount_to_add {
-                let radius = generator.borrow_mut().sample(&power_law);
+                let radius = generator.borrow_mut().sample(&distr);
                 shape_fam.radii_list.push(radius);
             }
         }
-
-        // Exponential
-        3 => {
-            let exp_dist = TruncExp::new(
-                min_radius,
-                f64::INFINITY,
-                shape_fam.exp_lambda,
-                shape_fam.min_dist_input,
-                shape_fam.max_dist_input,
-            )
-            .unwrap();
+        RadiusFunction::Exponential { lambda } => {
+            let exp_dist = TruncExp::new(min_radius, f64::INFINITY, lambda).unwrap();
 
             for _ in 0..amount_to_add {
                 match generator.clone().borrow_mut().sample(&exp_dist) {
@@ -219,8 +206,7 @@ pub fn add_radii(
                 };
             }
         }
-
-        _ => unreachable!(),
+        RadiusFunction::Constant(_) => unreachable!(),
     }
 }
 
@@ -259,7 +245,11 @@ pub fn dry_run(input: &mut Input, shape_families: &mut [Shape], generator: Rc<Re
         let mut reject_counter = 0;
         let mut new_poly =
             if (force_large_fract_count < shape_families.len()) && input.forceLargeFractures {
-                let radius = get_largest_fracture_radius(&shape_families[force_large_fract_count]);
+                let radius = shape_families[force_large_fract_count]
+                    .radius_distribution
+                    .as_ref()
+                    .unwrap()
+                    .max;
                 family_index = force_large_fract_count;
 
                 // Choose CDF randomly by family

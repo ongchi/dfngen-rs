@@ -9,6 +9,7 @@ use parry3d_f64::na::Point3;
 use rand::distr::Uniform;
 use rand::Rng;
 use rand_mt::Mt64;
+use structures::RadiusFunction;
 
 use crate::{
     computational_geometry::polygon_boundary::polygon_boundary,
@@ -116,20 +117,22 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             );
 
             for (j, shape) in shape_families.iter().enumerate() {
-                if shape.distribution_type == 4 {
-                    // Constant size
-                    println!(
-                        "{} family {} using constant size",
-                        shape.shape_family,
-                        get_family_number(input.nFamEll, j as isize, shape.shape_family)
-                    );
-                } else {
-                    println!(
-                        "Estimated {} fractures for {} family {}",
-                        shape.radii_list.len(),
-                        shape.shape_family,
-                        get_family_number(input.nFamEll, j as isize, shape.shape_family)
-                    );
+                match shape.radius_distribution.as_ref().unwrap().function {
+                    RadiusFunction::Constant(_) => {
+                        println!(
+                            "{} family {} using constant size",
+                            shape.shape_family,
+                            get_family_number(input.nFamEll, j as isize, shape.shape_family)
+                        );
+                    }
+                    _ => {
+                        println!(
+                            "Estimated {} fractures for {} family {}",
+                            shape.radii_list.len(),
+                            shape.shape_family,
+                            get_family_number(input.nFamEll, j as isize, shape.shape_family)
+                        );
+                    }
                 }
             }
 
@@ -1265,34 +1268,36 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         // Compare expected radii/poly size and actual
         for (i, shape) in shape_families.iter().enumerate().take(total_families) {
-            if shape.distribution_type == 4 {
-                // Constant
-                log_msg(
-                    &mut file,
-                    &format!(
-                        "{} Family {}\nUsing constant size\n\n",
-                        shape.shape_family,
-                        get_family_number(input.nFamEll, i as isize, shape.shape_family)
-                    ),
-                );
-            } else {
-                log_msg(
-                    &mut file,
-                    &format!(
-                        "{} Family {}\nEstimated: {}\n",
-                        shape.shape_family,
-                        get_family_number(input.nFamEll, i as isize, shape.shape_family),
-                        pstats.expected_from_fam[i]
-                    ),
-                );
+            match shape.radius_distribution.as_ref().unwrap().function {
+                RadiusFunction::Constant(_) => {
+                    log_msg(
+                        &mut file,
+                        &format!(
+                            "{} Family {}\nUsing constant size\n\n",
+                            shape.shape_family,
+                            get_family_number(input.nFamEll, i as isize, shape.shape_family)
+                        ),
+                    );
+                }
+                _ => {
+                    log_msg(
+                        &mut file,
+                        &format!(
+                            "{} Family {}\nEstimated: {}\n",
+                            shape.shape_family,
+                            get_family_number(input.nFamEll, i as isize, shape.shape_family),
+                            pstats.expected_from_fam[i]
+                        ),
+                    );
 
-                log_msg(
-                    &mut file,
-                    &format!(
-                        "Actual:    {}\n\n",
-                        pstats.accepted_from_fam[i] + pstats.rejected_from_fam[i]
-                    ),
-                );
+                    log_msg(
+                        &mut file,
+                        &format!(
+                            "Actual:    {}\n\n",
+                            pstats.accepted_from_fam[i] + pstats.rejected_from_fam[i]
+                        ),
+                    );
+                }
             }
         }
 

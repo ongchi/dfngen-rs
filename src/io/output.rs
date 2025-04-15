@@ -1238,57 +1238,15 @@ fn write_shape_fams(
         }
 
         // Print distribution data
-        match shape.distribution_type {
-            // lognormal
-            1 => {
-                file.write_all("Distribution: Lognormal\n".as_bytes())
-                    .unwrap();
-                file.write_all(format!("Mean: {}\n", shape.mean).as_bytes())
-                    .unwrap();
-                file.write_all(format!("Standard Deviation: {}\n", shape.sd).as_bytes())
-                    .unwrap();
-                file.write_all(format!("Minimum Radius (m): {}\n", shape.log_min).as_bytes())
-                    .unwrap();
-                file.write_all(format!("Maximum Radius (m): {}\n", shape.log_max).as_bytes())
-                    .unwrap();
-            }
-
-            // power-law
-            2 => {
-                file.write_all("Distribution: Truncated Power-Law\n".as_bytes())
-                    .unwrap();
-                file.write_all(format!("Alpha: {}\n", shape.alpha).as_bytes())
-                    .unwrap();
-                file.write_all(format!("Minimum Radius (m): {}\n", shape.min).as_bytes())
-                    .unwrap();
-                file.write_all(format!("Maximum Radius (m): {}\n", shape.max).as_bytes())
-                    .unwrap();
-            }
-
-            // exponential
-            3 => {
-                file.write_all("Distribution: Exponential\n".as_bytes())
-                    .unwrap();
-                file.write_all(format!("Mean: {}\n", shape.exp_mean).as_bytes())
-                    .unwrap();
-                file.write_all(format!("Lambda: {}\n", shape.exp_lambda).as_bytes())
-                    .unwrap();
-                file.write_all(format!("Minimum Radius (m): {}\n", shape.exp_min).as_bytes())
-                    .unwrap();
-                file.write_all(format!("Maximum Radius (m): {}\n", shape.exp_max).as_bytes())
-                    .unwrap();
-            }
-
-            // constant
-            4 => {
-                file.write_all("Distribution: Constant\n".as_bytes())
-                    .unwrap();
-                file.write_all(format!("Radius (m): {}\n", shape.const_radi).as_bytes())
-                    .unwrap();
-            }
-
-            _ => unreachable!(),
-        }
+        file.write_all(
+            shape
+                .radius_distribution
+                .as_ref()
+                .unwrap()
+                .to_string()
+                .as_bytes(),
+        )
+        .unwrap();
 
         file.write_all(
             format!("Family Insertion Probability: {}\n\n", fam_prob_original[i]).as_bytes(),

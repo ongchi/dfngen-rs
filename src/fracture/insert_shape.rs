@@ -8,7 +8,7 @@ use rand::Rng;
 use rand_mt::Mt64;
 
 use crate::distribution::{TruncExp, TruncLogNormal, TruncPowerLaw};
-use crate::structures::ShapeFamily;
+use crate::structures::{RadiusFunction, ShapeFamily};
 use crate::{
     computational_geometry::{apply_rotation2_d, apply_rotation3_d, translate},
     distribution::generating_points::random_translation,
@@ -23,69 +23,53 @@ fn generate_radius(
     family_index: isize,
     use_list: bool,
 ) -> f64 {
-    match shape_fam.distribution_type {
-        1..=3 => {
-            let radius;
-
-            // If out of radii from list, insert random radius
+    let radius_distribution = shape_fam.radius_distribution.as_ref().unwrap();
+    match radius_distribution.function {
+        RadiusFunction::Constant(c) => c,
+        ref others => {
             if shape_fam.radii_idx >= shape_fam.radii_list.len() || !use_list {
-                match shape_fam.distribution_type {
-                    d_type @ (1 | 3) => {
-                        let sampling = if d_type == 1 {
-                            let min_val = f64::max(h, shape_fam.log_min);
-                            let log_distribution = TruncLogNormal::new(
-                                min_val,
-                                shape_fam.log_max,
-                                shape_fam.mean,
-                                shape_fam.sd,
-                            )
-                            .unwrap();
+                // If out of radii from list, insert random radius
+                let distr = match others {
+                    RadiusFunction::LogNormal { mu, sigma } => {
+                        let min_val = f64::max(h, radius_distribution.min);
+                        let distr =
+                            TruncLogNormal::new(min_val, radius_distribution.max, *mu, *sigma)
+                                .unwrap();
+                        generator.clone().borrow_mut().sample(distr)
+                    }
+                    RadiusFunction::TruncatedPowerLaw { alpha } => {
+                        let distr = TruncPowerLaw::new(
+                            radius_distribution.min,
+                            radius_distribution.max,
+                            *alpha,
+                        );
+                        Ok(generator.clone().borrow_mut().sample(distr))
+                    }
+                    RadiusFunction::Exponential { lambda } => {
+                        let min_val = f64::max(h, radius_distribution.min);
+                        let distr =
+                            TruncExp::new(min_val, radius_distribution.max, *lambda).unwrap();
 
-                            generator.clone().borrow_mut().sample(log_distribution)
-                        } else {
-                            let min_val = f64::max(h, shape_fam.exp_min);
-                            let exp_dist = TruncExp::new(
-                                min_val,
-                                shape_fam.exp_max,
-                                shape_fam.exp_lambda,
-                                shape_fam.min_dist_input,
-                                shape_fam.max_dist_input,
-                            )
-                            .unwrap();
+                        generator.clone().borrow_mut().sample(distr)
+                    }
+                    RadiusFunction::Constant(_) => unreachable!(),
+                };
 
-                            generator.clone().borrow_mut().sample(exp_dist)
-                        };
-
-                        radius = match sampling {
-                            Ok(value) => value,
+                match distr {
+                            Ok(radius) => radius,
                             Err(_) => panic!(
                                     "distribution for {} family {} has been unable to generate a fracture with radius within set parameters after 1000 consecutive tries.",
                                     &shape_fam.shape_family,
                                     get_family_number(n_fam_ell, family_index, shape_fam.shape_family),
                                 )
                         }
-                    }
-
-                    2 => {
-                        let trunc_power_law =
-                            TruncPowerLaw::new(shape_fam.min, shape_fam.max, shape_fam.alpha);
-                        radius = generator.clone().borrow_mut().sample(trunc_power_law);
-                    }
-
-                    _ => unreachable!(),
-                }
             } else {
                 // Insert radius from list
-                radius = shape_fam.radii_list[shape_fam.radii_idx];
+                let radius = shape_fam.radii_list[shape_fam.radii_idx];
                 shape_fam.radii_idx += 1;
+                radius
             }
-
-            radius
         }
-
-        4 => shape_fam.const_radi,
-
-        _ => unreachable!(),
     }
 }
 
@@ -583,24 +567,5 @@ pub fn get_family_number(
     match family_shape {
         ShapeFamily::Ellipse(_) => family_index + 1,
         ShapeFamily::Rectangle => family_index - n_fam_ell as isize + 1,
-    }
-}
-
-/// Get Max Fracture Radii From Family
-///
-/// Returns the largest fracture radii defined by the user for
-/// a fracture family.
-/// This function is used for the 'forceLargeFractures' option
-/// in the input file
-pub fn get_largest_fracture_radius(shape_fam: &Shape) -> f64 {
-    match shape_fam.distribution_type {
-        // Log-normal
-        1 => shape_fam.log_max,
-        // Power-law
-        2 => shape_fam.max,
-        // Exponential
-        3 => shape_fam.exp_max,
-        // Constant
-        _ => shape_fam.const_radi,
     }
 }

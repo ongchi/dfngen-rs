@@ -26,19 +26,17 @@ pub enum Error {
 }
 
 impl TruncExp {
-    pub fn new(
-        min: f64,
-        max: f64,
-        lambda: f64,
-        norm_min: f64,
-        norm_max: f64,
-    ) -> Result<TruncExp, Error> {
+    pub fn new(min: f64, max: f64, lambda: f64) -> Result<TruncExp, Error> {
         if lambda < 0. {
             return Err(Error::LambdaTooSmall);
         }
+
+        let norm_min = 1. - f64::exp(-lambda * min);
         if !(0. ..=1.).contains(&norm_min) {
             return Err(Error::InvalidNormMinValue);
         }
+
+        let norm_max = 1. - f64::exp(-lambda * max);
         if !(0. ..=1.).contains(&norm_max) {
             return Err(Error::InvalidNormMaxValue);
         }

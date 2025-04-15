@@ -348,6 +348,84 @@ impl ShapeFamily {
     }
 }
 
+pub enum RadiusFunction {
+    LogNormal { mu: f64, sigma: f64 },
+    TruncatedPowerLaw { alpha: f64 },
+    Exponential { lambda: f64 },
+    Constant(f64),
+}
+
+pub struct RadiusDistribution {
+    pub min: f64,
+    pub max: f64,
+    pub function: RadiusFunction,
+}
+
+impl RadiusDistribution {
+    pub fn new_truncated_power_law(alpha: f64, min: f64, max: f64) -> Self {
+        Self {
+            function: RadiusFunction::TruncatedPowerLaw { alpha },
+            min,
+            max,
+        }
+    }
+
+    pub fn new_log_normal(mu: f64, sigma: f64, min: f64, max: f64) -> Self {
+        Self {
+            function: RadiusFunction::LogNormal { mu, sigma },
+            min,
+            max,
+        }
+    }
+
+    pub fn new_exponential(lambda: f64, min: f64, max: f64) -> Self {
+        Self {
+            function: RadiusFunction::Exponential { lambda },
+            min,
+            max,
+        }
+    }
+
+    pub fn new_constant(value: f64) -> Self {
+        Self {
+            function: RadiusFunction::Constant(value),
+            min: value,
+            max: value,
+        }
+    }
+}
+
+impl Display for RadiusDistribution {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match &self.function {
+            RadiusFunction::LogNormal { mu, sigma } => {
+                writeln!(f, "Distribution: Lognormal")?;
+                writeln!(f, "Mean: {}", mu)?;
+                writeln!(f, "Standard Deviation: {}", sigma)?;
+                writeln!(f, "Minimum Radius (m): {}", self.min)?;
+                writeln!(f, "Maximum Radius (m): {}", self.max)
+            }
+            RadiusFunction::TruncatedPowerLaw { alpha } => {
+                writeln!(f, "Distribution: Truncated Power-Law")?;
+                writeln!(f, "Alpha: {}", alpha)?;
+                writeln!(f, "Minimum Radius (m): {}", self.min)?;
+                writeln!(f, "Maximum Radius (m): {}", self.max)
+            }
+            RadiusFunction::Exponential { lambda } => {
+                writeln!(f, "Distribution: Exponential")?;
+                writeln!(f, "Mean: {}", 1. / lambda)?;
+                writeln!(f, "Lambda: {}", lambda)?;
+                writeln!(f, "Minimum Radius (m): {}", self.min)?;
+                writeln!(f, "Maximum Radius (m): {}", self.max)
+            }
+            RadiusFunction::Constant(value) => {
+                writeln!(f, "Distribution: Constant")?;
+                writeln!(f, "Radius (m): {}", value)
+            }
+        }
+    }
+}
+
 /// Shape is used to hold varibales for all types of stochastic shapes. During getInput(),
 /// all stochastic families for both recaangles and ellipses are parsed from the user input
 /// and are placed in a Shape structure array.
@@ -355,8 +433,7 @@ impl ShapeFamily {
 pub struct Shape {
     pub shape_family: ShapeFamily,
 
-    /// 1: Lognormal, 2: truncated power-law, 3: exponential, 4: constant
-    pub distribution_type: u8,
+    pub radius_distribution: Option<RadiusDistribution>,
 
     /// Array of thetas to build poly from, initialized while reading input and building shape structures
     pub theta_list: Vec<f64>,
@@ -394,62 +471,6 @@ pub struct Shape {
     pub beta: f64,
 
     pub orientation: Option<Fisher>,
-
-    /**************** Distribution Variables *********************/
-    /*************************************************************/
-    /// Value between 0 and 1. Input to distrubution which will generate the user's defined
-    /// minimum value from the distribution. Currently used only for exponential
-    /// distrubution in the Distributions class. Value is set during Distributions
-    /// constructor.
-    pub min_dist_input: f64,
-
-    /// Value between 0 and 1. Input to distrubution which will generate the user's defined
-    /// maximum value from the distribution. Currently used only for exponential
-    /// distrubution in the Distributions class. Value is set during Distributions
-    /// constructor.
-    pub max_dist_input: f64,
-
-    /// Exponential distribution option. Mean value for exponential distribution.
-    pub exp_mean: f64,
-
-    /// Exponential distribution option. Lambda value for exponential distibution. This
-    /// value is set by using 1/'expMean' while reading the user's input file.
-    pub exp_lambda: f64,
-
-    /// Exponential distribution option. User's chosen minimum value for the distribution.
-    /// The distribution will never return a value smaller than this.
-    pub exp_min: f64,
-
-    /// Exponential distribution option. User's chosen minimum value for the distribution.
-    /// The distribution will never return a value larger than this.
-    pub exp_max: f64,
-
-    /// Log-normal distribution option. Mean of underlying normal distribution from which
-    /// the log-normal distribution is created.
-    pub mean: f64,
-
-    /// Log-normal distribution option. Standard deviation of the underlying
-    /// normal distribution from which the log-normal distribution is created.
-    pub sd: f64,
-
-    /// Log-normal distribution option. User's chosen minimum value for the distribution.
-    /// The distribution will never return a value smaller than this.
-    pub log_min: f64,
-    /// Log-normal distribution option. User's chosen maximum value for the distribution.
-    /// The distribution will never return a value smaller than this.
-    pub log_max: f64,
-
-    /// Constant distribution. Constant radii size for all fractures in the family.
-    pub const_radi: f64,
-
-    /// Truncated power-law option. Minimum radius for power-law distribution.
-    pub min: f64,
-
-    /// Truncated power-law option. Maximum radius for power-law distribution.
-    pub max: f64,
-
-    /// Alpha. Used in truncated power-law distribution calculations.
-    pub alpha: f64,
 }
 
 impl Shape {
