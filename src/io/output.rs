@@ -943,7 +943,7 @@ fn write_triple_pts(
     output: &str,
 ) {
     let file_name = format!("{}/triple_points.dat", output);
-    let mut file = File::open(file_name).unwrap();
+    let mut file = File::create(file_name).unwrap();
     // Save triple point indices from final list of fractures to temp array
     // There will be duplicates  which need to be removed
     // before writing to file

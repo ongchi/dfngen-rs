@@ -293,18 +293,18 @@ pub fn initialize_rect_vertices(new_poly: &mut Poly, radius: f64, aspect_ratio: 
     new_poly.yradius = y;
     new_poly.aspect_ratio = aspect_ratio;
     // Initialize vertices
-    new_poly.vertices[0] = x;
-    new_poly.vertices[1] = y;
-    new_poly.vertices[2] = 0.;
-    new_poly.vertices[3] = -x;
-    new_poly.vertices[4] = y;
-    new_poly.vertices[5] = 0.;
-    new_poly.vertices[6] = -x;
-    new_poly.vertices[7] = -y;
-    new_poly.vertices[8] = 0.;
-    new_poly.vertices[9] = x;
-    new_poly.vertices[10] = -y;
-    new_poly.vertices[11] = 0.;
+    new_poly.vertices.push(x);
+    new_poly.vertices.push(y);
+    new_poly.vertices.push(0.);
+    new_poly.vertices.push(-x);
+    new_poly.vertices.push(y);
+    new_poly.vertices.push(0.);
+    new_poly.vertices.push(-x);
+    new_poly.vertices.push(-y);
+    new_poly.vertices.push(0.);
+    new_poly.vertices.push(x);
+    new_poly.vertices.push(-y);
+    new_poly.vertices.push(0.);
 }
 
 /// Initialize Ellipse Vertices

@@ -3,6 +3,7 @@ use parry3d_f64::na::{Point3, Vector3};
 use super::domain::domain_truncation;
 use super::insert_shape::{initialize_ell_vertices, print_reject_reason};
 
+use crate::io::input::UserDefinedFractures;
 use crate::{
     computational_geometry::{
         apply_rotation2_d, apply_rotation3_d, create_bounding_box, intersection_checking, translate,
@@ -13,80 +14,51 @@ use crate::{
 };
 
 #[allow(clippy::too_many_arguments)]
-fn create_poly(
-    eps: f64,
-    ue_angle_option: bool,
-    uenum_points: &[usize],
-    uetranslation: &[f64],
-    ueaspect: &[f64],
-    ue_radii: &[f64],
-    ue_beta: &[f64],
-    uenormal: &mut [f64],
-    urnormal: &[f64],
-    idx: usize,
-) -> Poly {
-    let index = idx * 3;
-
+fn create_poly(eps: f64, user_defined_ells: &UserDefinedFractures, idx: usize) -> Poly {
     let mut new_poly = Poly {
-        family_num: -1,
         // Set number of nodes. Needed for rotations.
-        number_of_nodes: uenum_points[idx] as isize,
+        number_of_nodes: user_defined_ells.num_points[idx] as isize,
+        family_num: -1,
+        group_num: 0,
         // Initialize normal to {0,0,1}. need initialized for 3D rotation
         normal: Vector3::new(0., 0., 1.),
-        translation: Vector3::from_row_slice(&uetranslation[index..index + 3]),
+        translation: Vector3::from_row_slice(&user_defined_ells.translation[idx]),
+        vertices: Vec::with_capacity(user_defined_ells.num_points[idx] * 3),
         ..Default::default()
     };
 
-    new_poly.vertices = Vec::with_capacity(uenum_points[idx] * 3);
-
     // Generate theta array used to place vertices
     let mut theta_ary = Vec::new();
-    generate_theta(&mut theta_ary, ueaspect[idx], uenum_points[idx]);
+    generate_theta(
+        &mut theta_ary,
+        user_defined_ells.aspect[idx],
+        user_defined_ells.num_points[idx],
+    );
 
     // Initialize vertices on x-y plane
     initialize_ell_vertices(
         &mut new_poly,
-        ue_radii[idx],
-        ueaspect[idx],
+        user_defined_ells.radii[idx],
+        user_defined_ells.aspect[idx],
         &theta_ary,
-        uenum_points[idx],
+        user_defined_ells.num_points[idx],
     );
-
-    // Convert angle to rad if necessary
-    let angle = if ue_angle_option {
-        ue_beta[idx] * std::f64::consts::PI / 180.
-    } else {
-        ue_beta[idx]
-    };
 
     // Apply 2d rotation matrix, twist around origin
     // Assumes polygon on x-y plane
     // Angle must be in rad
-    apply_rotation2_d(&mut new_poly, angle);
-    // Normalize user denined normal vector
-    let normal = Vector3::from_row_slice(&uenormal[index..index + 3]).normalize();
+    apply_rotation2_d(&mut new_poly, user_defined_ells.beta[idx]);
 
     // Rotate vertices to uenormal[index] (new normal)
-    apply_rotation3_d(
-        &mut new_poly,
-        &Vector3::from_row_slice(&urnormal[index..index + 3]),
-        eps,
-    );
+    apply_rotation3_d(&mut new_poly, &user_defined_ells.normal[idx], eps);
 
     // Save newPoly's new normal vector
-    new_poly.normal = normal;
-    uenormal[index] = normal.x;
-    uenormal[index + 1] = normal.y;
-    uenormal[index + 2] = normal.z;
+    new_poly.normal = user_defined_ells.normal[idx];
 
     // Translate newPoly to uetranslation
     translate(
         &mut new_poly,
-        Vector3::new(
-            uetranslation[index],
-            uetranslation[index + 1],
-            uetranslation[index + 2],
-        ),
+        Vector3::from_row_slice(&user_defined_ells.translation[idx]),
     );
 
     new_poly
@@ -123,41 +95,22 @@ fn create_poly(
 pub fn insert_user_ell(
     h: f64,
     eps: f64,
-    n_user_ell: usize,
-    ue_angle_option: bool,
     r_fram: bool,
     disable_fram: bool,
     triple_intersections: bool,
     domain_size: &Vector3<f64>,
-    uenum_points: &[usize],
-    uetranslation: &[f64],
-    ueaspect: &[f64],
-    ue_radii: &[f64],
-    ue_beta: &[f64],
-    uenormal: &mut [f64],
-    urnormal: &[f64],
     accepted_poly: &mut Vec<Poly>,
     intpts: &mut Vec<IntersectionPoints>,
     pstats: &mut Stats,
     triple_points: &mut Vec<Point3<f64>>,
+    user_defined_ells: &UserDefinedFractures,
 ) {
     let family_id = -1;
-    let npoly = n_user_ell;
+    let npoly = user_defined_ells.n_frac;
     println!("{} User Ellipses Defined", npoly);
 
     for i in 0..npoly {
-        let mut new_poly = create_poly(
-            eps,
-            ue_angle_option,
-            uenum_points,
-            uetranslation,
-            ueaspect,
-            ue_radii,
-            ue_beta,
-            uenormal,
-            urnormal,
-            i,
-        );
+        let mut new_poly = create_poly(eps, user_defined_ells, i);
 
         if domain_truncation(h, eps, &mut new_poly, domain_size) {
             // Poly completely outside domain

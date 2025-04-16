@@ -3,6 +3,7 @@ use parry3d_f64::na::{Point3, Vector3};
 use super::domain::domain_truncation;
 use super::insert_shape::{initialize_rect_vertices, print_reject_reason};
 
+use crate::io::input::UserDefinedFractures;
 use crate::{
     computational_geometry::{
         apply_rotation2_d, apply_rotation3_d, create_bounding_box, intersection_checking, translate,
@@ -12,63 +13,40 @@ use crate::{
 };
 
 #[allow(clippy::too_many_arguments)]
-fn create_poly(
-    eps: f64,
-    ur_radii: &[f64],
-    uraspect: &[f64],
-    ur_beta: &[f64],
-    urnormal: &mut [f64],
-    urtranslation: &[f64],
-    ur_angle_option: bool,
-    idx: usize,
-) -> Poly {
+fn create_poly(eps: f64, user_defined_rects: &UserDefinedFractures, idx: usize) -> Poly {
     let mut new_poly = Poly {
-        family_num: -2,
         // Set number of nodes. Needed for rotations.
         number_of_nodes: 4,
+        family_num: -2,
+        group_num: 0,
         // Initialize normal to {0,0,1}. need initialized for 3D rotation
         normal: Vector3::new(0., 0., 1.),
+        translation: Vector3::from_row_slice(&user_defined_rects.translation[idx]),
+        vertices: Vec::with_capacity(12),
         ..Default::default()
     };
 
-    new_poly.vertices.reserve(12); // 4*{x,y,z}
-
-    // Index to start of vertices/nodes
-    let index = idx * 3;
-
     // initializeRectVertices() sets newpoly.xradius, newpoly.yradius, newpoly.aperture
-    initialize_rect_vertices(&mut new_poly, ur_radii[idx], uraspect[idx]);
-
-    // Convert angle to rad if necessary
-    let angle = if ur_angle_option {
-        ur_beta[idx] * std::f64::consts::PI / 180.
-    } else {
-        ur_beta[idx]
-    };
+    initialize_rect_vertices(
+        &mut new_poly,
+        user_defined_rects.radii[idx],
+        user_defined_rects.aspect[idx],
+    );
 
     // Apply 2d rotation matrix, twist around origin
     // Assumes polygon on x-y plane
     // Angle must be in rad
-    apply_rotation2_d(&mut new_poly, angle);
+    apply_rotation2_d(&mut new_poly, user_defined_rects.beta[idx]);
 
     // Rotate vertices to urnormal[index] (new normal)
-    let normal = Vector3::from_row_slice(&urnormal[index..index + 3]).normalize();
-    apply_rotation3_d(&mut new_poly, &normal, eps);
+    apply_rotation3_d(&mut new_poly, &user_defined_rects.normal[idx], eps);
 
-    // Update normal vector
-    new_poly.normal = normal;
-    urnormal[index] = normal.x;
-    urnormal[index + 1] = normal.y;
-    urnormal[index + 2] = normal.z;
+    new_poly.normal = user_defined_rects.normal[idx];
 
     // Translate newPoly to urtranslation
     translate(
         &mut new_poly,
-        Vector3::new(
-            urtranslation[index],
-            urtranslation[index + 1],
-            urtranslation[index + 2],
-        ),
+        Vector3::from_row_slice(&user_defined_rects.translation[idx]),
     );
 
     new_poly
@@ -105,34 +83,19 @@ pub fn insert_user_rects(
     r_fram: bool,
     disable_fram: bool,
     triple_intersections: bool,
-    n_user_rect: usize,
     domain_size: &Vector3<f64>,
-    ur_radii: &[f64],
-    uraspect: &[f64],
-    ur_beta: &[f64],
-    urnormal: &mut [f64],
-    urtranslation: &[f64],
-    ur_angle_option: bool,
     accepted_poly: &mut Vec<Poly>,
     intpts: &mut Vec<IntersectionPoints>,
     pstats: &mut Stats,
     triple_points: &mut Vec<Point3<f64>>,
+    user_defined_rects: &UserDefinedFractures,
 ) {
-    let npoly = n_user_rect;
+    let npoly = user_defined_rects.n_frac;
     let family_id = -2;
     println!("{} User Rectangles Defined", npoly);
 
     for i in 0..npoly {
-        let mut new_poly = create_poly(
-            eps,
-            ur_radii,
-            uraspect,
-            ur_beta,
-            urnormal,
-            urtranslation,
-            ur_angle_option,
-            i,
-        );
+        let mut new_poly = create_poly(eps, user_defined_rects, i);
 
         if domain_truncation(h, eps, &mut new_poly, domain_size) {
             //poly completely outside domain

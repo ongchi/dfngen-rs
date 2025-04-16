@@ -22,3 +22,5 @@ rand = "0.9"
 rand_distr = "0.5"
 rand_mt = "5.0"
 text_io = "0.1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }

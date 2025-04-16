@@ -10,6 +10,7 @@ use rand::distr::Uniform;
 use rand::Rng;
 use rand_mt::Mt64;
 use structures::RadiusFunction;
+use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 use crate::{
     computational_geometry::polygon_boundary::polygon_boundary,
@@ -54,6 +55,12 @@ struct Cli {
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Setup tracing
+    tracing_subscriber::registry()
+        .with(tracing_subscriber::EnvFilter::from_default_env())
+        .with(tracing_subscriber::fmt::layer())
+        .init();
+
     let cli = Cli::parse();
 
     println!("Starting DFNGen");
@@ -177,27 +184,24 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         );
     }
 
+    let user_defined_ell_fractures = input.user_defined_ell_fractures.take();
+    let user_defined_rect_fractures = input.user_defined_rect_fractures.take();
+
     if input.insertUserRectanglesFirst {
         // Insert user rects first
-        if input.userRectanglesOnOff {
+        if let Some(user_defined_rect_fractures) = user_defined_rect_fractures {
             insert_user_rects(
                 input.h,
                 input.eps,
                 input.rFram,
                 input.disableFram,
                 input.tripleIntersections,
-                input.nUserRect,
                 &input.domainSize,
-                &input.urRadii,
-                &input.uraspect,
-                &input.urBeta,
-                &mut input.urnormal,
-                &input.urtranslation,
-                input.urAngleOption,
                 &mut accepted_poly,
                 &mut intersection_pts,
                 &mut pstats,
                 &mut triple_points,
+                &user_defined_rect_fractures,
             );
         }
 
@@ -220,27 +224,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
 
         // Insert all user ellipses
-        if input.userEllipsesOnOff {
+        if let Some(user_defined_ell_fractures) = user_defined_ell_fractures {
             insert_user_ell(
                 input.h,
                 input.eps,
-                input.nUserEll,
-                input.ueAngleOption,
                 input.rFram,
                 input.disableFram,
                 input.tripleIntersections,
                 &input.domainSize,
-                &input.uenumPoints,
-                &input.uetranslation,
-                &input.ueaspect,
-                &input.ueRadii,
-                &input.ueBeta,
-                &mut input.uenormal,
-                &input.urnormal,
                 &mut accepted_poly,
                 &mut intersection_pts,
                 &mut pstats,
                 &mut triple_points,
+                &user_defined_ell_fractures,
             );
         }
 
@@ -264,27 +260,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     } else {
         // Insert all user ellipses first
-        if input.userEllipsesOnOff {
+        if let Some(user_defined_ell_fractures) = user_defined_ell_fractures {
             insert_user_ell(
                 input.h,
                 input.eps,
-                input.nUserEll,
-                input.ueAngleOption,
                 input.rFram,
                 input.disableFram,
                 input.tripleIntersections,
                 &input.domainSize,
-                &input.uenumPoints,
-                &input.uetranslation,
-                &input.ueaspect,
-                &input.ueRadii,
-                &input.ueBeta,
-                &mut input.uenormal,
-                &input.urnormal,
                 &mut accepted_poly,
                 &mut intersection_pts,
                 &mut pstats,
                 &mut triple_points,
+                &user_defined_ell_fractures,
             );
         }
 
@@ -308,25 +296,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
 
         // Insert user rects
-        if input.userRectanglesOnOff {
+        if let Some(user_defined_rect_fractures) = user_defined_rect_fractures {
             insert_user_rects(
                 input.h,
                 input.eps,
                 input.rFram,
                 input.disableFram,
                 input.tripleIntersections,
-                input.nUserRect,
                 &input.domainSize,
-                &input.urRadii,
-                &input.uraspect,
-                &input.urBeta,
-                &mut input.urnormal,
-                &input.urtranslation,
-                input.urAngleOption,
                 &mut accepted_poly,
                 &mut intersection_pts,
                 &mut pstats,
                 &mut triple_points,
+                &user_defined_rect_fractures,
             );
         }
 
