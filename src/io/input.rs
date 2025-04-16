@@ -2,7 +2,7 @@ use std::fs::File;
 
 use itertools::zip_eq;
 use parry3d_f64::na::{Point3, Vector3};
-use tracing::{debug, info, warn};
+use tracing::{info, warn};
 
 use super::read_input_functions::{
     get_cords, get_rect_coords, read_domain_vertices, search_var, ReadFromTextFile,
@@ -10,8 +10,9 @@ use super::read_input_functions::{
 };
 
 use crate::{
-    distribution::{generating_points::generate_theta, Fisher},
-    structures::{RadiusDistribution, Shape, ShapeFamily},
+    distribution::generating_points::generate_theta,
+    io::read_input_functions::InputReader,
+    structures::{Shape, ShapeFamily},
 };
 
 #[allow(non_snake_case)]
@@ -342,75 +343,54 @@ pub struct Input {
 /// # Arguments
 ///
 /// * `input` - Path to input file
-pub fn read_input(input: &str) -> (Input, Vec<Shape>) {
+pub fn read_input(input_file: &str) -> (Input, Vec<Shape>) {
     let mut input_var = Input::default();
     let mut shape_family = Vec::new();
     let mut angle_option = false;
 
-    info!("DFN Generator Input File: {}\n", input);
-    let mut input_file = File::open(input).unwrap();
+    info!("DFN Generator Input File: {}\n", input_file);
+    let mut input_reader = InputReader::new(input_file);
 
     macro_rules! input_var {
         ($var_name:ident) => {
-            search_var(&mut input_file, &format!("{}:", stringify!($var_name)));
-            debug!("Reading from {}", stringify!($var_name));
-            input_var.$var_name.read_from_text(&mut input_file);
-        };
-
-        ($label:expr,$var_name:ident) => {
-            search_var(&mut input_file, &format!("{}:", $label));
-            debug!("Reading from {}", $label);
-            input_var.$var_name.read_from_text(&mut input_file);
-        };
-
-        ($var_name:ident,$n:expr) => {
-            search_var(&mut input_file, &format!("{}:", stringify!($var_name)));
-            debug!("Reading from {}", stringify!($var_name));
-            let mut tmp: Vec<_> = Vec::new();
-            tmp.read_from_text(&mut input_file);
-            for i in 0..input_var.$var_name.len() {
-                input_var.$var_name[i] = tmp[i];
-            }
+            input_reader.read_value(
+                &format!("{}:", stringify!($var_name)),
+                &mut input_var.$var_name,
+            );
         };
     }
 
     input_var!(stopCondition);
     input_var!(printRejectReasons);
-    input_var!(domainSize, 3);
+    input_var!(domainSize);
     input_var!(numOfLayers);
 
     if input_var.numOfLayers > 0 {
         let mut layers: Vec<f64> = Vec::with_capacity(input_var.numOfLayers * 2); // Multiply by 2 for +z and -z for each layer
-        let mut layer_vol = vec![0.; input_var.numOfLayers];
 
-        input_var!("layers", numOfLayers);
+        input_reader.read_value("layers:", &mut layers);
 
-        layers.read_from_text(&mut input_file);
-
-        for (i, vol) in layer_vol.iter_mut().enumerate().take(input_var.numOfLayers) {
+        for i in 0..input_var.numOfLayers {
             let idx = i * 2;
             info!(
                 "    Layer {}{{-z,+z}}: {:?}, Volume: ",
                 i + 1,
                 &layers[idx..idx + 2]
             );
-            *vol = input_var.domainSize[0]
+            let vol = input_var.domainSize[0]
                 * input_var.domainSize[1]
                 * ((layers[idx + 1] as isize - layers[idx] as isize).abs() as f64);
             info!("{} m^3", vol);
         }
     }
 
-    input_var!(numOfRegions);
-
+    input_reader.read_value("numOfRegions:", &mut input_var.numOfRegions);
     if input_var.numOfRegions > 0 {
-        search_var(&mut input_file, "regions:");
         let mut regions: Vec<isize> = Vec::with_capacity(input_var.numOfRegions * 6); // Multiply by 6 xmin, xmax, ymin, ymax, zmin, zmax
-        regions.read_from_text(&mut input_file);
+        input_reader.read_value("regions:", &mut regions);
 
         info!("Number of Regions: {}", input_var.numOfRegions);
 
-        let mut region_vol: Vec<isize> = Vec::with_capacity(input_var.numOfRegions);
         for i in 0..input_var.numOfRegions {
             let idx = i * 6;
             info!(
@@ -421,7 +401,6 @@ pub fn read_input(input: &str) -> (Input, Vec<Shape>) {
             let vol = (regions[idx + 1] - regions[idx]).abs()
                 * (regions[idx + 3] - regions[idx + 2]).abs()
                 * (regions[idx + 5] - regions[idx + 4]).abs();
-            region_vol.push(vol);
             info!(" Volume: {} m^3", vol);
         }
     }
@@ -455,11 +434,11 @@ pub fn read_input(input: &str) -> (Input, Vec<Shape>) {
     input_var!(outputFinalRadiiPerFamily);
     input_var!(outputAcceptedRadiiPerFamily);
     input_var!(seed);
-    input_var!(domainSizeIncrease, 3);
+    input_var!(domainSizeIncrease);
     input_var!(keepOnlyLargestCluster);
     input_var!(keepIsolatedFractures);
     input_var!(ignoreBoundaryFaces);
-    input_var!(boundaryFaces, 6);
+    input_var!(boundaryFaces);
     input_var!(rejectsPerFracture);
     input_var!(nFamRect);
     input_var!(nFamEll);
@@ -478,11 +457,10 @@ pub fn read_input(input: &str) -> (Input, Vec<Shape>) {
 
     if input_var.polygonBoundaryFlag {
         info!("Expecting Polygon Boundary for domain edges");
-        search_var(&mut input_file, "polygonBoundaryFile:");
-        let mut tempstring: String = String::new();
-        tempstring.read_from_text(&mut input_file);
-        info!("Polygon Boundary File: {}", &tempstring);
-        read_domain_vertices(&mut input_var, &tempstring);
+        let mut poly_boundary_file: String = String::new();
+        input_reader.read_value("polygonBoundaryFile:", &mut poly_boundary_file);
+        info!("Polygon Boundary File: {}", &poly_boundary_file);
+        read_domain_vertices(&mut input_var, &poly_boundary_file);
         info!(
             "There are {} Vertices on the boundary",
             input_var.numOfDomainVertices
@@ -510,11 +488,9 @@ pub fn read_input(input: &str) -> (Input, Vec<Shape>) {
         input_var!(eRegion);
         input_var!(easpect);
         input_var!(enumPoints);
-
-        search_var(&mut input_file, "angleOption:"); // eAngleOption
-        angle_option.read_from_text(&mut input_file);
-
         input_var!(ebeta);
+
+        input_reader.read_value("angleOption:", &mut angle_option);
 
         // Convert from degrees to radians
         if angle_option {
@@ -534,8 +510,8 @@ pub fn read_input(input: &str) -> (Input, Vec<Shape>) {
     // Counters, used to place variable into correct array index
     let mut beta_count = 0;
 
-    let orien_distr = read_orien_distr(&mut input_file, "e");
-    let radius_distr = read_radius_distr(&mut input_file, "e");
+    let orien_distr = input_reader.read_orien_distr("e");
+    let radius_distr = input_reader.read_radius_distr("e");
 
     // Create shape structures from data gathered above
     for ((i, orien), radius) in zip_eq(zip_eq(0..input_var.nFamEll, orien_distr), radius_distr) {
@@ -573,12 +549,11 @@ pub fn read_input(input: &str) -> (Input, Vec<Shape>) {
     }
 
     if input_var.nFamRect > 0 {
-        input_var!(rbetaDistribution, input_var.nFamRect);
-        input_var!(rLayer, input_var.nFamRect);
-        input_var!(rRegion, input_var.nFamRect);
-        input_var!(raspect, input_var.nFamRect);
-
-        input_var!(rbeta, input_var.nFamRect);
+        input_var!(rbetaDistribution);
+        input_var!(rLayer);
+        input_var!(rRegion);
+        input_var!(raspect);
+        input_var!(rbeta);
 
         if angle_option {
             let _ = input_var
@@ -590,7 +565,7 @@ pub fn read_input(input: &str) -> (Input, Vec<Shape>) {
         if input_var.stopCondition == 1 {
             // Get temp array for rectangle p32 targets,
             // Used to simplify initialization of shape family structures below
-            input_var!(r_p32Targets, input_var.nFamRect);
+            input_var!(r_p32Targets);
         }
     }
 
@@ -609,8 +584,8 @@ pub fn read_input(input: &str) -> (Input, Vec<Shape>) {
     // Counters, used to place variable into correct array index
     beta_count = 0;
 
-    let orien_distr = read_orien_distr(&mut input_file, "r");
-    let radius_distr = read_radius_distr(&mut input_file, "r");
+    let orien_distr = input_reader.read_orien_distr("r");
+    let radius_distr = input_reader.read_radius_distr("r");
 
     // Create shape strucutres from data gathered above
     for ((i, orien), radius) in zip_eq(zip_eq(0..input_var.nFamRect, orien_distr), radius_distr) {
@@ -644,25 +619,27 @@ pub fn read_input(input: &str) -> (Input, Vec<Shape>) {
     input_var!(userEllipsesOnOff);
 
     if input_var.userEllipsesOnOff {
-        search_var(&mut input_file, "UserEll_Input_File_Path:");
-        let mut tempstring: String = String::new();
-        tempstring.read_from_text(&mut input_file);
-        info!("User Defined Ellipses File: {}", &tempstring);
+        let mut user_ell_file: String = String::new();
+        input_reader.read_value("UserEll_Input_File_Path:", &mut user_ell_file);
+        info!("User Defined Ellipses File: {}", &user_ell_file);
 
-        input_var.user_defined_ell_fractures =
-            Some(UserDefinedFractures::from_fracture_file(&tempstring, true));
+        input_var.user_defined_ell_fractures = Some(UserDefinedFractures::from_fracture_file(
+            &user_ell_file,
+            true,
+        ));
     }
 
     input_var!(userRectanglesOnOff);
 
     if input_var.userRectanglesOnOff {
-        search_var(&mut input_file, "UserRect_Input_File_Path:");
-        let mut tempstring: String = String::new();
-        tempstring.read_from_text(&mut input_file);
-        info!("User Defined Rectangles File: {}", &tempstring);
+        let mut user_rect_file: String = String::new();
+        input_reader.read_value("UserRect_Input_File_Path:", &mut user_rect_file);
+        info!("User Defined Rectangles File: {}", &user_rect_file);
 
-        input_var.user_defined_rect_fractures =
-            Some(UserDefinedFractures::from_fracture_file(&tempstring, false));
+        input_var.user_defined_rect_fractures = Some(UserDefinedFractures::from_fracture_file(
+            &user_rect_file,
+            false,
+        ));
     }
 
     input_var!(userEllByCoord);
@@ -678,16 +655,17 @@ pub fn read_input(input: &str) -> (Input, Vec<Shape>) {
     }
 
     if !input_var.userPolygonByCoord {
-        search_var(&mut input_file, "PolygonByCoord_Input_File_Path:");
-        input_var.polygonFile.read_from_text(&mut input_file);
+        input_reader.read_value(
+            "PolygonByCoord_Input_File_Path:",
+            &mut input_var.polygonFile,
+        );
     }
 
     if input_var.userEllByCoord {
-        search_var(&mut input_file, "EllByCoord_Input_File_Path:");
-        let mut tempstring: String = String::new();
-        tempstring.read_from_text(&mut input_file);
-        let mut file = File::open(&tempstring).unwrap();
-        info!("User Defined Ellipses by Coordinates File: {}", &tempstring);
+        let mut ell_file: String = String::new();
+        input_reader.read_value("EllByCoord_Input_File_Path:", &mut ell_file);
+        let mut file = File::open(&ell_file).unwrap();
+        info!("User Defined Ellipses by Coordinates File: {}", &ell_file);
         search_var(&mut file, "nEllipses:");
         input_var.nEllByCoord.read_from_text(&mut file);
         search_var(&mut file, "nNodes:");
@@ -702,19 +680,18 @@ pub fn read_input(input: &str) -> (Input, Vec<Shape>) {
     }
 
     if input_var.userRecByCoord {
-        search_var(&mut input_file, "RectByCoord_Input_File_Path:");
-        let mut tempstring: String = String::new();
-        tempstring.read_from_text(&mut input_file);
-        let mut u_coord_file = File::open(&tempstring).unwrap();
+        let mut rect_file: String = String::new();
+        input_reader.read_value("RectByCoord_Input_File_Path:", &mut rect_file);
+        let mut file = File::open(&rect_file).unwrap();
         info!(
             "User Defined Rectangles by Coordinates File: {}",
-            &tempstring
+            &rect_file
         );
-        search_var(&mut u_coord_file, "nRectangles:");
-        input_var.nRectByCoord.read_from_text(&mut u_coord_file);
-        search_var(&mut u_coord_file, "Coordinates:");
+        search_var(&mut file, "nRectangles:");
+        input_var.nRectByCoord.read_from_text(&mut file);
+        search_var(&mut file, "Coordinates:");
         get_rect_coords(
-            &mut u_coord_file,
+            &mut file,
             &mut input_var.userRectCoordVertices,
             input_var.nRectByCoord,
         );
@@ -752,139 +729,6 @@ pub fn read_input(input: &str) -> (Input, Vec<Shape>) {
     }
 
     (input_var, shape_family)
-}
-
-fn read_orien_distr(input_file: &mut File, prefix: &str) -> Vec<Fisher> {
-    macro_rules! read_var {
-        ($label:expr,$var_name:ident) => {
-            search_var(input_file, &format!("{}{}:", prefix, $label));
-            $var_name.read_from_text(input_file);
-        };
-    }
-
-    let mut angle1: Vec<f64> = Vec::new();
-    let mut angle2: Vec<f64> = Vec::new();
-
-    let mut orientation: u8 = 0;
-    search_var(input_file, "orientationOption:");
-    orientation.read_from_text(input_file);
-
-    match orientation {
-        0 => {
-            read_var!("theta", angle1);
-            read_var!("phi", angle2);
-        }
-        1 => {
-            read_var!("trend", angle1);
-            read_var!("plunge", angle2);
-        }
-        2 => {
-            read_var!("dip", angle1);
-            read_var!("strike", angle2);
-        }
-        _ => panic!("Unknown orientation option"),
-    }
-
-    let mut angle_option = false;
-    search_var(input_file, "angleOption:");
-    angle_option.read_from_text(input_file);
-
-    if angle_option {
-        let _ = angle1.iter_mut().map(|v| *v = std::f64::consts::PI / 180.);
-        let _ = angle2.iter_mut().map(|v| *v = std::f64::consts::PI / 180.);
-    }
-
-    let mut kappa: Vec<f64> = Vec::new();
-    read_var!("kappa", kappa);
-
-    let mut h: f64 = 0.0;
-    search_var(input_file, "h:");
-    h.read_from_text(input_file);
-    let eps = h * 1e-8;
-
-    zip_eq(zip_eq(angle1, angle2), kappa)
-        .map(|((c1, c2), k)| match orientation {
-            0 => Fisher::new_with_theta_phi(c1, c2, k, eps),
-            1 => Fisher::new_with_trend_plunge(c1, c2, k, eps),
-            2 => Fisher::new_with_dip_strike(c1, c2, k, eps),
-            _ => unreachable!(),
-        })
-        .collect()
-}
-
-fn read_radius_distr(input_file: &mut File, prefix: &str) -> Vec<RadiusDistribution> {
-    macro_rules! read_var {
-        ($label:expr,$var_name:ident) => {
-            let mut $var_name: Vec<f64> = Vec::new();
-            search_var(input_file, &format!("{}{}:", prefix, $label));
-            $var_name.read_from_text(input_file);
-            let mut $var_name = $var_name.into_iter();
-        };
-    }
-
-    macro_rules! next_val {
-        ($label:expr,$var_name:ident) => {
-            match $var_name.next() {
-                Some(val) => val,
-                None => panic!("Insufficient values in input file for {}{}", prefix, $label),
-            }
-        };
-    }
-
-    read_var!("LogMean", log_mean);
-    read_var!("sd", sd);
-    read_var!("LogMin", log_min);
-    read_var!("LogMax", log_max);
-
-    read_var!("alpha", alpha);
-    read_var!("min", min);
-    read_var!("max", max);
-
-    read_var!("ExpMean", exp_mean);
-    read_var!("ExpMin", exp_min);
-    read_var!("ExpMax", exp_max);
-
-    read_var!("const", const_);
-
-    let mut distr: Vec<u8> = Vec::new();
-    search_var(input_file, &format!("{}distr:", prefix));
-    distr.read_from_text(input_file);
-
-    distr
-        .into_iter()
-        .map(|dist_option| {
-            match dist_option {
-                // Lognormal
-                1 => RadiusDistribution::new_log_normal(
-                    next_val!("LogMean", log_mean),
-                    next_val!("sd", sd),
-                    next_val!("LogMin", log_min),
-                    next_val!("LogMax", log_max),
-                ),
-
-                // Truncated power-law
-                2 => RadiusDistribution::new_truncated_power_law(
-                    next_val!("alpha", alpha),
-                    next_val!("min", min),
-                    next_val!("max", max),
-                ),
-
-                // Exponential
-                3 => RadiusDistribution::new_exponential(
-                    1. / next_val!("ExpMean", exp_mean),
-                    next_val!("ExpMin", exp_min),
-                    next_val!("ExpMax", exp_max),
-                ),
-
-                // Constant
-                4 => RadiusDistribution::new_constant(next_val!("const", const_)),
-
-                _ => {
-                    panic!("Unknown distribution type: {}", dist_option)
-                }
-            }
-        })
-        .collect()
 }
 
 #[derive(Debug)]

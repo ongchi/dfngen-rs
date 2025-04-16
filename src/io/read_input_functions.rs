@@ -3,11 +3,14 @@ use std::fs::File;
 use std::io::{BufRead, BufReader, Read, Seek, SeekFrom};
 use std::str::FromStr;
 
-use parry3d_f64::na::Point3;
+use itertools::zip_eq;
+use parry3d_f64::na::{Point3, Vector3};
 use text_io::read;
 use tracing::{debug, info};
 
+use crate::distribution::Fisher;
 use crate::io::input::Input;
+use crate::structures::RadiusDistribution;
 
 /// Searches for variable in files, moves file pointer to position
 /// after word. Used to read in varlable values
@@ -186,6 +189,7 @@ where
     T: FromStr + NotBool + std::fmt::Debug,
     <T as FromStr>::Err: std::fmt::Debug,
 {
+    // {0,...}
     fn read_from_text(&mut self, file: &mut File) {
         self.extend(
             read_quoted(file, '{')
@@ -196,11 +200,40 @@ where
     }
 }
 
+impl<T> ReadFromTextFile for Vector3<T>
+where
+    T: FromStr + NotBool + parry3d_f64::na::Scalar + std::fmt::Debug,
+    <T as FromStr>::Err: std::fmt::Debug,
+{
+    // {0,0,0}
+    fn read_from_text(&mut self, file: &mut File) {
+        let mut tmp: Vec<T> = Vec::new();
+        tmp.read_from_text(file);
+        if tmp.len() == 3 {
+            *self = Vector3::from_row_slice(&tmp);
+        } else {
+            panic!("Expected 3 values in vector,")
+        }
+    }
+}
+
 impl ReadFromTextFile for Vec<bool> {
+    // {0,...}
     fn read_from_text(&mut self, file: &mut File) {
         let mut tmp: Vec<u8> = Vec::new();
         tmp.read_from_text(file);
         self.extend(tmp.into_iter().map(|v| v != 0))
+    }
+}
+
+impl ReadFromTextFile for [bool; 6] {
+    // {0,0,0,0,0,0}
+    fn read_from_text(&mut self, file: &mut File) {
+        let mut tmp: Vec<u8> = Vec::new();
+        tmp.read_from_text(file);
+        for (t, s) in zip_eq(self, tmp) {
+            *t = s != 0
+        }
     }
 }
 
@@ -209,6 +242,9 @@ where
     T: FromStr + NotBool + std::fmt::Debug,
     <T as FromStr>::Err: std::fmt::Debug,
 {
+    // 0
+    // 0
+    // 0
     fn read_from_text(&mut self, file: &mut File) {
         for v in self.iter_mut() {
             v.read_from_text(file);
@@ -221,6 +257,8 @@ where
     T: FromStr + NotBool + std::fmt::Debug,
     <T as FromStr>::Err: std::fmt::Debug,
 {
+    // (0,0)
+    // ...
     fn read_from_text(&mut self, file: &mut File) {
         while let Ok(tmp) = read_quoted(file, '(') {
             if tmp.len() == 2 {
@@ -237,6 +275,8 @@ where
     T: FromStr + std::fmt::Debug,
     <T as FromStr>::Err: std::fmt::Debug,
 {
+    // (0,0,0)
+    // ...
     fn read_from_text(&mut self, file: &mut File) {
         while let Ok(tmp) = read_quoted(file, '(') {
             if tmp.len() == 3 {
@@ -249,6 +289,154 @@ where
                 panic!("Expected 3 values in tuple,")
             }
         }
+    }
+}
+
+pub struct InputReader {
+    file: File,
+}
+
+impl InputReader {
+    pub fn new(filename: &str) -> Self {
+        let file = File::open(filename).unwrap();
+        Self { file }
+    }
+    pub fn read_value<T: ReadFromTextFile + std::fmt::Debug>(&mut self, label: &str, buf: &mut T) {
+        search_var(&mut self.file, label);
+        debug!("Reading from {}", label);
+        buf.read_from_text(&mut self.file);
+        debug!("value: {:?}", buf);
+    }
+
+    pub fn read_orien_distr(&mut self, prefix: &str) -> Vec<Fisher> {
+        macro_rules! read_var {
+            ($label:expr,$var_name:ident) => {
+                self.read_value(&format!("{}{}:", prefix, $label), &mut $var_name);
+            };
+        }
+
+        let mut angle1: Vec<f64> = Vec::new();
+        let mut angle2: Vec<f64> = Vec::new();
+
+        let mut orientation: u8 = 0;
+        search_var(&mut self.file, "orientationOption:");
+        orientation.read_from_text(&mut self.file);
+
+        match orientation {
+            0 => {
+                read_var!("theta", angle1);
+                read_var!("phi", angle2);
+            }
+            1 => {
+                read_var!("trend", angle1);
+                read_var!("plunge", angle2);
+            }
+            2 => {
+                read_var!("dip", angle1);
+                read_var!("strike", angle2);
+            }
+            _ => panic!("Unknown orientation option"),
+        }
+
+        let mut angle_option = false;
+        search_var(&mut self.file, "angleOption:");
+        angle_option.read_from_text(&mut self.file);
+
+        if angle_option {
+            let _ = angle1.iter_mut().map(|v| *v = std::f64::consts::PI / 180.);
+            let _ = angle2.iter_mut().map(|v| *v = std::f64::consts::PI / 180.);
+        }
+
+        let mut kappa: Vec<f64> = Vec::new();
+        read_var!("kappa", kappa);
+
+        let mut h: f64 = 0.0;
+        search_var(&mut self.file, "h:");
+        h.read_from_text(&mut self.file);
+        let eps = h * 1e-8;
+
+        zip_eq(zip_eq(angle1, angle2), kappa)
+            .map(|((c1, c2), k)| match orientation {
+                0 => Fisher::new_with_theta_phi(c1, c2, k, eps),
+                1 => Fisher::new_with_trend_plunge(c1, c2, k, eps),
+                2 => Fisher::new_with_dip_strike(c1, c2, k, eps),
+                _ => unreachable!(),
+            })
+            .collect()
+    }
+
+    pub fn read_radius_distr(&mut self, prefix: &str) -> Vec<RadiusDistribution> {
+        macro_rules! read_var {
+            ($label:expr,$var_name:ident) => {
+                let mut $var_name: Vec<f64> = Vec::new();
+                self.read_value(&format!("{}{}:", prefix, $label), &mut $var_name);
+                let mut $var_name = $var_name.into_iter();
+            };
+        }
+
+        macro_rules! next_val {
+            ($label:expr,$var_name:ident) => {
+                match $var_name.next() {
+                    Some(val) => val,
+                    None => panic!("Insufficient values in input file for {}{}", prefix, $label),
+                }
+            };
+        }
+
+        read_var!("LogMean", log_mean);
+        read_var!("sd", sd);
+        read_var!("LogMin", log_min);
+        read_var!("LogMax", log_max);
+
+        read_var!("alpha", alpha);
+        read_var!("min", min);
+        read_var!("max", max);
+
+        read_var!("ExpMean", exp_mean);
+        read_var!("ExpMin", exp_min);
+        read_var!("ExpMax", exp_max);
+
+        read_var!("const", const_);
+
+        let mut distr: Vec<u8> = Vec::new();
+        search_var(&mut self.file, &format!("{}distr:", prefix));
+        distr.read_from_text(&mut self.file);
+
+        distr
+            .into_iter()
+            .map(|dist_option| {
+                match dist_option {
+                    // Lognormal
+                    1 => RadiusDistribution::new_log_normal(
+                        next_val!("LogMean", log_mean),
+                        next_val!("sd", sd),
+                        next_val!("LogMin", log_min),
+                        next_val!("LogMax", log_max),
+                    ),
+
+                    // Truncated power-law
+                    2 => RadiusDistribution::new_truncated_power_law(
+                        next_val!("alpha", alpha),
+                        next_val!("min", min),
+                        next_val!("max", max),
+                    ),
+
+                    // Exponential
+                    3 => RadiusDistribution::new_exponential(
+                        1. / next_val!("ExpMean", exp_mean),
+                        next_val!("ExpMin", exp_min),
+                        next_val!("ExpMax", exp_max),
+                    ),
+
+                    // Constant
+                    4 => RadiusDistribution::new_constant(next_val!("const", const_)),
+
+                    _ => {
+                        panic!("Unknown distribution type: {}", dist_option)
+                    }
+                }
+            })
+            .collect()
     }
 }
 
@@ -269,11 +457,11 @@ impl UserFractureReader {
     }
 
     /// Read a single value from user defined fractures file
-    pub fn read_value<T: ReadFromTextFile + Display>(&mut self, label: &str, buf: &mut T) {
+    pub fn read_value<T: ReadFromTextFile + std::fmt::Debug>(&mut self, label: &str, buf: &mut T) {
         search_var(&mut self.file, label);
         debug!("Reading from {}", label);
         buf.read_from_text(&mut self.file);
-        debug!("value: {}", buf);
+        debug!("value: {:?}", buf);
     }
 
     pub fn read_vec<T: ReadFromTextFile + Clone + std::fmt::Debug + Display + Default>(
