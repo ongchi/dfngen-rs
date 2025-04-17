@@ -777,14 +777,14 @@ impl UserDefinedFractures {
         beta.iter_mut().for_each(|v| *v *= angle_convertion_factor);
 
         frac_reader.read_vec("Aspect_Ratio:", &mut aspect);
-        frac_reader.read_vec3("Translation:", &mut translation);
+        frac_reader.read_vec_arr3("Translation:", &mut translation);
 
         frac_reader.read_value("userOrientationOption:", &mut orientation_option);
 
         if orientation_option == 0 {
-            frac_reader.read_vec3("Normal:", &mut normal);
+            frac_reader.read_vec_arr3("Normal:", &mut normal);
         } else if orientation_option == 1 {
-            frac_reader.read_vec2("Trend_Plunge:", &mut trend_plunge);
+            frac_reader.read_vec_arr2("Trend_Plunge:", &mut trend_plunge);
 
             // Convert Trend and Plunge into normal vectors
             for [trend, plunge] in &trend_plunge {
@@ -797,7 +797,7 @@ impl UserDefinedFractures {
                 ]);
             }
         } else if orientation_option == 2 {
-            frac_reader.read_vec2("Dip_Strike:", &mut dip_strike);
+            frac_reader.read_vec_arr2("Dip_Strike:", &mut dip_strike);
 
             // Convert Dip and Strike into normal vectors
             for [dip, strike] in &dip_strike {

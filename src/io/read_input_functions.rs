@@ -464,6 +464,8 @@ impl UserFractureReader {
         debug!("value: {:?}", buf);
     }
 
+    // 0
+    // ...
     pub fn read_vec<T: ReadFromTextFile + Clone + std::fmt::Debug + Display + Default>(
         &mut self,
         label: &str,
@@ -479,14 +481,18 @@ impl UserFractureReader {
         debug!("value: {:?}", &buf);
     }
 
-    pub fn read_vec2(&mut self, label: &str, buf: &mut Vec<[f64; 2]>) {
+    // (0, 0)
+    // ...
+    pub fn read_vec_arr2(&mut self, label: &str, buf: &mut Vec<[f64; 2]>) {
         search_var(&mut self.file, label);
         debug!("Reading from {} [{}]", label, self.n_frac);
         buf.read_from_text(&mut self.file);
         debug!("value: {:?}", buf);
     }
 
-    pub fn read_vec3(&mut self, label: &str, buf: &mut Vec<[f64; 3]>) {
+    // (0, 0, 0)
+    // ...
+    pub fn read_vec_arr3(&mut self, label: &str, buf: &mut Vec<[f64; 3]>) {
         search_var(&mut self.file, label);
         debug!("Reading from {} [{}]", label, self.n_frac);
         buf.read_from_text(&mut self.file);
