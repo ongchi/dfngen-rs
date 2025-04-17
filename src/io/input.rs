@@ -10,9 +10,8 @@ use super::read_input_functions::{
 };
 
 use crate::{
-    distribution::generating_points::generate_theta,
     io::read_input_functions::InputReader,
-    structures::{Shape, ShapeFamily},
+    structures::{Shape, ShapeBuilder},
 };
 
 #[allow(non_snake_case)]
@@ -515,37 +514,28 @@ pub fn read_input(input_file: &str) -> (Input, Vec<Shape>) {
 
     // Create shape structures from data gathered above
     for ((i, orien), radius) in zip_eq(zip_eq(0..input_var.nFamEll, orien_distr), radius_distr) {
-        let mut new_shape_fam = Shape {
-            shape_family: ShapeFamily::Ellipse(input_var.enumPoints[i] as u8), // shapFam = 0 = ellipse, 1 = rect
-            aspect_ratio: input_var.easpect[i],
-            orientation: Some(orien),
-            layer: input_var.eLayer[i],
-            region: input_var.eRegion[i],
-            radius_distribution: Some(radius),
-            ..Default::default()
-        };
+        let mut shape_builder = ShapeBuilder::new();
 
-        generate_theta(
-            &mut new_shape_fam.theta_list,
-            new_shape_fam.aspect_ratio,
-            input_var.enumPoints[i],
-        );
+        shape_builder
+            .number_of_nodes(input_var.enumPoints[i] as u8)
+            .radius(radius)
+            .aspect_ratio(input_var.easpect[i])
+            .orientation(orien);
 
         if input_var.ebetaDistribution[i] {
-            // If constant user defined beta option
-            new_shape_fam.beta_distribution = true;
-            new_shape_fam.beta = input_var.ebeta[beta_count];
+            shape_builder.beta(input_var.ebeta[beta_count]);
             beta_count += 1;
-        } else {
-            new_shape_fam.beta_distribution = false;
         }
 
         if input_var.stopCondition == 1 {
-            new_shape_fam.p32_target = input_var.e_p32Targets[i];
+            shape_builder.p32_target(input_var.e_p32Targets[i]);
         }
 
-        // Save shape family to perminant array
-        shape_family.push(new_shape_fam);
+        shape_builder
+            .layer(input_var.eLayer[i])
+            .region(input_var.eRegion[i]);
+
+        shape_family.push(shape_builder.build().unwrap());
     }
 
     if input_var.nFamRect > 0 {
@@ -589,31 +579,27 @@ pub fn read_input(input_file: &str) -> (Input, Vec<Shape>) {
 
     // Create shape strucutres from data gathered above
     for ((i, orien), radius) in zip_eq(zip_eq(0..input_var.nFamRect, orien_distr), radius_distr) {
-        let mut new_shape_fam = Shape {
-            shape_family: ShapeFamily::Rectangle,
-            aspect_ratio: input_var.raspect[i],
-            orientation: Some(orien),
-            layer: input_var.rLayer[i],
-            region: input_var.rRegion[i],
-            radius_distribution: Some(radius),
-            ..Default::default()
-        };
+        let mut shape_builder = ShapeBuilder::new();
+
+        shape_builder
+            .radius(radius)
+            .aspect_ratio(input_var.raspect[i])
+            .orientation(orien);
 
         if input_var.rbetaDistribution[i] {
-            // If constant beta option
-            new_shape_fam.beta_distribution = true;
-            new_shape_fam.beta = input_var.rbeta[beta_count];
+            shape_builder.beta(input_var.rbeta[beta_count]);
             beta_count += 1;
-        } else {
-            new_shape_fam.beta_distribution = false;
         }
 
         if input_var.stopCondition == 1 {
-            new_shape_fam.p32_target = input_var.r_p32Targets[i];
+            shape_builder.p32_target(input_var.r_p32Targets[i]);
         }
 
-        // Save family to perminant array
-        shape_family.push(new_shape_fam);
+        shape_builder
+            .layer(input_var.rLayer[i])
+            .region(input_var.rRegion[i]);
+
+        shape_family.push(shape_builder.build().unwrap());
     }
 
     input_var!(userEllipsesOnOff);

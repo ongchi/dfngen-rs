@@ -58,7 +58,7 @@ pub fn generate_radii_lists_n_poly_option(
 
     if force_large_fractures {
         for shape in shape_families.iter_mut() {
-            let radius = shape.radius_distribution.as_ref().unwrap().max;
+            let radius = shape.radius.max;
             shape.radii_list.push(radius);
         }
     }
@@ -161,7 +161,7 @@ pub fn add_radii(
     generator: Rc<RefCell<Mt64>>,
 ) {
     let min_radius = 3. * h;
-    let radius_distribution = shape_fam.radius_distribution.as_ref().unwrap();
+    let radius_distribution = &shape_fam.radius;
 
     match radius_distribution.function {
         RadiusFunction::LogNormal { mu, sigma } => {
@@ -245,11 +245,7 @@ pub fn dry_run(input: &mut Input, shape_families: &mut [Shape], generator: Rc<Re
         let mut reject_counter = 0;
         let mut new_poly =
             if (force_large_fract_count < shape_families.len()) && input.forceLargeFractures {
-                let radius = shape_families[force_large_fract_count]
-                    .radius_distribution
-                    .as_ref()
-                    .unwrap()
-                    .max;
+                let radius = shape_families[force_large_fract_count].radius.max;
                 family_index = force_large_fract_count;
 
                 // Choose CDF randomly by family

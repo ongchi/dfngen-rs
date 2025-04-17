@@ -124,7 +124,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             );
 
             for (j, shape) in shape_families.iter().enumerate() {
-                match shape.radius_distribution.as_ref().unwrap().function {
+                match shape.radius.function {
                     RadiusFunction::Constant(_) => {
                         println!(
                             "{} family {} using constant size",
@@ -1250,7 +1250,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         // Compare expected radii/poly size and actual
         for (i, shape) in shape_families.iter().enumerate().take(total_families) {
-            match shape.radius_distribution.as_ref().unwrap().function {
+            match shape.radius.function {
                 RadiusFunction::Constant(_) => {
                     log_msg(
                         &mut file,

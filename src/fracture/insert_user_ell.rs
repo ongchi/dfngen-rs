@@ -28,9 +28,7 @@ fn create_poly(eps: f64, user_defined_ells: &UserDefinedFractures, idx: usize) -
     };
 
     // Generate theta array used to place vertices
-    let mut theta_ary = Vec::new();
-    generate_theta(
-        &mut theta_ary,
+    let theta_ary = generate_theta(
         user_defined_ells.aspect[idx],
         user_defined_ells.num_points[idx],
     );

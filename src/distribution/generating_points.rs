@@ -103,7 +103,7 @@ pub fn random_translation(
 /// * `theta_array` - Theta array used for ellipse generation
 /// * `aspect_ratio` - Aspect ratio of ellipse family
 /// * `n_points` - Number of points being used for ellipse family
-pub fn generate_theta(theta_array: &mut Vec<f64>, aspect_ratio: f64, n_points: usize) {
+pub fn generate_theta(aspect_ratio: f64, n_points: usize) -> Vec<f64> {
     let a = 1.;
     let b = aspect_ratio;
     let mut temp1 = (a - b) / (a + b);
@@ -111,7 +111,9 @@ pub fn generate_theta(theta_array: &mut Vec<f64>, aspect_ratio: f64, n_points: u
     let c = std::f64::consts::PI * (a + b) * (1. + (3. * temp1) / (10. + (4. - 3. * temp1).sqrt()));
     let del = c / (n_points as f64);
 
+    let mut theta_array: Vec<f64> = Vec::new();
     theta_array.push(0.);
+
     for i in 1..n_points {
         let mut tmp =
             (b * theta_array[i - 1].cos()).powf(2.) + (a * theta_array[i - 1].sin()).powf(2.);
@@ -127,4 +129,6 @@ pub fn generate_theta(theta_array: &mut Vec<f64>, aspect_ratio: f64, n_points: u
                 + 0.5 * f_tmp,
         );
     }
+
+    theta_array
 }

@@ -23,32 +23,26 @@ fn generate_radius(
     family_index: isize,
     use_list: bool,
 ) -> f64 {
-    let radius_distribution = shape_fam.radius_distribution.as_ref().unwrap();
-    match radius_distribution.function {
+    let radius_distr = &shape_fam.radius;
+    match radius_distr.function {
         RadiusFunction::Constant(c) => c,
         ref others => {
             if shape_fam.radii_idx >= shape_fam.radii_list.len() || !use_list {
                 // If out of radii from list, insert random radius
                 let distr = match others {
                     RadiusFunction::LogNormal { mu, sigma } => {
-                        let min_val = f64::max(h, radius_distribution.min);
+                        let min_val = f64::max(h, radius_distr.min);
                         let distr =
-                            TruncLogNormal::new(min_val, radius_distribution.max, *mu, *sigma)
-                                .unwrap();
+                            TruncLogNormal::new(min_val, radius_distr.max, *mu, *sigma).unwrap();
                         generator.clone().borrow_mut().sample(distr)
                     }
                     RadiusFunction::TruncatedPowerLaw { alpha } => {
-                        let distr = TruncPowerLaw::new(
-                            radius_distribution.min,
-                            radius_distribution.max,
-                            *alpha,
-                        );
+                        let distr = TruncPowerLaw::new(radius_distr.min, radius_distr.max, *alpha);
                         Ok(generator.clone().borrow_mut().sample(distr))
                     }
                     RadiusFunction::Exponential { lambda } => {
-                        let min_val = f64::max(h, radius_distribution.min);
-                        let distr =
-                            TruncExp::new(min_val, radius_distribution.max, *lambda).unwrap();
+                        let min_val = f64::max(h, radius_distr.min);
+                        let distr = TruncExp::new(min_val, radius_distr.max, *lambda).unwrap();
 
                         generator.clone().borrow_mut().sample(distr)
                     }
@@ -424,18 +418,18 @@ pub fn re_translate_poly(
             }
             ShapeFamily::Rectangle => {
                 // Rebuild poly at origin using previous size
-                new_poly.vertices[0] = new_poly.xradius;
-                new_poly.vertices[1] = new_poly.yradius;
-                new_poly.vertices[2] = 0.;
-                new_poly.vertices[3] = -new_poly.xradius;
-                new_poly.vertices[4] = new_poly.yradius;
-                new_poly.vertices[5] = 0.;
-                new_poly.vertices[6] = -new_poly.xradius;
-                new_poly.vertices[7] = -new_poly.yradius;
-                new_poly.vertices[8] = 0.;
-                new_poly.vertices[9] = new_poly.xradius;
-                new_poly.vertices[10] = -new_poly.yradius;
-                new_poly.vertices[11] = 0.;
+                new_poly.vertices.push(new_poly.xradius);
+                new_poly.vertices.push(new_poly.yradius);
+                new_poly.vertices.push(0.);
+                new_poly.vertices.push(-new_poly.xradius);
+                new_poly.vertices.push(new_poly.yradius);
+                new_poly.vertices.push(0.);
+                new_poly.vertices.push(-new_poly.xradius);
+                new_poly.vertices.push(-new_poly.yradius);
+                new_poly.vertices.push(0.);
+                new_poly.vertices.push(new_poly.xradius);
+                new_poly.vertices.push(-new_poly.yradius);
+                new_poly.vertices.push(0.);
             }
         }
 

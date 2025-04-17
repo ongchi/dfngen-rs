@@ -6,6 +6,7 @@ use parry3d_f64::na::{Point3, Vector3};
 use rand::Rng;
 use rand_mt::Mt64;
 
+use crate::distribution::generating_points::generate_theta;
 use crate::distribution::Fisher;
 
 #[derive(Clone, Default)]
@@ -429,11 +430,10 @@ impl Display for RadiusDistribution {
 /// Shape is used to hold varibales for all types of stochastic shapes. During getInput(),
 /// all stochastic families for both recaangles and ellipses are parsed from the user input
 /// and are placed in a Shape structure array.
-#[derive(Default)]
 pub struct Shape {
     pub shape_family: ShapeFamily,
 
-    pub radius_distribution: Option<RadiusDistribution>,
+    pub radius: RadiusDistribution,
 
     /// Array of thetas to build poly from, initialized while reading input and building shape structures
     pub theta_list: Vec<f64>,
@@ -470,13 +470,110 @@ pub struct Shape {
     /// or degrees depending on 'angleOption'.
     pub beta: f64,
 
-    pub orientation: Option<Fisher>,
+    pub orientation: Fisher,
 }
 
 impl Shape {
     pub fn normal_vector(&self, rng: Rc<RefCell<Mt64>>) -> Vector3<f64> {
-        let fisher = self.orientation.as_ref().unwrap();
-        rng.borrow_mut().sample(fisher)
+        rng.borrow_mut().sample(&self.orientation)
+    }
+}
+
+#[derive(Default)]
+pub struct ShapeBuilder {
+    number_of_nodes: Option<u8>,
+    radius: Option<RadiusDistribution>,
+    orientation: Option<Fisher>,
+    aspect_ratio: Option<f64>,
+    beta: Option<f64>,
+    p32_target: Option<f64>,
+    layer: Option<usize>,
+    region: Option<usize>,
+}
+
+impl ShapeBuilder {
+    pub fn new() -> Self {
+        Self {
+            ..Default::default()
+        }
+    }
+
+    pub fn number_of_nodes(&mut self, number_of_nodes: u8) -> &mut Self {
+        self.number_of_nodes = Some(number_of_nodes);
+        self
+    }
+
+    pub fn radius(&mut self, radius: RadiusDistribution) -> &mut Self {
+        self.radius = Some(radius);
+        self
+    }
+
+    pub fn aspect_ratio(&mut self, aspect_ratio: f64) -> &mut Self {
+        self.aspect_ratio = Some(aspect_ratio);
+        self
+    }
+
+    pub fn orientation(&mut self, orientation: Fisher) -> &mut Self {
+        self.orientation = Some(orientation);
+        self
+    }
+
+    pub fn beta(&mut self, beta: f64) -> &mut Self {
+        self.beta = Some(beta);
+        self
+    }
+
+    pub fn p32_target(&mut self, p32_target: f64) -> &mut Self {
+        self.p32_target = Some(p32_target);
+        self
+    }
+
+    pub fn layer(&mut self, layer: usize) -> &mut Self {
+        self.layer = Some(layer);
+        self
+    }
+
+    pub fn region(&mut self, region: usize) -> &mut Self {
+        self.region = Some(region);
+        self
+    }
+
+    pub fn build(&mut self) -> Result<Shape, String> {
+        let shape_family = self
+            .number_of_nodes
+            .map(ShapeFamily::Ellipse)
+            .unwrap_or(ShapeFamily::Rectangle);
+        let aspect_ratio = self
+            .aspect_ratio
+            .ok_or("aspect ration is required".to_string())?;
+        let theta_list = generate_theta(
+            aspect_ratio,
+            match shape_family {
+                ShapeFamily::Ellipse(n) => n as usize,
+                ShapeFamily::Rectangle => 4,
+            },
+        );
+
+        Ok(Shape {
+            shape_family,
+            radius: self.radius.take().ok_or("radius is required".to_string())?,
+            theta_list,
+            radii_idx: 0,
+            radii_list: Vec::new(),
+            layer: self.layer.ok_or("layer is required".to_string())?,
+            region: self.region.ok_or("region is required".to_string())?,
+            aspect_ratio: self
+                .aspect_ratio
+                .ok_or("aspect ratio is required".to_string())?,
+            p32_target: self.p32_target.unwrap_or(0.),
+            current_p32: 0.,
+            beta_distribution: self.beta.is_some(),
+            beta: self.beta.unwrap_or(0.),
+            orientation: self
+                .orientation
+                .take()
+                .ok_or("orientation is required".to_string())?,
+        })
     }
 }
 

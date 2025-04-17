@@ -1200,7 +1200,7 @@ fn write_shape_fams(
             .unwrap();
         }
 
-        file.write_all(shape.orientation.as_ref().unwrap().to_string().as_bytes())
+        file.write_all(shape.orientation.to_string().as_bytes())
             .unwrap();
 
         // Print layer family belongs to
@@ -1238,15 +1238,7 @@ fn write_shape_fams(
         }
 
         // Print distribution data
-        file.write_all(
-            shape
-                .radius_distribution
-                .as_ref()
-                .unwrap()
-                .to_string()
-                .as_bytes(),
-        )
-        .unwrap();
+        file.write_all(shape.radius.to_string().as_bytes()).unwrap();
 
         file.write_all(
             format!("Family Insertion Probability: {}\n\n", fam_prob_original[i]).as_bytes(),
