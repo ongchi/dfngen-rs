@@ -1,6 +1,5 @@
 use std::fs::File;
 
-use itertools::zip_eq;
 use parry3d_f64::na::{Point3, Vector3};
 use tracing::{info, warn};
 
@@ -9,10 +8,7 @@ use super::read_input_functions::{
     UserFractureReader,
 };
 
-use crate::{
-    io::read_input_functions::InputReader,
-    structures::{Shape, ShapeBuilder},
-};
+use crate::{io::read_input_functions::InputReader, structures::Shape};
 
 #[allow(non_snake_case)]
 #[derive(Default, Debug)]
@@ -101,22 +97,6 @@ pub struct Input {
     ///        fracture removal.
     pub outputAcceptedRadiiPerFamily: bool,
 
-    // Only output select files for ECPM upscaling
-    //     0: Output all files
-    //     1: Only output files required for ECPM upscaling.
-    //     polygon.dat, radii_final.dat
-    // ecpmOutput: bool,
-    // ecpmOutput:bool = false,
-    /// Beta is the rotation around the polygon's normal vector
-    ///     0 - Uniform distribution [0, 2PI)
-    ///     1 - Constant angle (specefied below by 'ebeta')
-    ebetaDistribution: Vec<bool>,
-
-    /// Beta is the rotation around the polygon's normal vector
-    ///     0: Uniform distribution [0, 2PI)
-    ///     1: Constant angle (specefied below by 'rbeta')
-    rbetaDistribution: Vec<bool>,
-
     /// False - User ellipses will be inserted first
     /// True  - User rectangles will be inserted first
     pub insertUserRectanglesFirst: bool,
@@ -167,27 +147,6 @@ pub struct Input {
     /// hit their P32 requirement when using the P32 stopCondition option.
     pub famProbOriginal: Vec<f64>,
 
-    /// Aspect ratio array for stochastic ellipses.
-    easpect: Vec<f64>,
-
-    /// Number of vertices used in creating each elliptical
-    /// fracture family. Number of elements must match number
-    /// of ellipse families
-    ///
-    /// Holds number of elements equal to the number of ellipse families.
-    enumPoints: Vec<usize>,
-
-    /// Rotation around the fractures' normal vector.
-    /// Ellipse family parameter.
-    ebeta: Vec<f64>,
-
-    /// Elliptical families target fracture intensities per family
-    /// when using stopCondition = 1, P32 option.
-    e_p32Targets: Vec<f64>,
-
-    /// Aspect ratio for stochasic rectangles.
-    raspect: Vec<f64>,
-
     ///    0 - Ignore this option, keep all fractures.
     ///
     /// (>0) - Size of minimum fracture radius. Fractures smaller than
@@ -196,13 +155,6 @@ pub struct Input {
     ///        Minimum and maximum size options under fracture family
     ///        distributions will still be used while generating the DFN.
     pub removeFracturesLessThan: f64,
-
-    /// Rotation around the normal vector.
-    rbeta: Vec<f64>,
-
-    /// Rectangular families target fracture intensities per family
-    /// when using stopCondition = 1, P32 option.
-    r_p32Targets: Vec<f64>,
 
     /// True  - The user is using user defined ellipses.
     /// False - No user defined ellipses are being used.
@@ -271,18 +223,6 @@ pub struct Input {
     /// which layers were listed.
     pub layerVol: Vec<f64>,
 
-    /// Defines which domain, or layer, the family belongs to.
-    /// Layer 0 is the entire domain ('domainSize').
-    /// Layers numbered > 0 correspond to layers defined above (see 'Layers:').
-    /// 1 correspond to the first layer listed, 2 is the next layer listed, etc
-    rLayer: Vec<usize>,
-
-    /// Defines which domain, or layer, the family belongs to.
-    /// Layer 0 is the entire domain ('domainSize').
-    /// Layers numbered > 0 correspond to layers defined above (see 'Layers:').
-    /// 1 correspond to the first layer listed, 2 is the next layer listed, etc
-    eLayer: Vec<usize>,
-
     // Regions in the DFN
     /// Number of regions defined.
     numOfRegions: usize,
@@ -294,18 +234,6 @@ pub struct Input {
     /// Array of volumes for each defined layer, in the same order
     /// which regions were listed.
     pub regionVol: Vec<f64>,
-
-    /// Defines which domain, or regions, the family belongs to.
-    /// Regions 0 is the entire domain ('domainSize').
-    /// regions numbered > 0 correspond to regions defined above (see 'regions:').
-    /// 1 correspond to the first layer listed, 2 is the next layer listed, etc
-    rRegion: Vec<usize>,
-
-    /// Defines which domain, or regions, the family belongs to.
-    /// Layer 0 is the entire domain ('domainSize').
-    /// regions numbered > 0 correspond to regions defined above (see 'regions:').
-    /// 1 correspond to the first layer listed, 2 is the next layer listed, etc
-    eRegion: Vec<usize>,
 
     /// flag if the domain is pruned down to a final domain size
     /// bool polygonBoundaryFlag = false;
@@ -345,7 +273,6 @@ pub struct Input {
 pub fn read_input(input_file: &str) -> (Input, Vec<Shape>) {
     let mut input_var = Input::default();
     let mut shape_family = Vec::new();
-    let mut angle_option = false;
 
     info!("DFN Generator Input File: {}\n", input_file);
     let mut input_reader = InputReader::new(input_file);
@@ -481,84 +408,6 @@ pub fn read_input(input_file: &str) -> (Input, Vec<Shape>) {
         input_var!(radiiListIncrease);
     }
 
-    if input_var.nFamEll > 0 {
-        input_var!(ebetaDistribution);
-        input_var!(eLayer);
-        input_var!(eRegion);
-        input_var!(easpect);
-        input_var!(enumPoints);
-        input_var!(ebeta);
-
-        input_reader.read_value("angleOption:", &mut angle_option);
-
-        // Convert from degrees to radians
-        if angle_option {
-            let _ = input_var
-                .ebeta
-                .iter_mut()
-                .map(|v| *v *= std::f64::consts::PI / 180.);
-        }
-
-        if input_var.stopCondition == 1 {
-            // Get temp array for ellipse p32 targets
-            // Used to simplify initialization of shape family structures below
-            input_var!(e_p32Targets);
-        }
-    }
-
-    // Counters, used to place variable into correct array index
-    let mut beta_count = 0;
-
-    let orien_distr = input_reader.read_orien_distr("e");
-    let radius_distr = input_reader.read_radius_distr("e");
-
-    // Create shape structures from data gathered above
-    for ((i, orien), radius) in zip_eq(zip_eq(0..input_var.nFamEll, orien_distr), radius_distr) {
-        let mut shape_builder = ShapeBuilder::new();
-
-        shape_builder
-            .number_of_nodes(input_var.enumPoints[i] as u8)
-            .radius(radius)
-            .aspect_ratio(input_var.easpect[i])
-            .orientation(orien);
-
-        if input_var.ebetaDistribution[i] {
-            shape_builder.beta(input_var.ebeta[beta_count]);
-            beta_count += 1;
-        }
-
-        if input_var.stopCondition == 1 {
-            shape_builder.p32_target(input_var.e_p32Targets[i]);
-        }
-
-        shape_builder
-            .layer(input_var.eLayer[i])
-            .region(input_var.eRegion[i]);
-
-        shape_family.push(shape_builder.build().unwrap());
-    }
-
-    if input_var.nFamRect > 0 {
-        input_var!(rbetaDistribution);
-        input_var!(rLayer);
-        input_var!(rRegion);
-        input_var!(raspect);
-        input_var!(rbeta);
-
-        if angle_option {
-            let _ = input_var
-                .rbeta
-                .iter_mut()
-                .map(|v| *v *= std::f64::consts::PI / 180.);
-        }
-
-        if input_var.stopCondition == 1 {
-            // Get temp array for rectangle p32 targets,
-            // Used to simplify initialization of shape family structures below
-            input_var!(r_p32Targets);
-        }
-    }
-
     // Set stop condition variables
     if input_var.nFamRect > 0 || input_var.nFamEll > 0 {
         if input_var.stopCondition == 0 {
@@ -571,36 +420,8 @@ pub fn read_input(input_file: &str) -> (Input, Vec<Shape>) {
         }
     }
 
-    // Counters, used to place variable into correct array index
-    beta_count = 0;
-
-    let orien_distr = input_reader.read_orien_distr("r");
-    let radius_distr = input_reader.read_radius_distr("r");
-
-    // Create shape strucutres from data gathered above
-    for ((i, orien), radius) in zip_eq(zip_eq(0..input_var.nFamRect, orien_distr), radius_distr) {
-        let mut shape_builder = ShapeBuilder::new();
-
-        shape_builder
-            .radius(radius)
-            .aspect_ratio(input_var.raspect[i])
-            .orientation(orien);
-
-        if input_var.rbetaDistribution[i] {
-            shape_builder.beta(input_var.rbeta[beta_count]);
-            beta_count += 1;
-        }
-
-        if input_var.stopCondition == 1 {
-            shape_builder.p32_target(input_var.r_p32Targets[i]);
-        }
-
-        shape_builder
-            .layer(input_var.rLayer[i])
-            .region(input_var.rRegion[i]);
-
-        shape_family.push(shape_builder.build().unwrap());
-    }
+    shape_family.extend(input_reader.read_fracture_family("e"));
+    shape_family.extend(input_reader.read_fracture_family("r"));
 
     input_var!(userEllipsesOnOff);
 

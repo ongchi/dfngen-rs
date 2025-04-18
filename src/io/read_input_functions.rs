@@ -10,7 +10,7 @@ use tracing::{debug, info};
 
 use crate::distribution::Fisher;
 use crate::io::input::Input;
-use crate::structures::RadiusDistribution;
+use crate::structures::{RadiusDistribution, Shape, ShapeBuilder};
 
 /// Searches for variable in files, moves file pointer to position
 /// after word. Used to read in varlable values
@@ -437,6 +437,102 @@ impl InputReader {
                 }
             })
             .collect()
+    }
+
+    pub fn read_fracture_family(&mut self, prefix: &str) -> Vec<Shape> {
+        macro_rules! read_var {
+            ($label:expr,$var_name:ident) => {
+                self.read_value(&format!("{}{}:", prefix, $label), &mut $var_name);
+            };
+        }
+
+        let mut shape_family = Vec::new();
+
+        let mut n_fam: usize = 0;
+        match prefix {
+            "e" => {
+                self.read_value("nFamEll:", &mut n_fam);
+                debug!("Number of ellipse families: {}", n_fam);
+            }
+            "r" => {
+                self.read_value("nFamRect:", &mut n_fam);
+                debug!("Number of rectangle families: {}", n_fam);
+            }
+            _ => panic!("Unknown family type"),
+        };
+
+        if n_fam > 0 {
+            let mut angle_option = false;
+            self.read_value("angleOption:", &mut angle_option);
+            let mut stop_condition: bool = false;
+            self.read_value("stopCondition:", &mut stop_condition);
+
+            let mut beta_distribution: Vec<bool> = Vec::new();
+            let mut layer: Vec<usize> = Vec::new();
+            let mut region: Vec<usize> = Vec::new();
+            let mut aspect_ratio: Vec<f64> = Vec::new();
+            let mut num_points: Vec<usize> = Vec::new();
+            let mut beta: Vec<f64> = Vec::new();
+            let mut p32_target: Vec<f64> = Vec::new();
+
+            read_var!("betaDistribution", beta_distribution);
+            read_var!("betaDistribution", beta_distribution);
+            read_var!("Layer", layer);
+            read_var!("Region", region);
+            read_var!("aspect", aspect_ratio);
+
+            if prefix == "e" {
+                read_var!("numPoints", num_points);
+            }
+
+            read_var!("beta", beta);
+
+            // Convert from degrees to radians
+            if angle_option {
+                let _ = beta.iter_mut().map(|v| *v *= std::f64::consts::PI / 180.);
+            }
+
+            if stop_condition {
+                // Get temp array for ellipse p32 targets
+                // Used to simplify initialization of shape family structures below
+                read_var!("_p32Targets", p32_target);
+            }
+
+            // Counters, used to place variable into correct array index
+            let mut beta_count = 0;
+
+            let orien_distr = self.read_orien_distr(prefix);
+            let radius_distr = self.read_radius_distr(prefix);
+
+            // Create shape structures from data gathered above
+            for ((i, orien), radius) in zip_eq(zip_eq(0..n_fam, orien_distr), radius_distr) {
+                let mut shape_builder = ShapeBuilder::new();
+
+                if prefix == "e" {
+                    shape_builder.number_of_nodes(num_points[i] as u8);
+                }
+
+                shape_builder
+                    .radius(radius)
+                    .aspect_ratio(aspect_ratio[i])
+                    .orientation(orien);
+
+                if beta_distribution[i] {
+                    shape_builder.beta(beta[beta_count]);
+                    beta_count += 1;
+                }
+
+                if stop_condition {
+                    shape_builder.p32_target(p32_target[i]);
+                }
+
+                shape_builder.layer(layer[i]).region(region[i]);
+
+                shape_family.push(shape_builder.build().unwrap());
+            }
+        }
+
+        shape_family
     }
 }
 
