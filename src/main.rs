@@ -15,6 +15,7 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 use crate::{
     computational_geometry::polygon_boundary::polygon_boundary,
     computational_geometry::{create_bounding_box, intersection_checking},
+    error::DfngenError,
     fracture::cluster_groups::get_cluster,
     fracture::domain::domain_truncation,
     fracture::fracture_estimating::{
@@ -39,6 +40,7 @@ use crate::{
 
 mod computational_geometry;
 mod distribution;
+mod error;
 mod fracture;
 mod io;
 mod math_functions;
@@ -54,7 +56,7 @@ struct Cli {
     output_folder: String,
 }
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
+fn main() -> Result<(), DfngenError> {
     // Setup tracing
     tracing_subscriber::registry()
         .with(tracing_subscriber::EnvFilter::from_default_env())

@@ -194,6 +194,7 @@ dependencies = [
  "rand_distr",
  "rand_mt",
  "text_io",
+ "thiserror",
  "tracing",
  "tracing-subscriber",
 ]
