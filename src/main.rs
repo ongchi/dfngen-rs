@@ -10,6 +10,7 @@ use rand::distr::Uniform;
 use rand::Rng;
 use rand_mt::Mt64;
 use structures::RadiusFunction;
+use tracing::{error, info};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 use crate::{
@@ -57,15 +58,27 @@ struct Cli {
 }
 
 fn main() -> Result<(), DfngenError> {
+    let cli = Cli::parse();
+
+    std::fs::create_dir_all(&cli.output_folder)?;
+    let output_file = File::create(format!("{}/DFN_output.txt", cli.output_folder))?;
+
     // Setup tracing
     tracing_subscriber::registry()
         .with(tracing_subscriber::EnvFilter::from_default_env())
-        .with(tracing_subscriber::fmt::layer())
+        .with(
+            tracing_subscriber::fmt::layer()
+                .compact()
+                .with_writer(std::io::stdout),
+        )
+        .with(
+            tracing_subscriber::fmt::layer()
+                .json()
+                .with_writer(output_file),
+        )
         .init();
 
-    let cli = Cli::parse();
-
-    println!("Starting DFNGen");
+    info!("Starting DFNGen");
 
     /************* Initialize Arrays/Vectors and Structures **************/
     // Vector to store accepted polygons/fractures
@@ -79,7 +92,7 @@ fn main() -> Result<(), DfngenError> {
 
     // Read input variables. Most input variables are global
     let (mut input, mut shape_families) = read_input(&cli.input_file);
-    println!("h: {}", input.h);
+    info!("h: {}", input.h);
     let total_families = input.nFamEll + input.nFamRect;
 
     let generator = Rc::new(RefCell::new(Mt64::new(match input.seed {
@@ -107,7 +120,7 @@ fn main() -> Result<(), DfngenError> {
             // P32 Option
             // ESTIMATE # FRACTURES NEEDED
             if !input.disableFram {
-                println!("Estimating number of fractures needed...");
+                info!("Estimating number of fractures needed...");
                 dry_run(&mut input, &mut shape_families, generator.clone());
             }
         }
@@ -128,14 +141,14 @@ fn main() -> Result<(), DfngenError> {
             for (j, shape) in shape_families.iter().enumerate() {
                 match shape.radius.function {
                     RadiusFunction::Constant(_) => {
-                        println!(
+                        info!(
                             "{} family {} using constant size",
                             shape.shape_family,
                             get_family_number(input.nFamEll, j as isize, shape.shape_family)
                         );
                     }
                     _ => {
-                        println!(
+                        info!(
                             "Estimated {} fractures for {} family {}",
                             shape.radii_list.len(),
                             shape.shape_family,
@@ -522,7 +535,7 @@ fn main() -> Result<(), DfngenError> {
                             >= shape_families[family_index].p32_target
                         {
                             input.p32Status[family_index] = true; // Mark family as having its p32 requirement met
-                            println!("P32 For Family {} Completed", family_index + 1);
+                            info!("P32 For Family {} Completed", family_index + 1);
 
                             // Adjust CDF, PDF. Reduce their size by 1.
                             // Remove the completed family's element in 'CDF[]' and 'famProb[]'
@@ -544,14 +557,14 @@ fn main() -> Result<(), DfngenError> {
 
                     // Output to user: print running program status to user
                     if pstats.accepted_poly_count % 200 == 0 {
-                        println!("Accepted {} fracturesn", pstats.accepted_poly_count);
-                        println!("Rejected {} fracturesn", pstats.rejected_poly_count);
-                        println!("Re-translated {} fractures", pstats.retranslated_poly_count);
-                        println!("Current p32 values per family:n");
+                        info!("Accepted {} fracturesn", pstats.accepted_poly_count);
+                        info!("Rejected {} fracturesn", pstats.rejected_poly_count);
+                        info!("Re-translated {} fractures", pstats.retranslated_poly_count);
+                        info!("Current p32 values per family:");
 
                         for (i, shape) in shape_families.iter().enumerate().take(total_families) {
                             if input.stopCondition == 0 {
-                                println!(
+                                info!(
                                     "{} family {} Current P32 = {:.8}",
                                     shape.shape_family,
                                     get_family_number(
@@ -562,7 +575,7 @@ fn main() -> Result<(), DfngenError> {
                                     shape.current_p32
                                 );
                             } else {
-                                println!(
+                                info!(
                                     "{} family {} target P32 = {:.8}, Current P32 = {}",
                                     shape.shape_family,
                                     get_family_number(
@@ -576,9 +589,7 @@ fn main() -> Result<(), DfngenError> {
                             }
 
                             if input.stopCondition == 1 && shape.p32_target <= shape.current_p32 {
-                                println!("...Done");
-                            } else {
-                                println!();
+                                info!("...Done");
                             }
                         }
                     }
@@ -606,7 +617,7 @@ fn main() -> Result<(), DfngenError> {
                     } else {
                         // Translate poly to new position
                         if input.printRejectReasons {
-                            println!("Translating rejected fracture to new position");
+                            info!("Translating rejected fracture to new position");
                         }
 
                         pstats.retranslated_poly_count += 1;
@@ -648,33 +659,21 @@ fn main() -> Result<(), DfngenError> {
     //     assignPermeability(acceptedPoly[i]);
     // }
     // Copy end of DFN generation stats to file, as well as print to screen
-    let _ = std::fs::create_dir_all(&cli.output_folder);
-    let file_name = format!("{}/DFN_output.txt", cli.output_folder);
-    let mut file = File::create(file_name)?;
-    let now = SystemTime::now();
-    log_msg(
-        &mut file,
-        "\n========================================================\n",
-    );
-    log_msg(&mut file, "            Network Generation Complete\n");
-    log_msg(
-        &mut file,
-        "========================================================\n",
-    );
-    log_msg(&mut file, "Version of DFNGen: 2.2\n");
-    log_msg(&mut file, &format!("Time Stamp: {:?}\n", &now));
+    info!("Network Generation Complete");
+    info!("Version of DFNGen: 2.2");
+    info!("Time Stamp: {:?}", SystemTime::now());
 
     if input.stopCondition == 1 {
-        println!("Final p32 values per family:");
+        info!("Final p32 values per family:");
 
         for (i, shape) in shape_families.iter().enumerate().take(total_families) {
-            println!(
+            info!(
                 "Family {} target P32 = {}, Final P32 = {}",
                 i + 1,
                 shape.p32_target,
                 shape.current_p32
             );
-            println!(
+            info!(
                 "Family {} target P32 = {}, Final P32 = {}",
                 i + 1,
                 shape.p32_target,
@@ -683,11 +682,6 @@ fn main() -> Result<(), DfngenError> {
         }
     }
 
-    println!("________________________________________________________");
-    log_msg(
-        &mut file,
-        "\n________________________________________________________\n",
-    );
     // Calculate total area, volume
     let mut user_defined_shapes_area = 0.;
     let mut family_area = Vec::new();
@@ -696,12 +690,9 @@ fn main() -> Result<(), DfngenError> {
         family_area = vec![0.; total_families]; // Holds fracture area per family
     }
 
-    log_msg(
-        &mut file,
-        "\nStatistics Before Isolated Fractures Removed:\n\n",
-    );
-    log_msg(&mut file, &format!("Fractures: {}\n", accepted_poly.len()));
-    log_msg(&mut file, &format!("Truncated: {}\n\n", pstats.truncated));
+    info!("Statistics Before Isolated Fractures Removed:",);
+    info!("Fractures: {}", accepted_poly.len());
+    info!("Truncated: {}", pstats.truncated);
 
     // Calculate total fracture area, and area per family
     for i in 0..accepted_poly.len() {
@@ -716,110 +707,65 @@ fn main() -> Result<(), DfngenError> {
         }
     }
 
-    log_msg(
-        &mut file,
-        &format!(
-            "Total Surface Area:     {} m^2\n",
-            pstats.area_before_removal * 2.
-        ),
+    info!(
+        "Total Surface Area: {} m^2",
+        pstats.area_before_removal * 2.
     );
-    log_msg(
-        &mut file,
-        &format!(
-            "Total Fracture Density   (P30): {}\n",
-            accepted_poly.len() as f64 / dom_vol
-        ),
+    info!(
+        "Total Fracture Density (P30): {}",
+        accepted_poly.len() as f64 / dom_vol
     );
-    log_msg(
-        &mut file,
-        &format!(
-            "Total Fracture Intensity (P32): {}\n",
-            (pstats.area_before_removal * 2.) / dom_vol
-        ),
+    info!(
+        "Total Fracture Intensity (P32): {}",
+        (pstats.area_before_removal * 2.) / dom_vol
     );
 
     // Print family stats to user
     for i in 0..total_families {
-        log_msg(&mut file, &format!("Family: {}\n", i + 1));
-        log_msg(
-            &mut file,
-            &format!("    Accepted: {}\n", pstats.accepted_from_fam[i]),
-        );
-        log_msg(
-            &mut file,
-            &format!("    Rejected: {}\n", pstats.rejected_from_fam[i]),
-        );
+        info!("Family: {}", i + 1);
+        info!("Accepted: {}", pstats.accepted_from_fam[i],);
+        info!("Rejected: {}", pstats.rejected_from_fam[i]);
 
         if shape_families[i].layer > 0 {
             let idx = (shape_families[i].layer - 1) * 2;
-            log_msg(
-                &mut file,
-                &format!("    Layer: {}\n", shape_families[i].layer),
-            );
-            log_msg(
-                &mut file,
-                &format!(
-                    "    Layer {{-z, +z}}: {{{}, {}}}\n",
-                    input.layers[idx],
-                    input.layers[idx + 1]
-                ),
+            info!("Layer: {}", shape_families[i].layer,);
+            info!(
+                "Layer {{-z, +z}}: {{{}, {}}}",
+                input.layers[idx],
+                input.layers[idx + 1]
             );
         } else {
-            log_msg(&mut file, "    Layer: Whole Domain \n");
+            info!("Layer: Whole Domain");
         }
 
         if shape_families[i].region > 0 {
             let idx = (shape_families[i].region - 1) * 6;
-            log_msg(
-                &mut file,
-                &format!("    Region: {}\n", shape_families[i].region),
-            );
-            log_msg(
-                &mut file,
-                &format!(
-                    "    {{-x,+x,-y,+y,-z,+z}}: {:?}",
-                    &input.regions[idx..idx + 6]
-                ),
-            );
+            info!("Region: {}", shape_families[i].region);
+            info!("{{-x,+x,-y,+y,-z,+z}}: {:?}", &input.regions[idx..idx + 6]);
         } else {
-            log_msg(&mut file, "    Region: Whole Domain");
+            info!("Region: Whole Domain");
         }
 
-        log_msg(
-            &mut file,
-            &format!("    Surface Area: {} m^2\n", family_area[i] * 2.),
-        );
-        log_msg(
-            &mut file,
-            &format!(
-                "    Fracture Intensity (P32): {}\n\n",
-                shape_families[i].current_p32
-            ),
+        info!("Surface Area: {} m^2", family_area[i] * 2.,);
+        info!(
+            "Fracture Intensity (P32): {}",
+            shape_families[i].current_p32
         );
     }
 
     if user_defined_shapes_area > 0. {
-        log_msg(&mut file, "User Defined:\n");
-        log_msg(
-            &mut file,
-            &format!("    Surface Area: {} m^2\n", user_defined_shapes_area * 2.),
-        );
-        log_msg(
-            &mut file,
-            &format!(
-                "    Fracture Intensity (P32): {}\n\n",
-                user_defined_shapes_area * 2. / dom_vol
-            ),
+        info!("User Defined:");
+        info!("Surface Area: {} m^2", user_defined_shapes_area * 2.,);
+        info!(
+            "Fracture Intensity (P32): {}",
+            user_defined_shapes_area * 2. / dom_vol
         );
     }
 
     if input.removeFracturesLessThan > 0. {
-        log_msg(
-            &mut file,
-            &format!(
-                "\nRemoving fractures with radius less than {} and rebuilding DFN\n",
-                input.removeFracturesLessThan
-            ),
+        info!(
+            "Removing fractures with radius less than {} and rebuilding DFN",
+            input.removeFracturesLessThan
         );
         let size = accepted_poly.len();
         remove_fractures(
@@ -834,21 +780,15 @@ fn main() -> Result<(), DfngenError> {
             &mut triple_points,
             &mut pstats,
         );
-        log_msg(
-            &mut file,
-            &format!(
-                "Removed {} fractures with radius less than {}\n\n",
-                size - accepted_poly.len(),
-                input.removeFracturesLessThan
-            ),
+        info!(
+            "Removed {} fractures with radius less than {}",
+            size - accepted_poly.len(),
+            input.removeFracturesLessThan
         );
     }
 
     if input.polygonBoundaryFlag {
-        log_msg(
-            &mut file,
-            "\nExtracting fractures from a polygon boundary domain",
-        );
+        info!("Extracting fractures from a polygon boundary domain");
         let size = accepted_poly.len();
         polygon_boundary(
             input.h,
@@ -863,12 +803,9 @@ fn main() -> Result<(), DfngenError> {
             &mut triple_points,
             &mut pstats,
         );
-        log_msg(
-            &mut file,
-            &format!(
-                "Removed {} fractures outside subdomain \n\n",
-                size - accepted_poly.len()
-            ),
+        info!(
+            "Removed {} fractures outside subdomain",
+            size - accepted_poly.len()
         );
     }
 
@@ -906,37 +843,21 @@ fn main() -> Result<(), DfngenError> {
     }
 
     if final_fractures.is_empty() {
-        log_msg(&mut file, "\nError: DFN Generation has finished, however there are no intersecting fractures. Please adjust input parameters.\n");
-        log_msg(
-            &mut file,
-            "Try increasing the fracture density, or shrinking the domain.\n",
-        );
+        error!("DFN Generation has finished, however there are no intersecting fractures. Please adjust input parameters.");
+        error!("Try increasing the fracture density, or shrinking the domain.",);
         std::process::exit(0)
     }
 
     // ************************* Print Statistics to User ***********************************
-    log_msg(
-        &mut file,
-        "\n________________________________________________________\n\n",
+    info!("Statistics After Isolated Fractures Removed:");
+    info!("Final Number of Fractures: {}", final_fractures.len());
+    info!(
+        "Isolated Fractures Removed: {}",
+        accepted_poly.len() - final_fractures.len()
     );
-    log_msg(&mut file, "Statistics After Isolated Fractures Removed:\n");
-    log_msg(
-        &mut file,
-        &format!("Final Number of Fractures: {}\n", final_fractures.len()),
-    );
-    log_msg(
-        &mut file,
-        &format!(
-            "Isolated Fractures Removed: {}\n",
-            accepted_poly.len() - final_fractures.len()
-        ),
-    );
-    log_msg(
-        &mut file,
-        &format!(
-            "Fractures before isolated fractures removed:: {}\n\n",
-            accepted_poly.len()
-        ),
+    info!(
+        "Fractures before isolated fractures removed:: {}",
+        accepted_poly.len()
     );
     // Reset totalArea to 0
     user_defined_shapes_area = 0.;
@@ -982,316 +903,170 @@ fn main() -> Result<(), DfngenError> {
         }
     }
 
-    log_msg(
-        &mut file,
-        &format!(
-            "Total Surface Area:     {} m^2\n",
-            pstats.area_after_removal * 2.
-        ),
+    info!("Total Surface Area: {} m^2", pstats.area_after_removal * 2.);
+    info!(
+        "Total Fracture Density (P30): {}",
+        final_fractures.len() as f64 / dom_vol
     );
-    log_msg(
-        &mut file,
-        &format!(
-            "Total Fracture Density   (P30): {}\n",
-            final_fractures.len() as f64 / dom_vol
-        ),
-    );
-    log_msg(
-        &mut file,
-        &format!(
-            "Total Fracture Intensity (P32): {}\n",
-            (pstats.area_after_removal * 2.) / dom_vol
-        ),
+    info!(
+        "Total Fracture Intensity (P32): {}",
+        (pstats.area_after_removal * 2.) / dom_vol
     );
 
     // Print family stats to user
     for i in 0..total_families {
-        log_msg(&mut file, &format!("Family: {}\n", i + 1));
-        log_msg(
-            &mut file,
-            &format!(
-                "    Fractures After Isolated Fracture Removal: {}\n",
-                accepted_from_fam_counters[i]
-            ),
+        info!("Family: {}", i + 1);
+        info!(
+            "Fractures After Isolated Fracture Removal: {}",
+            accepted_from_fam_counters[i]
         );
-        log_msg(
-            &mut file,
-            &format!(
-                "    Isolated Fractures Removed: {}\n",
-                pstats.accepted_from_fam[i] - accepted_from_fam_counters[i]
-            ),
+        info!(
+            "Isolated Fractures Removed: {}",
+            pstats.accepted_from_fam[i] - accepted_from_fam_counters[i]
         );
-        log_msg(
-            &mut file,
-            &format!("    Accepted: {}\n", pstats.accepted_from_fam[i]),
-        );
-        log_msg(
-            &mut file,
-            &format!("    Rejected: {}\n", pstats.rejected_from_fam[i]),
-        );
+        info!("Accepted: {}", pstats.accepted_from_fam[i]);
+        info!("Rejected: {}", pstats.rejected_from_fam[i]);
 
         if shape_families[i].layer > 0 {
             let idx = (shape_families[i].layer - 1) * 2;
-            log_msg(
-                &mut file,
-                &format!("    Layer: {}\n", shape_families[i].layer),
-            );
-            log_msg(
-                &mut file,
-                &format!(
-                    "    Layer {{-z, +z}}: {{{}, {}}}\n",
-                    input.layers[idx],
-                    input.layers[idx + 1]
-                ),
+            info!("Layer: {}", shape_families[i].layer);
+            info!(
+                "Layer {{-z, +z}}: {{{}, {}}}",
+                input.layers[idx],
+                input.layers[idx + 1]
             );
         } else {
-            log_msg(&mut file, "    Layer: Whole Domain\n");
+            info!("Layer: Whole Domain");
         }
 
         if shape_families[i].region > 0 {
             let idx = (shape_families[i].region - 1) * 6;
-            log_msg(
-                &mut file,
-                &format!("    Region: {}\n", shape_families[i].region),
-            );
-            log_msg(
-                &mut file,
-                &format!(
-                    "    {{-x,+x,-y,+y,-z,+z}}: {:?}\n",
-                    &input.regions[idx..idx + 6]
-                ),
-            );
+            info!("Region: {}", shape_families[i].region);
+            info!("{{-x,+x,-y,+y,-z,+z}}: {:?}", &input.regions[idx..idx + 6]);
         } else {
-            log_msg(&mut file, "    Region: Whole Domain\n");
+            info!("Region: Whole Domain");
         }
 
-        log_msg(
-            &mut file,
-            &format!("    Surface Area: {} m^2\n", family_area[i] * 2.),
-        );
-        log_msg(
-            &mut file,
-            &format!(
-                "    Fracture Intensity (P32): {}\n\n",
-                family_area[i] * 2. / dom_vol
-            ),
+        info!("Surface Area: {} m^2", family_area[i] * 2.);
+        info!(
+            "Fracture Intensity (P32): {}",
+            family_area[i] * 2. / dom_vol
         );
     }
 
     if user_defined_shapes_area > 0. {
-        log_msg(&mut file, "User Defined Shapes: \n");
-        log_msg(
-            &mut file,
-            &format!("    Surface Area: {} m^2\n", user_defined_shapes_area * 2.),
-        );
-        log_msg(
-            &mut file,
-            &format!(
-                "    Fracture Intensity (P32): {}\n\n",
-                user_defined_shapes_area * 2. / dom_vol
-            ),
+        info!("User Defined Shapes:");
+        info!("Surface Area: {} m^2", user_defined_shapes_area * 2.);
+        info!(
+            "Fracture Intensity (P32): {}",
+            user_defined_shapes_area * 2. / dom_vol
         );
     }
 
     accepted_from_fam_counters.clear();
 
-    log_msg(
-        &mut file,
-        "\n________________________________________________________\n\n",
+    info!(
+        "{} Fractures Accepted (Before Isolated Fracture Removal)",
+        accepted_poly.len()
     );
-    log_msg(
-        &mut file,
-        &format!(
-            "\n{} Fractures Accepted (Before Isolated Fracture Removal)\n",
-            accepted_poly.len()
-        ),
+    info!(
+        "{} Final Fractures (After Isolated Fracture Removal)",
+        final_fractures.len()
     );
-    log_msg(
-        &mut file,
-        &format!(
-            "{} Final Fractures (After Isolated Fracture Removal)\n\n",
-            final_fractures.len()
-        ),
-    );
-    log_msg(
-        &mut file,
-        &format!("Total Fractures Rejected: {}\n", pstats.rejected_poly_count),
-    );
-    log_msg(
-        &mut file,
-        &format!(
-            "Total Fractures Re-translated: {}\n",
-            pstats.retranslated_poly_count
-        ),
+    info!("Total Fractures Rejected: {}", pstats.rejected_poly_count);
+    info!(
+        "Total Fractures Re-translated: {}",
+        pstats.retranslated_poly_count
     );
 
     if print_connectivity_error {
-        log_msg(
-            &mut file,
-            "\nERROR: DFN generation has finished but the formed\n",
-        );
-        log_msg(
-            &mut file,
-            "fracture network does not make a connection between\n",
-        );
-        log_msg(&mut file, "the user's specified boundary faces.\n");
-        log_msg(
-            &mut file,
-            "Try increasing the fracture density, shrinking the domain\n",
-        );
-        log_msg(
-            &mut file,
-            "or consider using the 'ignoreBoundaryFaces' option.\n",
-        );
+        error!("DFN generation has finished but the formed",);
+        error!("fracture network does not make a connection between",);
+        error!("the user's specified boundary faces.");
+        error!("Try increasing the fracture density, shrinking the domain",);
+        error!("or consider using the 'ignoreBoundaryFaces' option.",);
         panic!();
     }
 
     //************ Intersection Stats ***************
-    log_msg(
-        &mut file,
-        &format!(
-            "\nNumber of Triple Intersection Points (Before Isolated Fracture Removal): {}\n",
-            triple_points.len()
-        ),
+    info!(
+        "Number of Triple Intersection Points (Before Isolated Fracture Removal): {}",
+        triple_points.len()
     );
     // Shrink intersection stats
-    log_msg(&mut file, "\nIntersection Statistics:\n");
-    log_msg(
-        &mut file,
-        &format!("    Number of Intersections: {} \n", intersection_pts.len()),
+    info!("Intersection Statistics:");
+    info!("Number of Intersections: {}", intersection_pts.len());
+    info!(
+        "Intersections Shortened: {}",
+        pstats.intersections_shortened
     );
-    log_msg(
-        &mut file,
-        &format!(
-            "    Intersections Shortened: {} \n",
-            pstats.intersections_shortened
-        ),
+    info!(
+        "Original Intersection (Before Intersection Shrinking) Length: {} m",
+        pstats.original_length
     );
-    log_msg(
-        &mut file,
-        &format!(
-            "    Original Intersection (Before Intersection Shrinking) Length: {} m\n",
-            pstats.original_length
-        ),
+    info!(
+        "Intersection Length Discarded: {} m",
+        pstats.discarded_length
     );
-    log_msg(
-        &mut file,
-        &format!(
-            "    Intersection Length Discarded: {} m\n",
-            pstats.discarded_length
-        ),
-    );
-    log_msg(
-        &mut file,
-        &format!(
-            "    Final Intersection Length: {} m\n",
-            pstats.original_length - pstats.discarded_length
-        ),
+    info!(
+        "Final Intersection Length: {} m",
+        pstats.original_length - pstats.discarded_length
     );
     // *********** Rejection Stats *******************
-    log_msg(&mut file, "\nRejection Statistics: \n");
-    log_msg(
-        &mut file,
-        &format!(
-            "    {} Short Intersections \n",
-            pstats.rejection_reasons.short_intersection
-        ),
+    info!("Rejection Statistics:");
+    info!(
+        "{} Short Intersections",
+        pstats.rejection_reasons.short_intersection
     );
-    log_msg(
-        &mut file,
-        &format!(
-            "    {} Close to Node\n",
-            pstats.rejection_reasons.close_to_node
-        ),
+    info!("{} Close to Node", pstats.rejection_reasons.close_to_node);
+    info!("{} Close to Edge", pstats.rejection_reasons.close_to_edge);
+    info!(
+        "{} Vertex Close to Edge",
+        pstats.rejection_reasons.close_point_to_edge
     );
-    log_msg(
-        &mut file,
-        &format!(
-            "    {} Close to Edge\n",
-            pstats.rejection_reasons.close_to_edge
-        ),
+    info!("{} Outside of Domain", pstats.rejection_reasons.outside);
+    info!(
+        "{} Triple intersection Rejections",
+        pstats.rejection_reasons.triple
     );
-    log_msg(
-        &mut file,
-        &format!(
-            "    {} Vertex Close to Edge\n",
-            pstats.rejection_reasons.close_point_to_edge
-        ),
-    );
-    log_msg(
-        &mut file,
-        &format!(
-            "    {} Outside of Domain\n",
-            pstats.rejection_reasons.outside
-        ),
-    );
-    log_msg(
-        &mut file,
-        &format!(
-            "    {} Triple intersection Rejections\n",
-            pstats.rejection_reasons.triple
-        ),
-    );
-    log_msg(
-        &mut file,
-        &format!(
-            "    {} Intersections Close to Other Intersections\n\n",
-            pstats.rejection_reasons.inter_close_to_inter
-        ),
-    );
-    log_msg(
-        &mut file,
-        "\n________________________________________________________\n\n",
+    info!(
+        "{} Intersections Close to Other Intersections",
+        pstats.rejection_reasons.inter_close_to_inter
     );
 
     if total_families > 0 {
-        log_msg(&mut file, "Fracture Estimation statistics:\n");
-        log_msg(&mut file, "NOTE: If estimation and actual are very different, \nexpected family distributions might ");
-        log_msg(&mut file, "not be accurate. \nIf this is the case, try increasing or decreasing \nthe 'radiiListIncrease' option ");
-        log_msg(&mut file, "in the input file.\n\n");
+        info!("Fracture Estimation statistics:");
+        info!("NOTE: If estimation and actual are very different, expected family distributions might not be accurate.");
+        info!("If this is the case, try increasing or decreasing the 'radiiListIncrease' option in the input file.");
 
         // Compare expected radii/poly size and actual
         for (i, shape) in shape_families.iter().enumerate().take(total_families) {
             match shape.radius.function {
                 RadiusFunction::Constant(_) => {
-                    log_msg(
-                        &mut file,
-                        &format!(
-                            "{} Family {}\nUsing constant size\n\n",
-                            shape.shape_family,
-                            get_family_number(input.nFamEll, i as isize, shape.shape_family)
-                        ),
+                    info!(
+                        "{} Family {} Using constant size",
+                        shape.shape_family,
+                        get_family_number(input.nFamEll, i as isize, shape.shape_family)
                     );
                 }
                 _ => {
-                    log_msg(
-                        &mut file,
-                        &format!(
-                            "{} Family {}\nEstimated: {}\n",
-                            shape.shape_family,
-                            get_family_number(input.nFamEll, i as isize, shape.shape_family),
-                            pstats.expected_from_fam[i]
-                        ),
+                    info!(
+                        "{} Family {} Estimated: {}",
+                        shape.shape_family,
+                        get_family_number(input.nFamEll, i as isize, shape.shape_family),
+                        pstats.expected_from_fam[i]
                     );
 
-                    log_msg(
-                        &mut file,
-                        &format!(
-                            "Actual:    {}\n\n",
-                            pstats.accepted_from_fam[i] + pstats.rejected_from_fam[i]
-                        ),
+                    info!(
+                        "Actual: {}",
+                        pstats.accepted_from_fam[i] + pstats.rejected_from_fam[i]
                     );
                 }
             }
         }
-
-        log_msg(
-            &mut file,
-            "\n________________________________________________________\n\n",
-        );
     }
 
-    log_msg(&mut file, &format!("Seed: {}\n", input.seed));
+    info!("Seed: {}", input.seed);
 
     // Write all output files
     write_output(
@@ -1308,22 +1083,14 @@ fn main() -> Result<(), DfngenError> {
     // Duplicate node counters are set in writeOutput(). Write output must happen before
     // duplicate node prints
     // Print number of duplicate nodes (pstats.intersectionsNodeCount is set in writeOutpu() )
-    log_msg(
-        &mut file,
-        &format!(
-            "\nLagrit Should Remove {} Nodes ({}/2 - {})\n",
-            pstats.intersection_node_count / 2 - pstats.triple_node_count,
-            pstats.intersection_node_count,
-            pstats.triple_node_count
-        ),
+    info!(
+        "Lagrit Should Remove {} Nodes ({}/2 - {})",
+        pstats.intersection_node_count / 2 - pstats.triple_node_count,
+        pstats.intersection_node_count,
+        pstats.triple_node_count
     );
 
-    println!("DFNGen - Complete");
+    info!("DFNGen - Complete");
 
     Ok(())
-}
-
-fn log_msg(file: &mut File, message: &str) {
-    print!("{}", message);
-    file.write_all(message.as_bytes()).unwrap();
 }
