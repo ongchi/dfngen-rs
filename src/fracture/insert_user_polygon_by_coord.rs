@@ -1,6 +1,7 @@
 use std::fs::File;
 
 use parry3d_f64::na::{distance, Point3, Vector3};
+use tracing::info;
 
 use super::domain::domain_truncation;
 use super::insert_shape::print_reject_reason;
@@ -119,14 +120,14 @@ pub fn insert_user_polygon_by_coord(
 ) {
     let family_id = -3;
 
-    println!("Reading User Defined Polygons from {}", &polygon_file);
+    info!("Reading User Defined Polygons from {}", &polygon_file);
     let mut file = File::open(polygon_file).unwrap();
 
     search_var(&mut file, "nPolygons:");
     let mut npoly: usize = 0;
     npoly.read_from_text(&mut file);
 
-    println!("There are {} polygons", npoly);
+    info!("There are {} polygons", npoly);
 
     for i in 0..npoly {
         let mut new_poly = create_poly(&mut file);
@@ -135,7 +136,7 @@ pub fn insert_user_polygon_by_coord(
             // Poly completely outside domain
             pstats.rejection_reasons.outside += 1;
             pstats.rejected_poly_count += 1;
-            println!("User Polygon (defined by coordinates) {} was rejected for being outside the defined domain.", i + 1);
+            info!("User Polygon (defined by coordinates) {} was rejected for being outside the defined domain.", i + 1);
             pstats
                 .rejected_user_fracture
                 .push(RejectedUserFracture::new(i + 1, family_id));
@@ -164,7 +165,7 @@ pub fn insert_user_polygon_by_coord(
             new_poly.area = get_area(&new_poly);
             // Add new rejectsPerAttempt counter
             pstats.rejects_per_attempt.push(0);
-            println!(
+            info!(
                 "User Defined Polygon Fracture (Defined By Coordinates) {} Accepted",
                 i + 1
             );
@@ -172,7 +173,7 @@ pub fn insert_user_polygon_by_coord(
         } else {
             pstats.rejects_per_attempt[pstats.accepted_poly_count] += 1;
             pstats.rejected_poly_count += 1;
-            println!(
+            info!(
                 "Rejected User Defined Polygon Fracture (Defined By Coordinates) {}",
                 i + 1
             );

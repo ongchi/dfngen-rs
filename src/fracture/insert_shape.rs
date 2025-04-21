@@ -6,8 +6,10 @@ use parry3d_f64::na::Vector3;
 use rand::distr::Uniform;
 use rand::Rng;
 use rand_mt::Mt64;
+use tracing::info;
 
 use crate::distribution::{TruncExp, TruncLogNormal, TruncPowerLaw};
+use crate::error;
 use crate::structures::{RadiusFunction, Shape};
 use crate::{
     computational_geometry::{apply_rotation2_d, apply_rotation3_d, translate},
@@ -160,9 +162,7 @@ pub fn poly_boundary(
         );
         (mins, maxs)
     } else {
-        println!("ERROR!!!");
-        println!("Layer and Region both defined for this Family.");
-        println!("Exiting Program");
+        error!("Layer and Region both defined for this Family.");
         panic!()
     };
 
@@ -471,7 +471,7 @@ pub fn re_translate_poly(
 /// * `new_poly` - Poly which was rejected
 pub fn print_reject_reason(reject_code: i32, new_poly: &Poly) {
     if new_poly.family_num >= 0 {
-        println!(
+        info!(
             "Attempted fracture from family {} was rejected:",
             new_poly.family_num
         );
@@ -479,43 +479,43 @@ pub fn print_reject_reason(reject_code: i32, new_poly: &Poly) {
 
     match reject_code {
         -2 => {
-            println!("\trejectCode = -2: Intersection of length < h.");
+            info!("\trejectCode = -2: Intersection of length < h.");
         }
 
         -1 => {
-            println!("\trejectCode = -1: Fracture too close to a node.\n")
+            info!("\trejectCode = -1: Fracture too close to a node.")
         }
 
         -6 => {
-            println!("\trejectCode = -6: Fracture too close to another fracture's edge.");
+            info!("\trejectCode = -6: Fracture too close to another fracture's edge.");
         }
 
         -7 => {
-            println!("\trejectCode = -7: Fractures intersecting on same plane");
+            info!("\trejectCode = -7: Fractures intersecting on same plane");
         }
 
         -10 => {
-            println!("\trejectCode = -10: Rejected triple intersection due to triple intersections being turned off in input file.")
+            info!("\trejectCode = -10: Rejected triple intersection due to triple intersections being turned off in input file.")
         }
 
         -11 => {
-            println!("\trejectCode = -11: Fracture's intersection landed too close to a previous intersection.");
+            info!("\trejectCode = -11: Fracture's intersection landed too close to a previous intersection.");
         }
 
         -12 => {
-            println!("\trejectCode = -12: Fracture created a triple intersection with an angle too small.");
+            info!("\trejectCode = -12: Fracture created a triple intersection with an angle too small.");
         }
 
         -13 => {
-            println!("\trejectCode = -13: Fracture created a triple intersection with the triple intersection point too close to an intersection's endpoint.");
+            info!("\trejectCode = -13: Fracture created a triple intersection with the triple intersection point too close to an intersection's endpoint.");
         }
 
         -14 => {
-            println!("\trejectCode = -14: Fracture created a triple intersection with the triple intersection point too close to another triple intersection point.");
+            info!("\trejectCode = -14: Fracture created a triple intersection with the triple intersection point too close to another triple intersection point.");
         }
 
         _ => {
-            println!("\trejectCode = {}", reject_code);
+            info!("\trejectCode = {}", reject_code);
         }
     }
 }

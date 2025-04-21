@@ -1,4 +1,5 @@
 use parry3d_f64::na::{distance, Point3, Vector3};
+use tracing::info;
 
 use super::domain::domain_truncation;
 use super::insert_shape::print_reject_reason;
@@ -108,7 +109,7 @@ pub fn insert_user_ell_by_coord(
 ) {
     let family_id = -1;
     let npoly = n_ell_by_coord;
-    println!("{} User Ellipses By Coordinates Defined", npoly);
+    info!("{} User Ellipses By Coordinates Defined", npoly);
 
     for i in 0..npoly {
         let mut new_poly = create_poly(n_ell_nodes, user_ell_coord_vertices, i);
@@ -117,7 +118,7 @@ pub fn insert_user_ell_by_coord(
             // Poly completely outside domain
             pstats.rejection_reasons.outside += 1;
             pstats.rejected_poly_count += 1;
-            println!("User Ellipse (defined by coordinates) {} was rejected for being outside the defined domain.", i + 1);
+            info!("User Ellipse (defined by coordinates) {} was rejected for being outside the defined domain.", i + 1);
             pstats
                 .rejected_user_fracture
                 .push(RejectedUserFracture::new(i + 1, family_id));
@@ -151,7 +152,7 @@ pub fn insert_user_ell_by_coord(
             new_poly.area = get_area(&new_poly);
             // Add new rejectsPerAttempt counter
             pstats.rejects_per_attempt.push(0);
-            println!(
+            info!(
                 "User Defined Elliptical Fracture (Defined By Coordinates) {} Acceptedn",
                 i + 1
             );
@@ -159,7 +160,7 @@ pub fn insert_user_ell_by_coord(
         } else {
             pstats.rejects_per_attempt[pstats.accepted_poly_count] += 1;
             pstats.rejected_poly_count += 1;
-            println!(
+            info!(
                 "Rejected Eser Defined Elliptical Fracture (Defined By Coordinates) {}",
                 i + 1
             );

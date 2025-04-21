@@ -4,6 +4,7 @@ use std::{
 };
 
 use parry3d_f64::na::{distance, Point3, Vector3};
+use tracing::info;
 
 use super::input::Input;
 use crate::{
@@ -39,7 +40,7 @@ pub fn write_output(
     frac_families: &[FractureFamily],
 ) {
     let output = format!("{}/dfnGen_output", output_folder);
-    println!("{}", output);
+    info!("{}", output);
     let _ = std::fs::create_dir_all(&output);
 
     let intersection_folder = format!("{}/intersections", output_folder);
@@ -134,7 +135,7 @@ pub fn write_output(
     // Write out which fractures touch which boundaries
     write_boundary_files(final_fractures, accepted_poly, &output);
     if input.outputAcceptedRadiiPerFamily {
-        println!("Writing Accepted Radii Files Per Family");
+        info!("Writing Accepted Radii Files Per Family");
         // Creates radii files per family, before isolated fracture removal.
         let size = frac_families.len();
 
@@ -159,7 +160,7 @@ pub fn write_output(
     }
 
     if input.outputFinalRadiiPerFamily {
-        println!("Writing Final Radii Files Per Family");
+        info!("Writing Final Radii Files Per Family");
         let size = frac_families.len();
 
         for i in 0..size {
@@ -181,7 +182,7 @@ pub fn write_output(
 
     // If triple intersections are on, write triple intersection points file
     if input.tripleIntersections {
-        println!("Writing Triple Intersection Points File");
+        info!("Writing Triple Intersection Points File");
         write_triple_pts(
             triple_points,
             final_fractures,
@@ -359,7 +360,7 @@ fn write_intersection_files(
     // Keeps track of current un-rotated points we are working with
     let mut temp_point1;
     let mut temp_point2;
-    println!("Writing Intersection Files");
+    info!("Writing Intersection Files");
     // let mut fractIntFile = File::open();
 
     // Go through finalFractures. Rotate poly, intersections, and triple intersection points
@@ -562,7 +563,7 @@ fn write_intersection_files(
 /// * `accepted_poly` - Vector array of all accetped fractures
 /// * `output` - Path to output folder
 fn write_polys(final_fractures: &[usize], accepted_poly: &[Poly], output: &str) {
-    println!("Writing Polygon Files");
+    info!("Writing Polygon Files");
     let poly_count = final_fractures.len();
     let poly_output_file = format!("{}/polygons.dat", output);
     let mut poly_output = File::create(poly_output_file).unwrap();
@@ -596,7 +597,7 @@ fn write_polys(final_fractures: &[usize], accepted_poly: &[Poly], output: &str) 
         poly_output.write_all("\n".as_bytes()).unwrap();
     }
 
-    println!("Writing Polygon Files Complete");
+    info!("Writing Polygon Files Complete");
 }
 
 /// Parses and writes all poly_x.inp files containing polygon (fracture) vertice and connectivity data
@@ -607,7 +608,7 @@ fn write_polys(final_fractures: &[usize], accepted_poly: &[Poly], output: &str) 
 /// * `accepted_poly` - Vector array of all accetped fractures
 /// * `output` - Path to output folder
 fn write_polys_inp(final_fractures: &[usize], accepted_poly: &[Poly], output: &str) {
-    println!("Writing poly inp files");
+    info!("Writing poly inp files");
     let poly_count = final_fractures.len();
 
     for j in 0..poly_count {
@@ -673,7 +674,7 @@ fn write_params_file(
 ) {
     let params_output_file = format!("{}/../params.txt", output);
     let mut params = File::create(&params_output_file).unwrap();
-    println!("Writing {}", &params_output_file);
+    info!("Writing {}", &params_output_file);
     params
         .write_all(format!("{}\n", final_fractures.len()).as_bytes())
         .unwrap();
@@ -709,7 +710,7 @@ fn write_params_file(
 /// * `accepted_poly` - Vector array of all accetped fractures
 /// * `output` - Path to output folder
 fn write_radii_file(final_fractures: &[usize], accepted_poly: &[Poly], output: &str) {
-    println!("Writing Radii File (radii.dat)");
+    info!("Writing Radii File (radii.dat)");
     let file = format!("{}/radii.dat", output);
     let mut radii = File::create(file).unwrap();
     radii.write_all("Format: xRadius yRadius Family# Removed (-2 = userPolygon, -1 = userRectangle, 0 = userEllipse, > 0 is family in order of famProb)\n".as_bytes()).unwrap();
@@ -752,7 +753,7 @@ fn write_radii_file(final_fractures: &[usize], accepted_poly: &[Poly], output: &
 /// * `accepted_poly` - Vector array of all accetped fractures
 /// * `output` - Path to output folder
 fn write_fracture_translations(final_fractures: &[usize], accepted_poly: &[Poly], output: &str) {
-    println!("Writing Fracture Translations File (translations.dat)");
+    info!("Writing Fracture Translations File (translations.dat)");
     let file_path = format!("{}/translations.dat", output);
     let mut file = File::create(file_path).unwrap();
     file.write_all(
@@ -1011,7 +1012,7 @@ fn write_triple_pts(
 /// * `pstats` - Stats structure of program statistics
 /// * `output` - Path to output folder
 fn write_rejection_stats(pstats: &Stats, output: &str) {
-    println!("Writing Rejection Statistics File (rejections.dat)");
+    info!("Writing Rejection Statistics File (rejections.dat)");
     let _ = std::fs::create_dir_all(output);
     let file_name = format!("{}/rejections.dat", output);
     let mut file = File::create(file_name).unwrap();
@@ -1071,7 +1072,7 @@ fn write_rejection_stats(pstats: &Stats, output: &str) {
 /// * `output` - Path to output folder
 fn write_user_rejected_fracture_information(pstats: &Stats, output: &str) {
     if !pstats.rejected_user_fracture.is_empty() {
-        println!("Writing User Fracture Rejection File (userFractureRejections.dat)");
+        info!("Writing User Fracture Rejection File (userFractureRejections.dat)");
         let file_name = format!("{}/userFractureRejections.dat", output);
         let mut file = File::open(file_name).unwrap();
         file.write_all("Fracture id,User Fracture Type\n".as_bytes())
@@ -1120,7 +1121,7 @@ fn write_frac_fams(
     output: &str,
 ) {
     let rad_to_deg = 180. / std::f64::consts::PI;
-    println!("Writing Family Definitions File (families.dat)");
+    info!("Writing Family Definitions File (families.dat)");
     let file_name = format!("{}/families.dat", output);
     let mut file = File::create(file_name).unwrap();
 
@@ -1261,7 +1262,7 @@ fn write_connectivity(
     int_pts: &[IntersectionPoints],
     output: &str,
 ) {
-    println!("Writing Connectivity Data (connectivity.dat)");
+    info!("Writing Connectivity Data (connectivity.dat)");
     let file_name = format!("{}/connectivity.dat", output);
     let mut file = File::create(file_name).unwrap();
 
@@ -1317,7 +1318,7 @@ fn write_rotation_data(
 ) {
     let file_output_file = format!("{}/../poly_info.dat", output);
     let mut file = File::create(file_output_file).unwrap();
-    println!("Writing Rotation Data File (poly_info.dat)");
+    info!("Writing Rotation Data File (poly_info.dat)");
     let mut max_domain_size = domain_size[0];
 
     if max_domain_size < domain_size[1] {
@@ -1397,7 +1398,7 @@ fn write_rotation_data(
 fn write_normal_vectors(accepted_poly: &[Poly], final_fractures: &[usize], output: &str) {
     let file_output_file = format!("{}/normal_vectors.dat", output);
     let mut file = File::create(file_output_file).unwrap();
-    println!("Writing Normal Vectors into File (normal_vectors.dat)");
+    info!("Writing Normal Vectors into File (normal_vectors.dat)");
 
     for i in 0..final_fractures.len() {
         // poly's normal is already normalized at this point
@@ -1432,7 +1433,7 @@ fn write_normal_vectors(accepted_poly: &[Poly], final_fractures: &[usize], outpu
 fn write_rejects_per_attempt(pstats: &Stats, output: &str) {
     let file_output_file = format!("{}/rejectsPerAttempt.dat", output);
     let mut file = File::create(file_output_file).unwrap();
-    println!("Writing Rotation Data File (rejectsPerAttempt.dat)");
+    info!("Writing Rotation Data File (rejectsPerAttempt.dat)");
 
     for i in 0..pstats.rejects_per_attempt.len() {
         file.write_all(format!("{}\n", pstats.rejects_per_attempt[i]).as_bytes())
@@ -1462,7 +1463,7 @@ fn write_graph_data(
     let domain_y = domain_size[1] * 0.5;
     let domain_z = domain_size[2] * 0.5;
     // Keeps track of current un-rotated points we are working with
-    print!("\nWriting Graph Data Files\n");
+    info!("Writing Graph Data Files");
     //adjustIntFractIDs(finalFractures,acceptedPoly, intPts);
     // Make new intersection file in intersections folder
     let file = format!("{}/intersection_list.dat", output);
@@ -1755,7 +1756,7 @@ fn write_mid_point(
 /// * `final_fractures` - Vector array of indices of fractures left after isolated fracture removal
 /// * `accepted_poly` - Vector array of all accepted fractures (before isolated fracture removal)
 fn write_boundary_files(final_fractures: &[usize], accepted_poly: &[Poly], output: &str) {
-    println!("Writing Boundary Files");
+    info!("Writing Boundary Files");
     let left_file_name = format!("{}/left.dat", output);
     let mut left_file = File::create(left_file_name).unwrap();
     let right_file_name = format!("{}/right.dat", output);

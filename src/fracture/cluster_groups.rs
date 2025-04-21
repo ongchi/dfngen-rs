@@ -1,4 +1,7 @@
+use tracing::info;
+
 use crate::{
+    error,
     math_functions::or,
     structures::{FractureGroups, GroupData, Poly, Stats},
 };
@@ -48,9 +51,9 @@ pub fn get_cluster(
     let mut matching_groups = Vec::new();
     let mut final_poly_list = Vec::new();
 
-    println!("In cluster groups");
-    println!("Number of fractures: {}", pstats.accepted_poly_count);
-    println!("Number of groups: {}", pstats.group_data.len());
+    info!("In cluster groups");
+    info!("Number of fractures: {}", pstats.accepted_poly_count);
+    info!("Number of groups: {}", pstats.group_data.len());
 
     if !keep_isolated_fractures {
         // NOTE: (groupNumber-1) = corresponding groupData structures' index of the arary
@@ -106,7 +109,7 @@ pub fn get_cluster(
             }
         }
     } else {
-        println!("Number of fractures: {}", pstats.accepted_poly_count);
+        info!("Number of fractures: {}", pstats.accepted_poly_count);
 
         for i in 0..pstats.accepted_poly_count {
             final_poly_list.push(i);
@@ -227,7 +230,7 @@ pub fn update_groups(
 
         // Error check
         if i == pstats.fract_group.len() && pstats.fract_group[i].group_num != new_poly.group_num {
-            println!("ERROR: Group not found (computationalGeometry.cpp)");
+            error!("Group not found");
         }
 
         // Add newPoly to fracture/cluster group

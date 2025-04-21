@@ -1,4 +1,5 @@
 use parry3d_f64::na::{Point3, Vector3};
+use tracing::info;
 
 use super::domain::domain_truncation;
 use super::insert_shape::{initialize_rect_vertices, print_reject_reason};
@@ -92,7 +93,7 @@ pub fn insert_user_rects(
 ) {
     let npoly = user_defined_rects.n_frac;
     let family_id = -2;
-    println!("{} User Rectangles Defined", npoly);
+    info!("{} User Rectangles Defined", npoly);
 
     for i in 0..npoly {
         let mut new_poly = create_poly(eps, user_defined_rects, i);
@@ -101,7 +102,7 @@ pub fn insert_user_rects(
             //poly completely outside domain
             pstats.rejection_reasons.outside += 1;
             pstats.rejected_poly_count += 1;
-            println!(
+            info!(
                 "User Rectangle {} was rejected for being outside the defined domain.",
                 i + 1
             );
@@ -138,12 +139,12 @@ pub fn insert_user_rects(
             new_poly.area = get_area(&new_poly);
             // Add new rejectsPerAttempt counter
             pstats.rejects_per_attempt.push(0);
-            println!("User Defined Rectangular Fracture {} Accepted", i + 1);
+            info!("User Defined Rectangular Fracture {} Accepted", i + 1);
             accepted_poly.push(new_poly); // Save newPoly to accepted polys list
         } else {
             pstats.rejected_poly_count += 1;
             pstats.rejects_per_attempt[pstats.accepted_poly_count] += 1;
-            println!("Rejected user defined rectangular fracture {}", i + 1);
+            info!("Rejected user defined rectangular fracture {}", i + 1);
             print_reject_reason(reject_code, &new_poly);
             pstats
                 .rejected_user_fracture

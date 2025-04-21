@@ -1,4 +1,5 @@
 use parry3d_f64::na::{Point3, Vector3};
+use tracing::info;
 
 use super::domain::domain_truncation;
 use super::insert_shape::print_reject_reason;
@@ -117,7 +118,7 @@ pub fn insert_user_rects_by_coord(
 ) {
     let family_id = -2;
     let npoly = n_rect_by_coord;
-    println!("{} User Rectangles By Coordinates Defined", npoly);
+    info!("{} User Rectangles By Coordinates Defined", npoly);
 
     for i in 0..npoly {
         let mut new_poly = create_poly(user_rect_coord_vertices, i);
@@ -126,7 +127,7 @@ pub fn insert_user_rects_by_coord(
             // Poly completely outside domain
             pstats.rejection_reasons.outside += 1;
             pstats.rejected_poly_count += 1;
-            println!("User Rectangle (defined by coordinates) {} was rejected for being outside the defined domain.", i + 1);
+            info!("User Rectangle (defined by coordinates) {} was rejected for being outside the defined domain.", i + 1);
             pstats
                 .rejected_user_fracture
                 .push(RejectedUserFracture::new(i + 1, family_id));
@@ -160,7 +161,7 @@ pub fn insert_user_rects_by_coord(
             new_poly.area = get_area(&new_poly);
             // Add new rejectsPerAttempt counter
             pstats.rejects_per_attempt.push(0);
-            println!(
+            info!(
                 "User Defined Rectangular Fracture (Defined By Coordinates) {} Accepted",
                 i + 1
             );
@@ -168,7 +169,7 @@ pub fn insert_user_rects_by_coord(
         } else {
             pstats.rejects_per_attempt[pstats.accepted_poly_count] += 1;
             pstats.rejected_poly_count += 1;
-            println!(
+            info!(
                 "Rejected User Defined Rectangular Fracture (Defined By Coordinates) {}",
                 i + 1
             );

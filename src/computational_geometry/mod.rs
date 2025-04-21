@@ -1,6 +1,7 @@
 use parry3d_f64::na::{distance, Point3, Translation3, Vector3};
 
 use crate::{
+    error,
     fracture::cluster_groups::{assign_group, update_groups},
     math_functions::{max_elmt_idx, sorted_index, sum_dev_ary3},
     structures::{IntersectionPoints, Poly, Stats, TriplePtTempData},
@@ -478,7 +479,7 @@ fn find_intersections(flag: &mut i32, poly1: &Poly, poly2: &Poly, eps: f64) -> I
     } else {
         // Intersection points exist
         if count > 2 {
-            println!("Error in findIntersections()");
+            error!("Error in findIntersections()");
         }
 
         let stdev = sum_dev_ary3(&inters);

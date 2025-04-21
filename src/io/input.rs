@@ -274,7 +274,7 @@ pub fn read_input(input_file: &str) -> (Input, Vec<FractureFamily>) {
     let mut input_var = Input::default();
     let mut frac_family = Vec::new();
 
-    info!("DFN Generator Input File: {}\n", input_file);
+    info!("DFN Generator Input File: {}", input_file);
     let mut input_reader = InputReader::new(input_file);
 
     macro_rules! input_var {
@@ -507,7 +507,7 @@ pub fn read_input(input_file: &str) -> (Input, Vec<FractureFamily>) {
     // Error check on stopping parameter
     if input_var.nFamEll + input_var.nFamRect == 0 && input_var.stopCondition != 0 {
         // If no stochastic shapes, use nPoly option with npoly = number of user polygons
-        warn!("You have defined stopCondition = 1 (P32 program stopping condition) but have no stochastic shape families defined. Automatically setting stopCondition to 0 for use with user defined polygons and nPoly.\n");
+        warn!("You have defined stopCondition = 1 (P32 program stopping condition) but have no stochastic shape families defined. Automatically setting stopCondition to 0 for use with user defined polygons and nPoly.");
         input_var.stopCondition = 0;
 
         if !input_var.userEllipsesOnOff

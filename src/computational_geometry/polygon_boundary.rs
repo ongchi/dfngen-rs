@@ -1,7 +1,9 @@
 use parry3d_f64::na::Point3;
+use tracing::info;
 
 use crate::{
     computational_geometry::intersection_checking,
+    error,
     structures::{IntersectionPoints, Poly, Stats},
 };
 
@@ -158,11 +160,11 @@ pub fn polygon_boundary(
             final_poly_list.push(new_poly.clone()); // SAVE newPoly to accepted polys list
         } else {
             // Poly rejected
-            println!("Error rebuilding dfn, previously accepted fracture was rejected during DFN rebuild.");
+            error!("Error rebuilding dfn, previously accepted fracture was rejected during DFN rebuild.");
         }
     }
 
-    println!("Rebuilding DFN complete.");
+    info!("Rebuilding DFN complete.");
     accepted_polys.clear();
     accepted_polys.extend(final_poly_list);
 }

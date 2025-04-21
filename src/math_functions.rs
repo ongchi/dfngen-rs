@@ -1,4 +1,5 @@
 use parry3d_f64::na::Vector3;
+use tracing::{error, warn};
 
 use crate::structures::Poly;
 
@@ -234,7 +235,7 @@ pub fn index_from_prob_and_p32_status(
         }
     }
 
-    println!("ERROR: see indexFromProb_and_P32Status(), funct did not return anything");
+    error!("see indexFromProb_and_P32Status(), funct did not return anything");
 
     fam_size - 1
 }
@@ -251,9 +252,9 @@ pub fn cumsum(fam_prob: &[f64]) -> Vec<f64> {
 
     if let Some(last) = cdf.last() {
         if (0.999..=1.001).contains(last) {
-            println!("WARNING: Familiy probabilities (famProb in input file) do not sum to 1");
-            println!("sum = {:.17}", cdf.last().unwrap());
-            println!("Please check input file.");
+            warn!("Familiy probabilities (famProb in input file) do not sum to 1");
+            warn!("sum = {:.17}", cdf.last().unwrap());
+            warn!("Please check input file.");
         }
     };
 
