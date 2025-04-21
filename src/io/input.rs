@@ -8,7 +8,7 @@ use super::read_input_functions::{
     UserFractureReader,
 };
 
-use crate::{io::read_input_functions::InputReader, structures::Shape};
+use crate::{io::read_input_functions::InputReader, structures::FractureFamily};
 
 #[allow(non_snake_case)]
 #[derive(Default, Debug)]
@@ -270,9 +270,9 @@ pub struct Input {
 /// # Arguments
 ///
 /// * `input` - Path to input file
-pub fn read_input(input_file: &str) -> (Input, Vec<Shape>) {
+pub fn read_input(input_file: &str) -> (Input, Vec<FractureFamily>) {
     let mut input_var = Input::default();
-    let mut shape_family = Vec::new();
+    let mut frac_family = Vec::new();
 
     info!("DFN Generator Input File: {}\n", input_file);
     let mut input_reader = InputReader::new(input_file);
@@ -420,8 +420,8 @@ pub fn read_input(input_file: &str) -> (Input, Vec<Shape>) {
         }
     }
 
-    shape_family.extend(input_reader.read_fracture_family("e"));
-    shape_family.extend(input_reader.read_fracture_family("r"));
+    frac_family.extend(input_reader.read_fracture_family("e"));
+    frac_family.extend(input_reader.read_fracture_family("r"));
 
     input_var!(userEllipsesOnOff);
 
@@ -535,7 +535,7 @@ pub fn read_input(input_file: &str) -> (Input, Vec<Shape>) {
         input_var.nPoly = count;
     }
 
-    (input_var, shape_family)
+    (input_var, frac_family)
 }
 
 #[derive(Debug)]

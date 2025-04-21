@@ -10,7 +10,7 @@ use tracing::{debug, info};
 
 use crate::distribution::Fisher;
 use crate::io::input::Input;
-use crate::structures::{RadiusDistribution, Shape, ShapeBuilder};
+use crate::structures::{FractureFamily, FractureFamilyBuilder, RadiusDistribution};
 
 /// Searches for variable in files, moves file pointer to position
 /// after word. Used to read in varlable values
@@ -439,14 +439,14 @@ impl InputReader {
             .collect()
     }
 
-    pub fn read_fracture_family(&mut self, prefix: &str) -> Vec<Shape> {
+    pub fn read_fracture_family(&mut self, prefix: &str) -> Vec<FractureFamily> {
         macro_rules! read_var {
             ($label:expr,$var_name:ident) => {
                 self.read_value(&format!("{}{}:", prefix, $label), &mut $var_name);
             };
         }
 
-        let mut shape_family = Vec::new();
+        let mut frac_family = Vec::new();
 
         let mut n_fam: usize = 0;
         match prefix {
@@ -506,33 +506,33 @@ impl InputReader {
 
             // Create shape structures from data gathered above
             for ((i, orien), radius) in zip_eq(zip_eq(0..n_fam, orien_distr), radius_distr) {
-                let mut shape_builder = ShapeBuilder::new();
+                let mut fracfam_builder = FractureFamilyBuilder::new();
 
                 if prefix == "e" {
-                    shape_builder.number_of_nodes(num_points[i] as u8);
+                    fracfam_builder.number_of_nodes(num_points[i] as u8);
                 }
 
-                shape_builder
+                fracfam_builder
                     .radius(radius)
                     .aspect_ratio(aspect_ratio[i])
                     .orientation(orien);
 
                 if beta_distribution[i] {
-                    shape_builder.beta(beta[beta_count]);
+                    fracfam_builder.beta(beta[beta_count]);
                     beta_count += 1;
                 }
 
                 if stop_condition {
-                    shape_builder.p32_target(p32_target[i]);
+                    fracfam_builder.p32_target(p32_target[i]);
                 }
 
-                shape_builder.layer(layer[i]).region(region[i]);
+                fracfam_builder.layer(layer[i]).region(region[i]);
 
-                shape_family.push(shape_builder.build().unwrap());
+                frac_family.push(fracfam_builder.build().unwrap());
             }
         }
 
-        shape_family
+        frac_family
     }
 }
 

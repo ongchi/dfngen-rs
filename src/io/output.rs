@@ -11,7 +11,7 @@ use crate::{
     distribution::generating_points::discretize_line_of_intersection,
     fracture::insert_shape::get_family_number,
     math_functions::sorted_index,
-    structures::{IntersectionPoints, Poly, Shape, ShapeFamily, Stats},
+    structures::{FractureFamily, IntersectionPoints, Poly, Shape, Stats},
 };
 
 /// Writes all output for DFNGen
@@ -26,7 +26,7 @@ use crate::{
 /// * `pstats` - Stats structure, running program statistics
 /// * `final_fractures` - indices into the Poly array of accepted polgons
 ///     which remain after isolated fractures (polys) were removed
-/// * `shape_families` - Family structure array of all stocastic families defined by user input
+/// * `frac_families` - Family structure array of all stocastic families defined by user input
 #[allow(clippy::too_many_arguments)]
 pub fn write_output(
     input: &Input,
@@ -36,7 +36,7 @@ pub fn write_output(
     triple_points: &mut [Point3<f64>],
     pstats: &mut Stats,
     final_fractures: &[usize],
-    shape_families: &[Shape],
+    frac_families: &[FractureFamily],
 ) {
     let output = format!("{}/dfnGen_output", output_folder);
     println!("{}", output);
@@ -98,7 +98,7 @@ pub fn write_output(
     // write out userRejetedFracture information
     write_user_rejected_fracture_information(pstats, &output);
     // Write families to output Files
-    write_shape_fams(
+    write_frac_fams(
         input.userEllipsesOnOff,
         input.userRectanglesOnOff,
         input.userPolygonByCoord,
@@ -107,7 +107,7 @@ pub fn write_output(
         &input.layers,
         &input.regions,
         &input.famProbOriginal,
-        shape_families,
+        frac_families,
         &output,
     );
     // Write fracture translations file
@@ -120,7 +120,7 @@ pub fn write_output(
         &input.domainSize,
         accepted_poly,
         final_fractures,
-        shape_families,
+        frac_families,
         &output,
     );
     // Write normal vectors
@@ -136,7 +136,7 @@ pub fn write_output(
     if input.outputAcceptedRadiiPerFamily {
         println!("Writing Accepted Radii Files Per Family");
         // Creates radii files per family, before isolated fracture removal.
-        let size = shape_families.len();
+        let size = frac_families.len();
 
         for i in 0..size {
             write_all_accepted_radii_of_family(i as isize, accepted_poly, &radii_folder);
@@ -160,7 +160,7 @@ pub fn write_output(
 
     if input.outputFinalRadiiPerFamily {
         println!("Writing Final Radii Files Per Family");
-        let size = shape_families.len();
+        let size = frac_families.len();
 
         for i in 0..size {
             write_final_radii_of_family(final_fractures, i as isize, accepted_poly, &radii_folder);
@@ -1104,10 +1104,10 @@ fn write_user_rejected_fracture_information(pstats: &Stats, output: &str) {
 /// * `layers` - Vector array of layers
 /// * `regions` - Vector array of regions
 /// * `fam_prob_original` - Vector array of family probabilities
-/// * `shape_families` - Vector array of all fracture shape families
+/// * `frac_families` - Vector array of all fracture shape families
 /// * `output` - Path to output folder
 #[allow(clippy::too_many_arguments)]
-fn write_shape_fams(
+fn write_frac_fams(
     user_ellipses_on_off: bool,
     user_rectangles_on_off: bool,
     user_polygon_by_coord: bool,
@@ -1116,7 +1116,7 @@ fn write_shape_fams(
     layers: &[f64],
     regions: &[f64],
     fam_prob_original: &[f64],
-    shape_families: &[Shape],
+    frac_families: &[FractureFamily],
     output: &str,
 ) {
     let rad_to_deg = 180. / std::f64::consts::PI;
@@ -1141,13 +1141,13 @@ fn write_shape_fams(
             .unwrap();
     }
 
-    for (i, shape) in shape_families.iter().enumerate() {
+    for (i, shape) in frac_families.iter().enumerate() {
         //name(rect or ell) and number of family
         file.write_all(
             format!(
                 "{} Family: {}\n",
-                shape.shape_family,
-                get_family_number(n_fam_ell, i as isize, shape.shape_family)
+                shape.shape,
+                get_family_number(n_fam_ell, i as isize, shape.shape)
             )
             .as_bytes(),
         )
@@ -1156,12 +1156,12 @@ fn write_shape_fams(
             .unwrap();
 
         // Print vertice number
-        match shape.shape_family {
-            ShapeFamily::Ellipse(n) => {
+        match shape.shape {
+            Shape::Ellipse(n) => {
                 file.write_all(format!("Number of Vertices: {}\n", n).as_bytes())
                     .unwrap();
             }
-            ShapeFamily::Rectangle => {
+            Shape::Rectangle => {
                 file.write_all("Number of Vertices: 4\n".as_bytes())
                     .unwrap();
             }
@@ -1305,14 +1305,14 @@ fn write_connectivity(
 /// * `domain_size` - domain size in x, y, z
 /// * `accepted_poly` - Array off all polygons in DFN before isolated fracture removal
 /// * `final_fractures` - Array of indices to polys in 'accepted_poly' which are left after isolated fracture removal
-/// * `shape_families` - Array of all fracture shape families
+/// * `frac_families` - Array of all fracture shape families
 /// * `output` - Path to output folder
 fn write_rotation_data(
     eps: f64,
     domain_size: &Vector3<f64>,
     accepted_poly: &[Poly],
     final_fractures: &[usize],
-    shape_families: &[Shape],
+    frac_families: &[FractureFamily],
     output: &str,
 ) {
     let file_output_file = format!("{}/../poly_info.dat", output);
@@ -1358,9 +1358,9 @@ fn write_rotation_data(
         // If the family number is -1 or -2 we change these numbers to be
         // number of stochastic families + 1 and number of stochastic families + 2
         let fam_num = if accepted_poly[final_fractures[i]].family_num == -1 {
-            shape_families.len() as isize + 1
+            frac_families.len() as isize + 1
         } else if accepted_poly[final_fractures[i]].family_num == -2 {
-            shape_families.len() as isize + 2
+            frac_families.len() as isize + 2
         } else {
             accepted_poly[final_fractures[i]].family_num + 1
         };
@@ -1393,7 +1393,6 @@ fn write_rotation_data(
 ///
 /// * `accepted_poly` - Array off all polygons in DFN before isolated fracture removal
 /// * `final_fractures` - Array of indices to polys in 'accepted_poly' which are left after isolated fracture removal
-/// * `shape_families` - Array of all fracture shape families
 /// * `output` - Path to output folder
 fn write_normal_vectors(accepted_poly: &[Poly], final_fractures: &[usize], output: &str) {
     let file_output_file = format!("{}/normal_vectors.dat", output);

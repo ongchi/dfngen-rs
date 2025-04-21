@@ -320,31 +320,31 @@ pub struct Stats {
 }
 
 #[derive(Clone, Copy)]
-pub enum ShapeFamily {
+pub enum Shape {
     Ellipse(u8),
     Rectangle,
 }
 
-impl Default for ShapeFamily {
+impl Default for Shape {
     fn default() -> Self {
-        ShapeFamily::Ellipse(6)
+        Shape::Ellipse(6)
     }
 }
 
-impl Display for ShapeFamily {
+impl Display for Shape {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
-            ShapeFamily::Ellipse(_) => write!(f, "Ellipse"),
-            ShapeFamily::Rectangle => write!(f, "Rectangular"),
+            Shape::Ellipse(_) => write!(f, "Ellipse"),
+            Shape::Rectangle => write!(f, "Rectangular"),
         }
     }
 }
 
-impl ShapeFamily {
+impl Shape {
     pub fn number_of_nodes(&self) -> u8 {
         match self {
-            ShapeFamily::Ellipse(n) => *n,
-            ShapeFamily::Rectangle => 4,
+            Shape::Ellipse(n) => *n,
+            Shape::Rectangle => 4,
         }
     }
 }
@@ -427,11 +427,11 @@ impl Display for RadiusDistribution {
     }
 }
 
-/// Shape is used to hold varibales for all types of stochastic shapes. During getInput(),
+/// FractureFamily is used to hold varibales for all types of stochastic shapes. During getInput(),
 /// all stochastic families for both recaangles and ellipses are parsed from the user input
 /// and are placed in a Shape structure array.
-pub struct Shape {
-    pub shape_family: ShapeFamily,
+pub struct FractureFamily {
+    pub shape: Shape,
 
     pub radius: RadiusDistribution,
 
@@ -473,14 +473,14 @@ pub struct Shape {
     pub orientation: Fisher,
 }
 
-impl Shape {
+impl FractureFamily {
     pub fn normal_vector(&self, rng: Rc<RefCell<Mt64>>) -> Vector3<f64> {
         rng.borrow_mut().sample(&self.orientation)
     }
 }
 
 #[derive(Default)]
-pub struct ShapeBuilder {
+pub struct FractureFamilyBuilder {
     number_of_nodes: Option<u8>,
     radius: Option<RadiusDistribution>,
     orientation: Option<Fisher>,
@@ -491,7 +491,7 @@ pub struct ShapeBuilder {
     region: Option<usize>,
 }
 
-impl ShapeBuilder {
+impl FractureFamilyBuilder {
     pub fn new() -> Self {
         Self {
             ..Default::default()
@@ -538,24 +538,24 @@ impl ShapeBuilder {
         self
     }
 
-    pub fn build(&mut self) -> Result<Shape, String> {
-        let shape_family = self
+    pub fn build(&mut self) -> Result<FractureFamily, String> {
+        let frac_family = self
             .number_of_nodes
-            .map(ShapeFamily::Ellipse)
-            .unwrap_or(ShapeFamily::Rectangle);
+            .map(Shape::Ellipse)
+            .unwrap_or(Shape::Rectangle);
         let aspect_ratio = self
             .aspect_ratio
             .ok_or("aspect ration is required".to_string())?;
         let theta_list = generate_theta(
             aspect_ratio,
-            match shape_family {
-                ShapeFamily::Ellipse(n) => n as usize,
-                ShapeFamily::Rectangle => 4,
+            match frac_family {
+                Shape::Ellipse(n) => n as usize,
+                Shape::Rectangle => 4,
             },
         );
 
-        Ok(Shape {
-            shape_family,
+        Ok(FractureFamily {
+            shape: frac_family,
             radius: self.radius.take().ok_or("radius is required".to_string())?,
             theta_list,
             radii_idx: 0,
