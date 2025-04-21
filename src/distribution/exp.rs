@@ -18,10 +18,13 @@ pub struct TruncExp {
     uniform: Uniform<f64>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
 pub enum Error {
+    #[error("Lambda must be greater than 0")]
     LambdaTooSmall,
+    #[error("Invalid value for norm_min")]
     InvalidNormMinValue,
+    #[error("Invalid value for norm_max")]
     InvalidNormMaxValue,
 }
 

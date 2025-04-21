@@ -6,7 +6,7 @@ use std::str::FromStr;
 use itertools::zip_eq;
 use parry3d_f64::na::{Point3, Vector3};
 use text_io::read;
-use tracing::{debug, info};
+use tracing::{debug, info, warn};
 
 use crate::distribution::Fisher;
 use crate::io::input::Input;
@@ -383,6 +383,12 @@ impl InputReader {
             };
         }
 
+        let mut h: f64 = 0.0;
+        search_var(&mut self.file, "h:");
+        h.read_from_text(&mut self.file);
+
+        let min_radius = 3.0 * h;
+
         read_var!("LogMean", log_mean);
         read_var!("sd", sd);
         read_var!("LogMin", log_min);
@@ -407,29 +413,73 @@ impl InputReader {
             .map(|dist_option| {
                 match dist_option {
                     // Lognormal
-                    1 => RadiusDistribution::new_log_normal(
-                        next_val!("LogMean", log_mean),
-                        next_val!("sd", sd),
-                        next_val!("LogMin", log_min),
-                        next_val!("LogMax", log_max),
-                    ),
+                    1 => {
+                        let mut min = next_val!("LogMin", log_min);
+                        if min < min_radius {
+                            warn!(
+                                "Mimium radius (LogMin: {}) of log-normal distribution is less than 3 times the h, reset to {}",
+                                min, min_radius
+                            );
+                            min = min_radius;
+                        }
+
+                        RadiusDistribution::new_log_normal(
+                            next_val!("LogMean", log_mean),
+                            next_val!("sd", sd),
+                            min,
+                            next_val!("LogMax", log_max),
+                        )
+                    }
 
                     // Truncated power-law
-                    2 => RadiusDistribution::new_truncated_power_law(
-                        next_val!("alpha", alpha),
-                        next_val!("min", min),
-                        next_val!("max", max),
-                    ),
+                    2 => {
+                        let mut min = next_val!("min", min);
+                        if min < min_radius {
+                            warn!(
+                                "Minium radius (min: {}) of truncated power-law distribution is less than 3 times the h, reset to {}",
+                                min, min_radius
+                            );
+                            min = min_radius;
+                        }
+
+                        RadiusDistribution::new_truncated_power_law(
+                            next_val!("alpha", alpha),
+                            min,
+                            next_val!("max", max),
+                        )
+                    }
 
                     // Exponential
-                    3 => RadiusDistribution::new_exponential(
-                        1. / next_val!("ExpMean", exp_mean),
-                        next_val!("ExpMin", exp_min),
-                        next_val!("ExpMax", exp_max),
-                    ),
+                    3 => {
+                        let mut min = next_val!("ExpMin", exp_min);
+                        if min < min_radius {
+                            warn!(
+                                "Minium radius (ExpMin: {}) of exponential distribution is less than 3 times the h, reset to {}",
+                                min, min_radius
+                            );
+                            min = min_radius;
+                        }
+
+                        RadiusDistribution::new_exponential(
+                            1. / next_val!("ExpMean", exp_mean),
+                            min,
+                            next_val!("ExpMax", exp_max),
+                        )
+                    }
 
                     // Constant
-                    4 => RadiusDistribution::new_constant(next_val!("const", const_)),
+                    4 => {
+                        let mut radius = next_val!("const", const_);
+                        if radius < min_radius {
+                            warn!(
+                                "Constant radius (const: {}) is less than 3 times the h, reset to {}",
+                                radius, min_radius
+                            );
+                            radius = min_radius;
+                        };
+
+                        RadiusDistribution::new_constant(radius)
+                    }
 
                     _ => {
                         panic!("Unknown distribution type: {}", dist_option)

@@ -1,4 +1,4 @@
-mod exp;
+pub mod exp;
 mod fisher;
 pub mod generating_points;
 mod log_norm;
@@ -9,7 +9,8 @@ pub use fisher::Fisher;
 pub use log_norm::TruncLogNormal;
 pub use power_law::TruncPowerLaw;
 
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
 pub enum SamplingError {
+    #[error("Sampling Error: bad parameters")]
     BadParameters,
 }

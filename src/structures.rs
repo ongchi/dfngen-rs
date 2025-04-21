@@ -7,7 +7,8 @@ use rand::Rng;
 use rand_mt::Mt64;
 
 use crate::distribution::generating_points::generate_theta;
-use crate::distribution::Fisher;
+use crate::distribution::{Fisher, TruncExp, TruncLogNormal, TruncPowerLaw};
+use crate::error::DfngenError;
 
 #[derive(Clone, Default)]
 /// The Poly structre is used to create and store fracrures/polygons.
@@ -393,6 +394,36 @@ impl RadiusDistribution {
             min: value,
             max: value,
         }
+    }
+
+    /// Sampling from distribution function.
+    pub fn sample(
+        &self,
+        n_samples: usize,
+        generator: Rc<RefCell<Mt64>>,
+    ) -> Result<Vec<f64>, DfngenError> {
+        let mut samples = Vec::with_capacity(n_samples);
+        match self.function {
+            RadiusFunction::LogNormal { mu, sigma } => {
+                let distr = TruncLogNormal::new(self.min, f64::INFINITY, mu, sigma)?;
+                for _ in 0..n_samples {
+                    samples.push(generator.borrow_mut().sample(&distr)?);
+                }
+            }
+            RadiusFunction::TruncatedPowerLaw { alpha } => {
+                let distr = TruncPowerLaw::new(self.min, self.max, alpha);
+                samples.extend((0..n_samples).map(|_| generator.borrow_mut().sample(&distr)));
+            }
+            RadiusFunction::Exponential { lambda } => {
+                let distr = TruncExp::new(self.min, f64::INFINITY, lambda)?;
+                for _ in 0..n_samples {
+                    samples.push(generator.borrow_mut().sample(&distr)?);
+                }
+            }
+            RadiusFunction::Constant(c) => samples.extend((0..n_samples).map(|_| c)),
+        }
+
+        Ok(samples)
     }
 }
 

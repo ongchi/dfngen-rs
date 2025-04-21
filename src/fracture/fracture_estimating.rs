@@ -2,17 +2,17 @@ use std::{cell::RefCell, rc::Rc};
 
 use rand::{distr::Uniform, Rng};
 use rand_mt::Mt64;
+use tracing::{info, warn};
 
 use super::domain::domain_truncation;
 use crate::{
-    distribution::{TruncExp, TruncLogNormal, TruncPowerLaw},
     fracture::insert_shape::{
         generate_poly, generate_poly_with_radius, get_family_number, poly_boundary,
         re_translate_poly,
     },
     io::input::Input,
     math_functions::{adjust_cdf_and_fam_prob, cumsum, get_area, index_from_prob_and_p32_status},
-    structures::{FractureFamily, RadiusFunction},
+    structures::FractureFamily,
 };
 
 /// Sort Families Radii Lists
@@ -40,7 +40,6 @@ pub fn sort_radii(frac_fam: &mut Vec<FractureFamily>) {
 /// * `force_large_fractures` - Inserts the largest possible fracture for each defined fracture family,
 ///         defined by the user-defined maxium radius
 /// * `n_poly` - Number of polygons to place in the DFN when uisng nPoly stopCondition option.
-/// * `h` - Minimum feature size
 /// * `n_fam_ell` - Number of ellipse families
 /// * `frac_families` - array of stochastic fracture families
 /// * `fam_prob` - Family probablity array ('famProb' in input file)
@@ -48,39 +47,29 @@ pub fn sort_radii(frac_fam: &mut Vec<FractureFamily>) {
 pub fn generate_radii_lists_n_poly_option(
     force_large_fractures: bool,
     n_poly: usize,
-    h: f64,
     n_fam_ell: usize,
     frac_families: &mut [FractureFamily],
     fam_prob: &[f64],
     generator: Rc<RefCell<Mt64>>,
 ) {
-    println!("Building radii lists for nPoly option...");
-
+    let mut n_poly = n_poly;
     if force_large_fractures {
         for shape in frac_families.iter_mut() {
             let radius = shape.radius.max;
             shape.radii_list.push(radius);
         }
+        n_poly -= frac_families.len();
     }
 
     for i in 0..frac_families.len() {
-        let amount_to_add = if force_large_fractures {
-            (fam_prob[i] * (n_poly - frac_families.len()) as f64).ceil() as usize
-        } else {
-            (fam_prob[i] * n_poly as f64).ceil() as usize
-        };
-
         add_radii(
-            h,
             n_fam_ell,
-            amount_to_add,
+            (fam_prob[i] * n_poly as f64).ceil() as usize,
             i as isize,
             &mut frac_families[i],
             generator.clone(),
         );
     }
-
-    println!("Building radii lists for nPoly option Complete");
 }
 
 /// Print Warining to User
@@ -99,8 +88,8 @@ pub fn print_generating_fractures_less_than_hwarning(
     fam_index: isize,
     frac_fam: &FractureFamily,
 ) {
-    println!(
-        "WARNING: {} Family {} is attepting to populate fracture radii lists, however many fractures are being generated with radii less than 3*h (Minimum radius). Consider adjusting distribution parameters.",
+    warn!(
+        "{} Family {} is attepting to populate fracture radii lists, however many fractures are being generated with radii less than 3*h (Minimum radius). Consider adjusting distribution parameters.",
         frac_fam.shape,
         get_family_number(n_fam_ell, fam_index, frac_fam.shape)
     );
@@ -114,13 +103,11 @@ pub fn print_generating_fractures_less_than_hwarning(
 ///
 /// # Arguments
 ///
-/// * `h` - Minimum feature size
 /// * `n_fam_ell` - Number of ellipse families
 /// * `percent` - Percentage to increase the list by. eg .10 will add %10 more radii
 /// * `frac_families` - Array of stochastic fracture families
 /// * `generator` - Random number generator
 pub fn add_radii_to_lists(
-    h: f64,
     n_fam_ell: usize,
     percent: f64,
     frac_families: &mut [FractureFamily],
@@ -129,7 +116,6 @@ pub fn add_radii_to_lists(
     for (i, shape) in frac_families.iter_mut().enumerate() {
         let amount_to_add = (shape.radii_list.len() as f64 * percent).ceil() as usize;
         add_radii(
-            h,
             n_fam_ell,
             amount_to_add,
             i as isize,
@@ -145,7 +131,6 @@ pub fn add_radii_to_lists(
 ///
 /// # Arguments
 ///
-/// * `h` - Minimum feature size
 /// * `n_fam_ell` - Number of ellipse families
 /// * `amount_to_add` - Number of fractures to add to the list
 /// * `fam_idx` - Family index to the global Shape structure array ('shapeFamilies' in main())
@@ -153,56 +138,18 @@ pub fn add_radii_to_lists(
 /// * `frac_fam` - The 'Shape' structure which the radii are being added to
 /// * `generator` - Random number generator
 pub fn add_radii(
-    h: f64,
     n_fam_ell: usize,
     amount_to_add: usize,
     fam_idx: isize,
     frac_fam: &mut FractureFamily,
     generator: Rc<RefCell<Mt64>>,
 ) {
-    let min_radius = 3. * h;
-    let radius_distribution = &frac_fam.radius;
-
-    match radius_distribution.function {
-        RadiusFunction::LogNormal { mu, sigma } => {
-            let distr = TruncLogNormal::new(min_radius, f64::INFINITY, mu, sigma).unwrap();
-
-            for _ in 0..amount_to_add {
-                match generator.borrow_mut().sample(&distr) {
-                    Ok(radius) => frac_fam.radii_list.push(radius),
-                    Err(_) => {
-                        print_generating_fractures_less_than_hwarning(n_fam_ell, fam_idx, frac_fam);
-                        panic!()
-                    }
-                };
-            }
+    match &frac_fam.radius.sample(amount_to_add, generator.clone()) {
+        Ok(radii) => frac_fam.radii_list.extend(radii),
+        Err(_) => {
+            print_generating_fractures_less_than_hwarning(n_fam_ell, fam_idx, frac_fam);
+            panic!()
         }
-        RadiusFunction::TruncatedPowerLaw { alpha } => {
-            let distr = TruncPowerLaw::new(
-                f64::max(radius_distribution.min, min_radius),
-                radius_distribution.max,
-                alpha,
-            );
-
-            for _ in 0..amount_to_add {
-                let radius = generator.borrow_mut().sample(&distr);
-                frac_fam.radii_list.push(radius);
-            }
-        }
-        RadiusFunction::Exponential { lambda } => {
-            let exp_dist = TruncExp::new(min_radius, f64::INFINITY, lambda).unwrap();
-
-            for _ in 0..amount_to_add {
-                match generator.clone().borrow_mut().sample(&exp_dist) {
-                    Ok(radius) => frac_fam.radii_list.push(radius),
-                    Err(_) => {
-                        print_generating_fractures_less_than_hwarning(n_fam_ell, fam_idx, frac_fam);
-                        panic!()
-                    }
-                };
-            }
-        }
-        RadiusFunction::Constant(_) => unreachable!(),
     }
 }
 
@@ -224,7 +171,7 @@ pub fn dry_run(
     frac_families: &mut [FractureFamily],
     generator: Rc<RefCell<Mt64>>,
 ) {
-    println!("Estimating number of fractures per family for defined fracture intensities (P32)...");
+    info!("Estimating number of fractures per family for defined fracture intensities (P32)...");
     let dom_vol = input.domainSize[0] * input.domainSize[1] * input.domainSize[2];
     let total_families = frac_families.len();
     let mut cdf_size = total_families; // This variable shrinks along with CDF when used with fracture intensity (P32) option

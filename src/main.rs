@@ -107,15 +107,16 @@ fn main() -> Result<(), DfngenError> {
         if input.stopCondition == 0 {
             // Npoly Option
             // Estimate fractures, generate radii lists for nPoly option
+            info!("Building radii lists for nPoly option...");
             generate_radii_lists_n_poly_option(
                 input.forceLargeFractures,
                 input.nPoly,
-                input.h,
                 input.nFamEll,
                 &mut frac_families,
                 &input.famProb,
                 generator.clone(),
             );
+            info!("Building radii lists for nPoly option Complete");
         } else {
             // P32 Option
             // ESTIMATE # FRACTURES NEEDED
@@ -131,7 +132,6 @@ fn main() -> Result<(), DfngenError> {
         // to the radii list for each family
         if !input.disableFram {
             add_radii_to_lists(
-                input.h,
                 input.nFamEll,
                 input.radiiListIncrease,
                 &mut frac_families,
