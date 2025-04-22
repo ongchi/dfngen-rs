@@ -320,7 +320,7 @@ pub struct Stats {
     pub rejected_user_fracture: Vec<RejectedUserFracture>,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub enum Shape {
     Ellipse(u8),
     Rectangle,
@@ -605,6 +605,66 @@ impl FractureFamilyBuilder {
                 .take()
                 .ok_or("orientation is required".to_string())?,
         })
+    }
+}
+
+pub struct FractureFamilyOption {
+    pub families: Vec<FractureFamily>,
+
+    // Each element is the probability of chosing a fracture from
+    // the element's corresponding family to be inserted into the DFN.
+    // The elements should add up to 1.0 (for %100).
+    pub probabilities: Vec<f64>,
+
+    // Copy of the original values of probabilities
+    pub original_probabilities: Vec<f64>,
+}
+
+impl FractureFamilyOption {
+    pub fn generate_radii(
+        &mut self,
+        force_large_fractures: bool,
+        n_poly: usize,
+        generator: Rc<RefCell<Mt64>>,
+    ) -> Result<(), DfngenError> {
+        let mut n_poly = n_poly;
+        if force_large_fractures {
+            for shape in self.families.iter_mut() {
+                let radius = shape.radius.max;
+                shape.radii_list.push(radius);
+            }
+            n_poly -= self.families.len();
+        }
+
+        let mut ell_id = 0;
+        let mut rect_id = 0;
+
+        for i in 0..self.families.len() {
+            let frac_fam = &mut self.families[i];
+
+            match frac_fam.shape {
+                Shape::Ellipse(_) => ell_id += 1,
+                Shape::Rectangle => rect_id += 1,
+            };
+
+            match frac_fam.radius.sample(
+                (self.probabilities[i] * n_poly as f64).ceil() as usize,
+                generator.clone(),
+            ) {
+                Ok(radii) => frac_fam.radii_list.extend(radii),
+                Err(_) => {
+                    return Err(DfngenError::TooManySmallFractures {
+                        shape: frac_fam.shape,
+                        id: match frac_fam.shape {
+                            Shape::Ellipse(_) => ell_id,
+                            Shape::Rectangle => rect_id,
+                        },
+                    });
+                }
+            }
+        }
+
+        Ok(())
     }
 }
 

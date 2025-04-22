@@ -5,11 +5,12 @@ use std::rc::Rc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use clap::Parser;
+use itertools::zip_eq;
 use parry3d_f64::na::Point3;
 use rand::distr::Uniform;
 use rand::Rng;
 use rand_mt::Mt64;
-use structures::RadiusFunction;
+use structures::{RadiusFunction, Shape};
 use tracing::{error, info};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
@@ -19,9 +20,7 @@ use crate::{
     error::DfngenError,
     fracture::cluster_groups::get_cluster,
     fracture::domain::domain_truncation,
-    fracture::fracture_estimating::{
-        add_radii_to_lists, dry_run, generate_radii_lists_n_poly_option, sort_radii,
-    },
+    fracture::fracture_estimating::{dry_run, sort_radii},
     fracture::insert_shape::{
         generate_poly, get_family_number, print_reject_reason, re_translate_poly,
     },
@@ -91,9 +90,9 @@ fn main() -> Result<(), DfngenError> {
     let mut pstats = Stats::new();
 
     // Read input variables. Most input variables are global
-    let (mut input, mut frac_families) = read_input(&cli.input_file);
+    let (mut input, mut frac_fam_opt) = read_input(&cli.input_file);
     info!("h: {}", input.h);
-    let total_families = input.nFamEll + input.nFamRect;
+    let total_families = frac_fam_opt.families.len();
 
     let generator = Rc::new(RefCell::new(Mt64::new(match input.seed {
         0 => SystemTime::now()
@@ -108,21 +107,18 @@ fn main() -> Result<(), DfngenError> {
             // Npoly Option
             // Estimate fractures, generate radii lists for nPoly option
             info!("Building radii lists for nPoly option...");
-            generate_radii_lists_n_poly_option(
+            frac_fam_opt.generate_radii(
                 input.forceLargeFractures,
                 input.nPoly,
-                input.nFamEll,
-                &mut frac_families,
-                &input.famProb,
                 generator.clone(),
-            );
+            )?;
             info!("Building radii lists for nPoly option Complete");
         } else {
             // P32 Option
             // ESTIMATE # FRACTURES NEEDED
             if !input.disableFram {
                 info!("Estimating number of fractures needed...");
-                dry_run(&mut input, &mut frac_families, generator.clone());
+                dry_run(&mut input, &mut frac_fam_opt, generator.clone());
             }
         }
 
@@ -131,34 +127,35 @@ fn main() -> Result<(), DfngenError> {
         // First arg is percentage, eg: 0.1 will add 10% more fractures
         // to the radii list for each family
         if !input.disableFram {
-            add_radii_to_lists(
-                input.nFamEll,
-                input.radiiListIncrease,
-                &mut frac_families,
+            frac_fam_opt.generate_radii(
+                false,
+                (input.nPoly as f64 * input.radiiListIncrease).ceil() as usize,
                 generator.clone(),
-            );
+            )?;
 
-            for (j, shape) in frac_families.iter().enumerate() {
-                match shape.radius.function {
-                    RadiusFunction::Constant(_) => {
-                        info!(
-                            "{} family {} using constant size",
-                            shape.shape,
-                            get_family_number(input.nFamEll, j as isize, shape.shape)
-                        );
+            let mut ell_id = 0;
+            let mut rect_id = 0;
+            for fracture_family in frac_fam_opt.families.iter() {
+                let fam_id = match fracture_family.shape {
+                    Shape::Ellipse(_) => {
+                        ell_id += 1;
+                        ell_id
                     }
-                    _ => {
-                        info!(
-                            "Estimated {} fractures for {} family {}",
-                            shape.radii_list.len(),
-                            shape.shape,
-                            get_family_number(input.nFamEll, j as isize, shape.shape)
-                        );
+                    Shape::Rectangle => {
+                        rect_id += 1;
+                        rect_id
                     }
-                }
+                };
+
+                info!(
+                    "Estimated {} fractures for {} family {}",
+                    fracture_family.radii_list.len(),
+                    fracture_family.shape,
+                    fam_id
+                );
             }
 
-            sort_radii(&mut frac_families);
+            sort_radii(&mut frac_fam_opt.families);
         }
 
         // Keep count of accepted & rejected fractures by family
@@ -169,7 +166,12 @@ fn main() -> Result<(), DfngenError> {
         pstats.expected_from_fam.reserve(total_families);
 
         // Zero arrays, init expectedFromFam array
-        for (_, shape) in frac_families.iter().enumerate().take(total_families) {
+        for (_, shape) in frac_fam_opt
+            .families
+            .iter()
+            .enumerate()
+            .take(total_families)
+        {
             pstats.accepted_from_fam.push(0);
             pstats.rejected_from_fam.push(0);
             pstats.expected_from_fam.push(shape.radii_list.len());
@@ -353,7 +355,7 @@ fn main() -> Result<(), DfngenError> {
 
     if total_families > 0 {
         // Convert famProb to CDF
-        cdf = cumsum(&input.famProb);
+        cdf = cumsum(&frac_fam_opt.probabilities);
     }
 
     let radii_folder = format!("{}/radii", cli.output_folder);
@@ -412,7 +414,7 @@ fn main() -> Result<(), DfngenError> {
                 &input.layers,
                 &input.regions,
                 input.eps,
-                &mut frac_families[family_index],
+                &mut frac_fam_opt.families[family_index],
                 generator.clone(),
                 family_index as isize,
                 true,
@@ -467,7 +469,7 @@ fn main() -> Result<(), DfngenError> {
                             &input.layers,
                             &input.regions,
                             &mut new_poly,
-                            &frac_families[family_index],
+                            &frac_fam_opt.families[family_index],
                             generator.clone(),
                         );
                         continue; // Go to next iteration of while loop, test new translation
@@ -509,30 +511,31 @@ fn main() -> Result<(), DfngenError> {
                     new_poly.area = get_area(&new_poly);
 
                     // Update P32
-                    if frac_families[family_index].layer == 0
-                        && frac_families[family_index].region == 0
+                    if frac_fam_opt.families[family_index].layer == 0
+                        && frac_fam_opt.families[family_index].region == 0
                     {
                         // Whole domain
-                        frac_families[family_index].current_p32 += new_poly.area * 2. / dom_vol;
-                    } else if frac_families[family_index].layer > 0
-                        && frac_families[family_index].region == 0
+                        frac_fam_opt.families[family_index].current_p32 +=
+                            new_poly.area * 2. / dom_vol;
+                    } else if frac_fam_opt.families[family_index].layer > 0
+                        && frac_fam_opt.families[family_index].region == 0
                     {
                         // Layer
-                        frac_families[family_index].current_p32 += new_poly.area * 2.
-                            / input.layerVol[frac_families[family_index].layer - 1];
-                    } else if frac_families[family_index].layer == 0
-                        && frac_families[family_index].region > 0
+                        frac_fam_opt.families[family_index].current_p32 += new_poly.area * 2.
+                            / input.layerVol[frac_fam_opt.families[family_index].layer - 1];
+                    } else if frac_fam_opt.families[family_index].layer == 0
+                        && frac_fam_opt.families[family_index].region > 0
                     {
                         // Region
-                        frac_families[family_index].current_p32 += new_poly.area * 2.
-                            / input.regionVol[frac_families[family_index].region - 1];
+                        frac_fam_opt.families[family_index].current_p32 += new_poly.area * 2.
+                            / input.regionVol[frac_fam_opt.families[family_index].region - 1];
                     }
 
                     if input.stopCondition == 1 {
                         // If the last inserted pologon met the p32 reqirement, set that familiy to no longer
                         // insert any more fractures. ajust the CDF and familiy probabilites to account for this
-                        if frac_families[family_index].current_p32
-                            >= frac_families[family_index].p32_target
+                        if frac_fam_opt.families[family_index].current_p32
+                            >= frac_fam_opt.families[family_index].p32_target
                         {
                             input.p32Status[family_index] = true; // Mark family as having its p32 requirement met
                             info!("P32 For Family {} Completed", family_index + 1);
@@ -547,7 +550,7 @@ fn main() -> Result<(), DfngenError> {
                                 // Remove completed family from CDF and famProb
                                 adjust_cdf_and_fam_prob(
                                     &mut cdf,
-                                    &mut input.famProb,
+                                    &mut frac_fam_opt.probabilities,
                                     &mut cdf_size,
                                     cdf_idx,
                                 );
@@ -562,7 +565,12 @@ fn main() -> Result<(), DfngenError> {
                         info!("Re-translated {} fractures", pstats.retranslated_poly_count);
                         info!("Current p32 values per family:");
 
-                        for (i, shape) in frac_families.iter().enumerate().take(total_families) {
+                        for (i, shape) in frac_fam_opt
+                            .families
+                            .iter()
+                            .enumerate()
+                            .take(total_families)
+                        {
                             if input.stopCondition == 0 {
                                 info!(
                                     "{} family {} Current P32 = {:.8}",
@@ -620,7 +628,7 @@ fn main() -> Result<(), DfngenError> {
                             &input.layers,
                             &input.regions,
                             &mut new_poly,
-                            &frac_families[family_index],
+                            &frac_fam_opt.families[family_index],
                             generator.clone(),
                         );
                     }
@@ -657,7 +665,12 @@ fn main() -> Result<(), DfngenError> {
     if input.stopCondition == 1 {
         info!("Final p32 values per family:");
 
-        for (i, shape) in frac_families.iter().enumerate().take(total_families) {
+        for (i, shape) in frac_fam_opt
+            .families
+            .iter()
+            .enumerate()
+            .take(total_families)
+        {
             info!(
                 "Family {} target P32 = {}, Final P32 = {}",
                 i + 1,
@@ -712,14 +725,14 @@ fn main() -> Result<(), DfngenError> {
     );
 
     // Print family stats to user
-    for i in 0..total_families {
+    for (i, (frac_fam, fam_area)) in zip_eq(&frac_fam_opt.families, &family_area).enumerate() {
         info!("Family: {}", i + 1);
         info!("Accepted: {}", pstats.accepted_from_fam[i],);
         info!("Rejected: {}", pstats.rejected_from_fam[i]);
 
-        if frac_families[i].layer > 0 {
-            let idx = (frac_families[i].layer - 1) * 2;
-            info!("Layer: {}", frac_families[i].layer,);
+        if frac_fam.layer > 0 {
+            let idx = (frac_fam.layer - 1) * 2;
+            info!("Layer: {}", frac_fam.layer,);
             info!(
                 "Layer {{-z, +z}}: {{{}, {}}}",
                 input.layers[idx],
@@ -729,16 +742,16 @@ fn main() -> Result<(), DfngenError> {
             info!("Layer: Whole Domain");
         }
 
-        if frac_families[i].region > 0 {
-            let idx = (frac_families[i].region - 1) * 6;
-            info!("Region: {}", frac_families[i].region);
+        if frac_fam.region > 0 {
+            let idx = (frac_fam.region - 1) * 6;
+            info!("Region: {}", frac_fam.region);
             info!("{{-x,+x,-y,+y,-z,+z}}: {:?}", &input.regions[idx..idx + 6]);
         } else {
             info!("Region: Whole Domain");
         }
 
-        info!("Surface Area: {} m^2", family_area[i] * 2.,);
-        info!("Fracture Intensity (P32): {}", frac_families[i].current_p32);
+        info!("Surface Area: {} m^2", fam_area * 2.,);
+        info!("Fracture Intensity (P32): {}", frac_fam.current_p32);
     }
 
     if user_defined_shapes_area > 0. {
@@ -915,9 +928,9 @@ fn main() -> Result<(), DfngenError> {
         info!("Accepted: {}", pstats.accepted_from_fam[i]);
         info!("Rejected: {}", pstats.rejected_from_fam[i]);
 
-        if frac_families[i].layer > 0 {
-            let idx = (frac_families[i].layer - 1) * 2;
-            info!("Layer: {}", frac_families[i].layer);
+        if frac_fam_opt.families[i].layer > 0 {
+            let idx = (frac_fam_opt.families[i].layer - 1) * 2;
+            info!("Layer: {}", frac_fam_opt.families[i].layer);
             info!(
                 "Layer {{-z, +z}}: {{{}, {}}}",
                 input.layers[idx],
@@ -927,9 +940,9 @@ fn main() -> Result<(), DfngenError> {
             info!("Layer: Whole Domain");
         }
 
-        if frac_families[i].region > 0 {
-            let idx = (frac_families[i].region - 1) * 6;
-            info!("Region: {}", frac_families[i].region);
+        if frac_fam_opt.families[i].region > 0 {
+            let idx = (frac_fam_opt.families[i].region - 1) * 6;
+            info!("Region: {}", frac_fam_opt.families[i].region);
             info!("{{-x,+x,-y,+y,-z,+z}}: {:?}", &input.regions[idx..idx + 6]);
         } else {
             info!("Region: Whole Domain");
@@ -1028,7 +1041,12 @@ fn main() -> Result<(), DfngenError> {
         info!("If this is the case, try increasing or decreasing the 'radiiListIncrease' option in the input file.");
 
         // Compare expected radii/poly size and actual
-        for (i, shape) in frac_families.iter().enumerate().take(total_families) {
+        for (i, shape) in frac_fam_opt
+            .families
+            .iter()
+            .enumerate()
+            .take(total_families)
+        {
             match shape.radius.function {
                 RadiusFunction::Constant(_) => {
                     info!(
@@ -1065,7 +1083,7 @@ fn main() -> Result<(), DfngenError> {
         &mut triple_points,
         &mut pstats,
         &final_fractures,
-        &frac_families,
+        &frac_fam_opt,
     );
 
     // Duplicate node counters are set in writeOutput(). Write output must happen before

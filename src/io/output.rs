@@ -12,7 +12,7 @@ use crate::{
     distribution::generating_points::discretize_line_of_intersection,
     fracture::insert_shape::get_family_number,
     math_functions::sorted_index,
-    structures::{FractureFamily, IntersectionPoints, Poly, Shape, Stats},
+    structures::{FractureFamilyOption, IntersectionPoints, Poly, Shape, Stats},
 };
 
 /// Writes all output for DFNGen
@@ -37,7 +37,7 @@ pub fn write_output(
     triple_points: &mut [Point3<f64>],
     pstats: &mut Stats,
     final_fractures: &[usize],
-    frac_families: &[FractureFamily],
+    frac_families: &FractureFamilyOption,
 ) {
     let output = format!("{}/dfnGen_output", output_folder);
     info!("{}", output);
@@ -107,7 +107,6 @@ pub fn write_output(
         input.nFamEll,
         &input.layers,
         &input.regions,
-        &input.famProbOriginal,
         frac_families,
         &output,
     );
@@ -137,7 +136,7 @@ pub fn write_output(
     if input.outputAcceptedRadiiPerFamily {
         info!("Writing Accepted Radii Files Per Family");
         // Creates radii files per family, before isolated fracture removal.
-        let size = frac_families.len();
+        let size = frac_families.families.len();
 
         for i in 0..size {
             write_all_accepted_radii_of_family(i as isize, accepted_poly, &radii_folder);
@@ -161,7 +160,7 @@ pub fn write_output(
 
     if input.outputFinalRadiiPerFamily {
         info!("Writing Final Radii Files Per Family");
-        let size = frac_families.len();
+        let size = frac_families.families.len();
 
         for i in 0..size {
             write_final_radii_of_family(final_fractures, i as isize, accepted_poly, &radii_folder);
@@ -1116,8 +1115,7 @@ fn write_frac_fams(
     n_fam_ell: usize,
     layers: &[f64],
     regions: &[f64],
-    fam_prob_original: &[f64],
-    frac_families: &[FractureFamily],
+    frac_families: &FractureFamilyOption,
     output: &str,
 ) {
     let rad_to_deg = 180. / std::f64::consts::PI;
@@ -1142,7 +1140,7 @@ fn write_frac_fams(
             .unwrap();
     }
 
-    for (i, shape) in frac_families.iter().enumerate() {
+    for (i, shape) in frac_families.families.iter().enumerate() {
         //name(rect or ell) and number of family
         file.write_all(
             format!(
@@ -1242,7 +1240,11 @@ fn write_frac_fams(
         file.write_all(shape.radius.to_string().as_bytes()).unwrap();
 
         file.write_all(
-            format!("Family Insertion Probability: {}\n\n", fam_prob_original[i]).as_bytes(),
+            format!(
+                "Family Insertion Probability: {}\n\n",
+                frac_families.original_probabilities[i]
+            )
+            .as_bytes(),
         )
         .unwrap();
     }
@@ -1313,7 +1315,7 @@ fn write_rotation_data(
     domain_size: &Vector3<f64>,
     accepted_poly: &[Poly],
     final_fractures: &[usize],
-    frac_families: &[FractureFamily],
+    frac_families: &FractureFamilyOption,
     output: &str,
 ) {
     let file_output_file = format!("{}/../poly_info.dat", output);
@@ -1359,9 +1361,9 @@ fn write_rotation_data(
         // If the family number is -1 or -2 we change these numbers to be
         // number of stochastic families + 1 and number of stochastic families + 2
         let fam_num = if accepted_poly[final_fractures[i]].family_num == -1 {
-            frac_families.len() as isize + 1
+            frac_families.families.len() as isize + 1
         } else if accepted_poly[final_fractures[i]].family_num == -2 {
-            frac_families.len() as isize + 2
+            frac_families.families.len() as isize + 2
         } else {
             accepted_poly[final_fractures[i]].family_num + 1
         };

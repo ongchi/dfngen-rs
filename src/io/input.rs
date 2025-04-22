@@ -1,14 +1,14 @@
 use std::fs::File;
 
 use parry3d_f64::na::{Point3, Vector3};
-use tracing::{info, warn};
+use tracing::{error, info, warn};
 
 use super::read_input_functions::{
     get_cords, get_rect_coords, read_domain_vertices, search_var, ReadFromTextFile,
     UserFractureReader,
 };
 
-use crate::{io::read_input_functions::InputReader, structures::FractureFamily};
+use crate::{io::read_input_functions::InputReader, structures::FractureFamilyOption};
 
 #[allow(non_snake_case)]
 #[derive(Default, Debug)]
@@ -129,23 +129,6 @@ pub struct Input {
     /// Number of ellipse families defined below.
     /// Having this option = 0 will ignore all ellipse family variables.
     pub nFamEll: usize,
-
-    /// Each element is the probability of chosing a fracture from
-    /// the element's corresponding family to be inserted into the DFN.
-    ///
-    /// The famProb elements should add up to 1.0 (for %100).
-    /// The probabilities are listed in order of families starting with all
-    /// stochastic ellipses, and then all stochastic rectangles.
-    ///
-    /// For example:
-    /// If  then there are two ellipse families, each with probabiliy .3,
-    /// and two rectangle families, each with probabiliy .2, famProb will be:
-    /// famProb: {.3,.3,.2,.2}, famProb elements must add to 1
-    pub famProb: Vec<f64>,
-
-    /// Holds a copy of famProb. famProb elements can change as different families
-    /// hit their P32 requirement when using the P32 stopCondition option.
-    pub famProbOriginal: Vec<f64>,
 
     ///    0 - Ignore this option, keep all fractures.
     ///
@@ -270,9 +253,9 @@ pub struct Input {
 /// # Arguments
 ///
 /// * `input` - Path to input file
-pub fn read_input(input_file: &str) -> (Input, Vec<FractureFamily>) {
+pub fn read_input(input_file: &str) -> (Input, FractureFamilyOption) {
     let mut input_var = Input::default();
-    let mut frac_family = Vec::new();
+    let mut fracture_families = Vec::new();
 
     info!("DFN Generator Input File: {}", input_file);
     let mut input_reader = InputReader::new(input_file);
@@ -402,26 +385,30 @@ pub fn read_input(input_file: &str) -> (Input, Vec<FractureFamily>) {
         }
     }
 
-    if input_var.nFamEll > 0 || input_var.nFamRect > 0 {
-        input_var!(famProb);
-        input_var.famProbOriginal.extend(input_var.famProb.iter());
-        input_var!(radiiListIncrease);
-    }
+    fracture_families.extend(input_reader.read_fracture_family("e"));
+    fracture_families.extend(input_reader.read_fracture_family("r"));
 
-    // Set stop condition variables
-    if input_var.nFamRect > 0 || input_var.nFamEll > 0 {
+    let fracture_family_probabilities = if !fracture_families.is_empty() {
+        input_var!(radiiListIncrease);
+
         if input_var.stopCondition == 0 {
             // npoly option
             input_var!(nPoly);
         } else if input_var.stopCondition == 1 {
             // Stop program when p32 conditions per fracture family are met
             // Staus array for whether or not the family has reached its p32 requirement
-            input_var.p32Status = vec![false; input_var.nFamRect + input_var.nFamEll];
+            input_var.p32Status = vec![false; fracture_families.len()];
+        } else {
+            error!("Invalid stopCondition option. Must be 0: nPoly or 1: p32");
+            panic!()
         }
-    }
 
-    frac_family.extend(input_reader.read_fracture_family("e"));
-    frac_family.extend(input_reader.read_fracture_family("r"));
+        let mut fam_prob = Vec::with_capacity(fracture_families.len());
+        input_reader.read_value("famProb:", &mut fam_prob);
+        fam_prob
+    } else {
+        Vec::new()
+    };
 
     input_var!(userEllipsesOnOff);
 
@@ -505,7 +492,7 @@ pub fn read_input(input_file: &str) -> (Input, Vec<FractureFamily>) {
     }
 
     // Error check on stopping parameter
-    if input_var.nFamEll + input_var.nFamRect == 0 && input_var.stopCondition != 0 {
+    if fracture_families.is_empty() && input_var.stopCondition != 0 {
         // If no stochastic shapes, use nPoly option with npoly = number of user polygons
         warn!("You have defined stopCondition = 1 (P32 program stopping condition) but have no stochastic shape families defined. Automatically setting stopCondition to 0 for use with user defined polygons and nPoly.");
         input_var.stopCondition = 0;
@@ -535,7 +522,14 @@ pub fn read_input(input_file: &str) -> (Input, Vec<FractureFamily>) {
         input_var.nPoly = count;
     }
 
-    (input_var, frac_family)
+    (
+        input_var,
+        FractureFamilyOption {
+            families: fracture_families,
+            probabilities: fracture_family_probabilities.clone(),
+            original_probabilities: fracture_family_probabilities,
+        },
+    )
 }
 
 #[derive(Debug)]

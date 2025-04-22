@@ -1,3 +1,5 @@
+use crate::structures::Shape;
+
 #[derive(thiserror::Error, Debug)]
 pub enum DfngenError {
     #[error(transparent)]
@@ -12,4 +14,6 @@ pub enum DfngenError {
     Sampling(#[from] crate::distribution::SamplingError),
     #[error(transparent)]
     ExponentialSampling(#[from] crate::distribution::exp::Error),
+    #[error("{shape} Family {id} is attepting to populate fracture radii lists, however many fractures are being generated with radii less than minimum radius.")]
+    TooManySmallFractures { shape: Shape, id: usize },
 }
