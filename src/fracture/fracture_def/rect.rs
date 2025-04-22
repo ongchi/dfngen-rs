@@ -1,56 +1,14 @@
 use parry3d_f64::na::{Point3, Vector3};
 use tracing::{info, warn};
 
-use super::domain::domain_truncation;
-use super::insert_shape::{initialize_rect_vertices, print_reject_reason};
-
-use crate::io::input::UserDefinedFractures;
 use crate::{
-    computational_geometry::{
-        apply_rotation2_d, apply_rotation3_d, create_bounding_box, intersection_checking, translate,
-    },
+    computational_geometry::{create_bounding_box, intersection_checking},
+    fracture::{domain::domain_truncation, insert_shape::print_reject_reason},
     math_functions::get_area,
     structures::{IntersectionPoints, Poly, RejectedUserFracture, Stats},
 };
 
-fn create_poly(eps: f64, user_defined_rects: &UserDefinedFractures, idx: usize) -> Poly {
-    let mut new_poly = Poly {
-        // Set number of nodes. Needed for rotations.
-        number_of_nodes: 4,
-        family_num: -2,
-        group_num: 0,
-        // Initialize normal to {0,0,1}. need initialized for 3D rotation
-        normal: Vector3::new(0., 0., 1.),
-        translation: Vector3::from_row_slice(&user_defined_rects.translation[idx]),
-        vertices: Vec::with_capacity(12),
-        ..Default::default()
-    };
-
-    // initializeRectVertices() sets newpoly.xradius, newpoly.yradius, newpoly.aperture
-    initialize_rect_vertices(
-        &mut new_poly,
-        user_defined_rects.radii[idx],
-        user_defined_rects.aspect[idx],
-    );
-
-    // Apply 2d rotation matrix, twist around origin
-    // Assumes polygon on x-y plane
-    // Angle must be in rad
-    apply_rotation2_d(&mut new_poly, user_defined_rects.beta[idx]);
-
-    // Rotate vertices to urnormal[index] (new normal)
-    apply_rotation3_d(&mut new_poly, &user_defined_rects.normal[idx], eps);
-
-    new_poly.normal = user_defined_rects.normal[idx];
-
-    // Translate newPoly to urtranslation
-    translate(
-        &mut new_poly,
-        Vector3::from_row_slice(&user_defined_rects.translation[idx]),
-    );
-
-    new_poly
-}
+use super::UserDefinedFractures;
 
 /// Insert User Rectangles
 ///
@@ -94,9 +52,9 @@ pub fn insert_user_rects(
     let family_id = -2;
     info!("{} User Rectangles Defined", npoly);
 
-    for i in 0..npoly {
-        let mut new_poly = create_poly(eps, user_defined_rects, i);
+    let new_polys = user_defined_rects.create_polys(eps);
 
+    for (i, mut new_poly) in new_polys.into_iter().enumerate() {
         if domain_truncation(h, eps, &mut new_poly, domain_size) {
             //poly completely outside domain
             pstats.rejection_reasons.outside += 1;

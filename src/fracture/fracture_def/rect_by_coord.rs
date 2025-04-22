@@ -1,11 +1,9 @@
 use parry3d_f64::na::{Point3, Vector3};
 use tracing::{info, warn};
 
-use super::domain::domain_truncation;
-use super::insert_shape::print_reject_reason;
-
 use crate::{
     computational_geometry::{create_bounding_box, intersection_checking},
+    fracture::{domain::domain_truncation, insert_shape::print_reject_reason},
     math_functions::get_area,
     structures::{IntersectionPoints, Poly, RejectedUserFracture, Stats},
 };

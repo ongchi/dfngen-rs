@@ -1,35 +1,38 @@
 use parry3d_f64::na::{distance, Point3, Vector3};
 use tracing::{info, warn};
 
-use super::domain::domain_truncation;
-use super::insert_shape::print_reject_reason;
-
 use crate::{
     computational_geometry::{create_bounding_box, intersection_checking},
-    io::input::UserDefinedPolygonByCoord,
+    fracture::{domain::domain_truncation, insert_shape::print_reject_reason},
     math_functions::get_area,
     structures::{IntersectionPoints, Poly, RejectedUserFracture, Stats},
 };
 
-fn create_poly(polygon_data: &UserDefinedPolygonByCoord) -> Poly {
-    let n_poly_nodes = polygon_data.num_points;
-
+fn create_poly(n_ell_nodes: usize, user_ell_coord_vertices: &[f64], idx: usize) -> Poly {
     let mut new_poly = Poly {
-        family_num: -3,
+        family_num: -1,
         // Set number of nodes. Needed for rotations.
-        number_of_nodes: n_poly_nodes as isize,
-        vertices: polygon_data.vertices.clone(),
+        number_of_nodes: n_ell_nodes as isize,
+        // Initialize normal to {0,0,1}. need initialized for 3D rotation
+        normal: Vector3::new(0., 0., 1.),
         ..Default::default()
     };
 
-    // Get a normal vector
-    // Vector from fist node to node across middle of polygon
-    let mut pt_idx_12 = 3 * (n_poly_nodes / 2);
+    new_poly.vertices.reserve(n_ell_nodes * 3);
 
-    if n_poly_nodes == 3 {
-        pt_idx_12 = 8;
+    let poly_vert_idx = idx * 3 * n_ell_nodes; // Each polygon has nEllNodes * 3 vertices
+
+    // Initialize vertices
+    for j in 0..n_ell_nodes {
+        let v_idx = j * 3;
+        new_poly.vertices[v_idx] = user_ell_coord_vertices[poly_vert_idx + v_idx];
+        new_poly.vertices[v_idx + 1] = user_ell_coord_vertices[poly_vert_idx + 1 + v_idx];
+        new_poly.vertices[v_idx + 2] = user_ell_coord_vertices[poly_vert_idx + 2 + v_idx];
     }
 
+    // Get a normal vector
+    // Vector from fist node to node accross middle of polygon
+    let pt_idx_12 = 3 * (n_ell_nodes / 2);
     let p1 = Point3::from_slice(&new_poly.vertices[0..3]);
     let p2 = Point3::from_slice(&new_poly.vertices[3..6]);
     let p_12 = Point3::from_slice(&new_poly.vertices[pt_idx_12..pt_idx_12 + 3]);
@@ -40,13 +43,13 @@ fn create_poly(polygon_data: &UserDefinedPolygonByCoord) -> Poly {
     new_poly.normal = v2.cross(&v1).normalize();
     // Estimate radius
     // across middle if even number of nodes
-    // across middle close to perpendicular to xradius magnitude calculation
     new_poly.xradius = 0.5 * v2.magnitude();
 
     // Get idx for node 1/4 around polygon
-    let pt_idx_14 = 3 * (n_poly_nodes / 4);
+    let pt_idx_14 = 3 * (pt_idx_12 / 2);
     // Get idx for node 3/4 around polygon
-    let pt_idx_34 = 3 * (3 * n_poly_nodes / 4);
+    // across middle close to perpendicular to xradius magnitude calculation
+    let pt_idx_34 = 3 * (pt_idx_14 + pt_idx_12);
 
     let p_14 = Point3::from_slice(&new_poly.vertices[pt_idx_14..pt_idx_14 + 3]);
     let p_34 = Point3::from_slice(&new_poly.vertices[pt_idx_34..pt_idx_34 + 3]);
@@ -64,48 +67,56 @@ fn create_poly(polygon_data: &UserDefinedPolygonByCoord) -> Poly {
     new_poly
 }
 
-/// Inserts user polygon using defined coordinates provided by the user (see input file).
+/// Insert User Ellipses By Coord
 ///
-/// Intersection checking, FRAM, and rejection/acceptance are all contained
+/// Inserts user ellipses using defined coordinates
+/// provided by the user (see input file).
+/// Intersection checking, FRAM, and rejection/accptance are all contained
 /// within this function.
 ///
 /// # Arguments
 ///
 /// * `h` - Minimum feature size
 /// * `eps` - Epsilon value for floating point comparisons
+/// * `n_ell_nodes` - Number of nodes for user defined ellipses by coordinates
+/// * `n_ell_by_coord` - Number of user ellipses defined by coordinates
 /// * `r_fram` - Uses a relaxed version of the FRAM algorithm. The mesh may not be perfectly conforming
 /// * `disable_fram` - If true, FRAM is disabled
 /// * `triple_intersections` - If true, triple intersections are accepted
-/// * `domain_size` - Domain size
-/// * `polygon_file` - File containing user defined polygons
-/// * `accepted_poly` - Array for all accepted polygons
-/// * `intpts` - Array for all accepted intersections
+/// * `domain_size` - Size of the domain
+/// * `user_ell_coord_vertices` - Array of ellipse coordiates.
+/// * `accepted_poly` - Array of all accepted polygons
+/// * `intpts` - Array of all accepted intersections
 /// * `pstats` - Program statistics structure
 /// * `triple_points` - Array of all triple intersection points
 #[allow(clippy::too_many_arguments)]
-pub fn insert_user_polygon_by_coord(
+pub fn insert_user_ell_by_coord(
     h: f64,
     eps: f64,
+    n_ell_nodes: usize,
+    n_ell_by_coord: usize,
     r_fram: bool,
     disable_fram: bool,
     triple_intersections: bool,
     domain_size: &Vector3<f64>,
-    poly_data: &UserDefinedPolygonByCoord,
+    user_ell_coord_vertices: &[f64],
     accepted_poly: &mut Vec<Poly>,
     intpts: &mut Vec<IntersectionPoints>,
     pstats: &mut Stats,
     triple_points: &mut Vec<Point3<f64>>,
 ) {
-    let family_id = -3;
+    let family_id = -1;
+    let npoly = n_ell_by_coord;
+    info!("{} User Ellipses By Coordinates Defined", npoly);
 
-    for i in 0..poly_data.n_frac {
-        let mut new_poly = create_poly(poly_data);
+    for i in 0..npoly {
+        let mut new_poly = create_poly(n_ell_nodes, user_ell_coord_vertices, i);
 
         if domain_truncation(h, eps, &mut new_poly, domain_size) {
             // Poly completely outside domain
             pstats.rejection_reasons.outside += 1;
             pstats.rejected_poly_count += 1;
-            warn!("User Polygon (defined by coordinates) {} was rejected for being outside the defined domain.", i + 1);
+            warn!("User Ellipse (defined by coordinates) {} was rejected for being outside the defined domain.", i + 1);
             pstats
                 .rejected_user_fracture
                 .push(RejectedUserFracture::new(i + 1, family_id));
@@ -140,7 +151,7 @@ pub fn insert_user_polygon_by_coord(
             // Add new rejectsPerAttempt counter
             pstats.rejects_per_attempt.push(0);
             info!(
-                "User Defined Polygon Fracture (Defined By Coordinates) {} Accepted",
+                "User Defined Elliptical Fracture (Defined By Coordinates) {} Acceptedn",
                 i + 1
             );
             accepted_poly.push(new_poly); // Save newPoly to accepted polys list
@@ -148,7 +159,7 @@ pub fn insert_user_polygon_by_coord(
             pstats.rejects_per_attempt[pstats.accepted_poly_count] += 1;
             pstats.rejected_poly_count += 1;
             info!(
-                "Rejected User Defined Polygon Fracture (Defined By Coordinates) {}",
+                "Rejected Eser Defined Elliptical Fracture (Defined By Coordinates) {}",
                 i + 1
             );
             print_reject_reason(reject_code, &new_poly);
@@ -156,5 +167,5 @@ pub fn insert_user_polygon_by_coord(
                 .rejected_user_fracture
                 .push(RejectedUserFracture::new(i + 1, family_id));
         }
-    }
+    } // End loop
 }

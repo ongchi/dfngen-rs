@@ -5,7 +5,12 @@ use std::rc::Rc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use clap::Parser;
-use io::input::{
+use fracture::fracture_def::ell::insert_user_ell;
+use fracture::fracture_def::ell_by_coord::insert_user_ell_by_coord;
+use fracture::fracture_def::polygon_by_coord::insert_user_polygon_by_coord;
+use fracture::fracture_def::rect::insert_user_rects;
+use fracture::fracture_def::rect_by_coord::insert_user_rects_by_coord;
+use fracture::fracture_def::{
     UserDefinedEllByCoord, UserDefinedFractures, UserDefinedPolygonByCoord, UserDefinedRectByCoord,
 };
 use itertools::zip_eq;
@@ -27,11 +32,6 @@ use crate::{
     fracture::insert_shape::{
         generate_poly, get_family_number, print_reject_reason, re_translate_poly,
     },
-    fracture::insert_user_ell::insert_user_ell,
-    fracture::insert_user_ell_by_coord::insert_user_ell_by_coord,
-    fracture::insert_user_polygon_by_coord::insert_user_polygon_by_coord,
-    fracture::insert_user_rects::insert_user_rects,
-    fracture::insert_user_rects_by_coord::insert_user_rects_by_coord,
     fracture::remove_fractures::remove_fractures,
     io::input::read_input,
     io::output::write_output,
