@@ -155,9 +155,8 @@ pub struct Input {
     /// False - No ellpsies defined by coordinates are being used.
     pub userEllByCoord: bool,
 
-    /// True  - User polygons defined by coordinates are being used.
-    /// False - No polygons defined by coordinates are being used.
-    pub userPolygonByCoord: bool,
+    /// File name of user polygons defined by coordinates
+    pub user_poly_by_coord_file: Option<String>,
 
     /// Caution: Can create very large files.
     /// Outputs all fractures which were generated during
@@ -183,9 +182,6 @@ pub struct Input {
     /// Array of ellipse coordiates.
     /// Number of elements =  3 * nEllNodes * nEllByCoord
     pub userEllCoordVertices: Vec<f64>,
-
-    /// Name of userPolygon File
-    pub polygonFile: String,
 
     /// If a fracture is rejected, it will be re-translated
     /// to a new position this number of times.
@@ -421,9 +417,10 @@ pub fn read_input(input_file: &str) -> (Input, FractureFamilyOption) {
             Some(UserDefinedFractures::from_file(&user_rect_file, false));
     }
 
+    // Get external fracture definition files
+
     input_var!(userEllByCoord);
     input_var!(userRecByCoord);
-    input_var!(userPolygonByCoord);
 
     if (input_var.userRectanglesOnOff || input_var.userRecByCoord)
         && (input_var.userEllipsesOnOff || input_var.userEllByCoord)
@@ -433,11 +430,12 @@ pub fn read_input(input_file: &str) -> (Input, FractureFamilyOption) {
         input_var.insertUserRectanglesFirst = false;
     }
 
-    if !input_var.userPolygonByCoord {
-        input_reader.read_value(
-            "PolygonByCoord_Input_File_Path:",
-            &mut input_var.polygonFile,
-        );
+    let mut user_polygon_by_coord = false;
+    input_reader.read_value("userPolygonByCoord:", &mut user_polygon_by_coord);
+    if user_polygon_by_coord {
+        let mut path = String::new();
+        input_reader.read_value("PolygonByCoord_Input_File_Path:", &mut path);
+        input_var.user_poly_by_coord_file = Some(path);
     }
 
     if input_var.userEllByCoord {

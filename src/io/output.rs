@@ -102,7 +102,7 @@ pub fn write_output(
     write_frac_fams(
         input.userEllipsesOnOff,
         input.userRectanglesOnOff,
-        input.userPolygonByCoord,
+        input.user_poly_by_coord_file.is_some(),
         input.stopCondition,
         input.nFamEll,
         &input.layers,
@@ -152,7 +152,7 @@ pub fn write_output(
             write_all_accepted_radii_of_family(-1, accepted_poly, &radii_folder);
         }
 
-        if input.userPolygonByCoord {
+        if input.user_poly_by_coord_file.is_some() {
             // Fractures are marked -3 for user user polygons
             write_all_accepted_radii_of_family(-3, accepted_poly, &radii_folder);
         }
@@ -174,7 +174,7 @@ pub fn write_output(
             write_final_radii_of_family(final_fractures, -2, accepted_poly, &radii_folder);
         }
 
-        if input.userPolygonByCoord {
+        if input.user_poly_by_coord_file.is_some() {
             write_final_radii_of_family(final_fractures, -3, accepted_poly, &radii_folder);
         }
     }

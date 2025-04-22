@@ -187,8 +187,8 @@ fn main() -> Result<(), DfngenError> {
 
     // ********************* User Defined Shapes Insertion ************************
     // User Polygons are always inserted first
-    if input.userPolygonByCoord {
-        let poly_data = UserDefinedPolygonByCoord::from_file(&input.polygonFile);
+    if let Some(ref path) = input.user_poly_by_coord_file {
+        let poly_data = UserDefinedPolygonByCoord::from_file(path);
         insert_user_polygon_by_coord(
             input.h,
             input.eps,
