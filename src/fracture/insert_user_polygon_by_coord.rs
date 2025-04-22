@@ -1,7 +1,7 @@
 use std::fs::File;
 
 use parry3d_f64::na::{distance, Point3, Vector3};
-use tracing::info;
+use tracing::{info, warn};
 
 use super::domain::domain_truncation;
 use super::insert_shape::print_reject_reason;
@@ -136,7 +136,7 @@ pub fn insert_user_polygon_by_coord(
             // Poly completely outside domain
             pstats.rejection_reasons.outside += 1;
             pstats.rejected_poly_count += 1;
-            info!("User Polygon (defined by coordinates) {} was rejected for being outside the defined domain.", i + 1);
+            warn!("User Polygon (defined by coordinates) {} was rejected for being outside the defined domain.", i + 1);
             pstats
                 .rejected_user_fracture
                 .push(RejectedUserFracture::new(i + 1, family_id));
@@ -159,6 +159,11 @@ pub fn insert_user_polygon_by_coord(
         );
 
         if reject_code == 0 {
+            // If intersection is ok (FRAM passed all tests)
+            if new_poly.truncated {
+                pstats.truncated += 1;
+            }
+
             // Incriment counter of accepted polys
             pstats.accepted_poly_count += 1;
             // Calculate poly's area

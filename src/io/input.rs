@@ -228,15 +228,6 @@ pub struct Input {
     /// Vector of points defining the 2D boundary of the domain polygon
     pub domainVertices: Vec<Point3<f64>>,
 
-    /// Global boolean array. Used with stopCondition = 1, P32 option.
-    /// Number of elements is equal to the number of stochastic shape families.
-    /// Elements correspond to families in the same order of the famProb array.
-    /// Elements are initialized to false, and are set to true once the families p32
-    /// requirement is met.
-    /// Once all elements have values all set to true, all families have had their
-    /// P32 requirement
-    pub p32Status: Vec<bool>,
-
     /// False - Use boundaryFaces option.
     /// True  - Ignore boundaryFaces option, keep all clusters
     ///         and remove fractures with no intersections
@@ -315,6 +306,7 @@ pub fn read_input(input_file: &str) -> (Input, FractureFamilyOption) {
     }
 
     input_var!(h);
+    info!("h: {}", input_var.h);
 
     // Set epsilon
     input_var.eps = input_var.h * 1e-8;
@@ -395,9 +387,6 @@ pub fn read_input(input_file: &str) -> (Input, FractureFamilyOption) {
             // npoly option
             input_var!(nPoly);
         } else if input_var.stopCondition == 1 {
-            // Stop program when p32 conditions per fracture family are met
-            // Staus array for whether or not the family has reached its p32 requirement
-            input_var.p32Status = vec![false; fracture_families.len()];
         } else {
             error!("Invalid stopCondition option. Must be 0: nPoly or 1: p32");
             panic!()

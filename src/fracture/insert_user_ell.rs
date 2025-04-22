@@ -1,5 +1,5 @@
 use parry3d_f64::na::{Point3, Vector3};
-use tracing::info;
+use tracing::{info, warn};
 
 use super::domain::domain_truncation;
 use super::insert_shape::{initialize_ell_vertices, print_reject_reason};
@@ -14,7 +14,6 @@ use crate::{
     structures::{IntersectionPoints, Poly, RejectedUserFracture, Stats},
 };
 
-#[allow(clippy::too_many_arguments)]
 fn create_poly(eps: f64, user_defined_ells: &UserDefinedFractures, idx: usize) -> Poly {
     let mut new_poly = Poly {
         // Set number of nodes. Needed for rotations.
@@ -115,7 +114,7 @@ pub fn insert_user_ell(
             // Poly completely outside domain
             pstats.rejection_reasons.outside += 1;
             pstats.rejected_poly_count += 1;
-            info!(
+            warn!(
                 "User Ellipse {} was rejected for being outside the defined domain.",
                 i + 1
             );

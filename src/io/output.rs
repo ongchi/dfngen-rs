@@ -15,7 +15,7 @@ use crate::{
     structures::{FractureFamilyOption, IntersectionPoints, Poly, Shape, Stats},
 };
 
-/// Writes all output for DFNGen
+/// Writes all output
 ///
 /// # Arguments
 ///

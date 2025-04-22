@@ -77,7 +77,7 @@ fn main() -> Result<(), DfngenError> {
         )
         .init();
 
-    info!("Starting DFNGen");
+    info!("Starting dfngen-rs");
 
     /************* Initialize Arrays/Vectors and Structures **************/
     // Vector to store accepted polygons/fractures
@@ -91,8 +91,13 @@ fn main() -> Result<(), DfngenError> {
 
     // Read input variables. Most input variables are global
     let (mut input, mut frac_fam_opt) = read_input(&cli.input_file);
-    info!("h: {}", input.h);
     let total_families = frac_fam_opt.families.len();
+
+    // Used with stopCondition = 1, P32 option.
+    // Values are set to true once the families p32 requirement is met.
+    // Once all elements have values all set to true, all families have had their
+    // P32 requirement
+    let mut p32_status = vec![false; frac_fam_opt.families.len()];
 
     let generator = Rc::new(RefCell::new(Mt64::new(match input.seed {
         0 => SystemTime::now()
@@ -102,7 +107,7 @@ fn main() -> Result<(), DfngenError> {
     })));
     let dom_vol = input.domainSize[0] * input.domainSize[1] * input.domainSize[2];
 
-    if total_families > 0 {
+    if !frac_fam_opt.families.is_empty() {
         if input.stopCondition == 0 {
             // Npoly Option
             // Estimate fractures, generate radii lists for nPoly option
@@ -158,30 +163,26 @@ fn main() -> Result<(), DfngenError> {
 
         frac_fam_opt.sort_radii();
 
+        let n_families = frac_fam_opt.families.len();
         // Keep count of accepted & rejected fractures by family
-        pstats.accepted_from_fam.reserve(total_families);
-        pstats.rejected_from_fam.reserve(total_families);
+        pstats.accepted_from_fam.reserve(n_families);
+        pstats.rejected_from_fam.reserve(n_families);
         // Save sizes of pre-generated radii lists per family.
         // Print as part of statistics to user
-        pstats.expected_from_fam.reserve(total_families);
+        pstats.expected_from_fam.reserve(n_families);
 
         // Zero arrays, init expectedFromFam array
-        for (_, shape) in frac_fam_opt
-            .families
-            .iter()
-            .enumerate()
-            .take(total_families)
-        {
+        for fracture_family in &frac_fam_opt.families {
             pstats.accepted_from_fam.push(0);
             pstats.rejected_from_fam.push(0);
-            pstats.expected_from_fam.push(shape.radii_list.len());
+            pstats
+                .expected_from_fam
+                .push(fracture_family.radii_list.len());
         }
 
         // Init first rejects per insertion attempt counter
         pstats.rejects_per_attempt.push(0);
     }
-
-    let key = '\0';
 
     // ********************* User Defined Shapes Insertion ************************
     // User Polygons are always inserted first
@@ -232,7 +233,7 @@ fn main() -> Result<(), DfngenError> {
                 input.tripleIntersections,
                 input.nRectByCoord,
                 &input.domainSize,
-                &mut input.userRectCoordVertices,
+                &input.userRectCoordVertices,
                 &mut accepted_poly,
                 &mut intersection_pts,
                 &mut pstats,
@@ -268,7 +269,7 @@ fn main() -> Result<(), DfngenError> {
                 input.disableFram,
                 input.tripleIntersections,
                 &input.domainSize,
-                &mut input.userEllCoordVertices,
+                &input.userEllCoordVertices,
                 &mut accepted_poly,
                 &mut intersection_pts,
                 &mut pstats,
@@ -304,7 +305,7 @@ fn main() -> Result<(), DfngenError> {
                 input.disableFram,
                 input.tripleIntersections,
                 &input.domainSize,
-                &mut input.userEllCoordVertices,
+                &input.userEllCoordVertices,
                 &mut accepted_poly,
                 &mut intersection_pts,
                 &mut pstats,
@@ -339,7 +340,7 @@ fn main() -> Result<(), DfngenError> {
                 input.tripleIntersections,
                 input.nRectByCoord,
                 &input.domainSize,
-                &mut input.userRectCoordVertices,
+                &input.userRectCoordVertices,
                 &mut accepted_poly,
                 &mut intersection_pts,
                 &mut pstats,
@@ -353,7 +354,7 @@ fn main() -> Result<(), DfngenError> {
     let mut cdf = Vec::new();
     let mut cdf_size = total_families;
 
-    if total_families > 0 {
+    if !frac_fam_opt.families.is_empty() {
         // Convert famProb to CDF
         cdf = cumsum(&frac_fam_opt.probabilities);
     }
@@ -370,7 +371,7 @@ fn main() -> Result<(), DfngenError> {
     // Initialize uniform distribution on [0,1]
     let uniform_dist = Uniform::new(0., 1.)?;
 
-    if total_families > 0 {
+    if !frac_fam_opt.families.is_empty() {
         // Holds index to current 'shapeFamily' being inserted
         let mut family_index;
 
@@ -380,9 +381,8 @@ fn main() -> Result<(), DfngenError> {
         // NOTE: p32Complete() works on global array 'p32Status'
         // p32Complete() only needs argument of the number of defined shape families
         // ********* Begin stochastic fracture insertion ***********
-        while ((input.stopCondition == 0 && pstats.accepted_poly_count < input.nPoly)
-            || (input.stopCondition == 1 && input.p32Status.iter().any(|p| !p)))
-            && key != '~'
+        while (input.stopCondition == 0 && pstats.accepted_poly_count < input.nPoly)
+            || (input.stopCondition == 1 && p32_status.iter().any(|p| !p))
         {
             // cdfIdx holds the index to the CDF array for the current shape family being inserted
             let mut cdf_idx = 0;
@@ -398,7 +398,7 @@ fn main() -> Result<(), DfngenError> {
             else {
                 // P32 Option
                 family_index = index_from_prob_and_p32_status(
-                    &mut input.p32Status,
+                    &mut p32_status,
                     &cdf,
                     generator.clone().borrow_mut().sample(uniform_dist),
                     total_families,
@@ -439,13 +439,6 @@ fn main() -> Result<(), DfngenError> {
             let mut reject_counter = 0;
 
             while reject_code != 0 {
-                // Loop used to reinsert same poly with different translation
-                // HOT KEY: check for keyboard input
-                // FIXME: capture key stroke when running
-                // if let Ok(key_stroke) = stdout.read_char() {
-                //     key = key_stroke;
-                // }
-
                 // Truncate poly if needed
                 // 1 if poly is outside of domain or has less than 3 vertices
                 if domain_truncation(input.h, input.eps, &mut new_poly, &input.domainSize) {
@@ -537,7 +530,7 @@ fn main() -> Result<(), DfngenError> {
                         if frac_fam_opt.families[family_index].current_p32
                             >= frac_fam_opt.families[family_index].p32_target
                         {
-                            input.p32Status[family_index] = true; // Mark family as having its p32 requirement met
+                            p32_status[family_index] = true; // Mark family as having its p32 requirement met
                             info!("P32 For Family {} Completed", family_index + 1);
 
                             // Adjust CDF, PDF. Reduce their size by 1.
@@ -560,17 +553,12 @@ fn main() -> Result<(), DfngenError> {
 
                     // Output to user: print running program status to user
                     if pstats.accepted_poly_count % 200 == 0 {
-                        info!("Accepted {} fracturesn", pstats.accepted_poly_count);
-                        info!("Rejected {} fracturesn", pstats.rejected_poly_count);
+                        info!("Accepted {} fractures", pstats.accepted_poly_count);
+                        info!("Rejected {} fractures", pstats.rejected_poly_count);
                         info!("Re-translated {} fractures", pstats.retranslated_poly_count);
                         info!("Current p32 values per family:");
 
-                        for (i, shape) in frac_fam_opt
-                            .families
-                            .iter()
-                            .enumerate()
-                            .take(total_families)
-                        {
+                        for (i, shape) in frac_fam_opt.families.iter().enumerate() {
                             if input.stopCondition == 0 {
                                 info!(
                                     "{} family {} Current P32 = {:.8}",
@@ -639,11 +627,11 @@ fn main() -> Result<(), DfngenError> {
         /************************** DFN GENERATION IS COMPLETE ***************************/
 
         // Remove last element off the rejects per attempt counter.
-        // It will have one extra item due to how eachelement is initialized.
+        // It will have one extra item due to how each element is initialized.
         if !pstats.rejects_per_attempt.is_empty() {
             let _ = pstats.rejects_per_attempt.pop();
         }
-    } // End if totalFamilies != 0
+    }
 
     // The close to node check is inside of the close to edge check function
     // for optimization (only need do intersection close to node on one condition)
@@ -660,17 +648,12 @@ fn main() -> Result<(), DfngenError> {
     // }
     // Copy end of DFN generation stats to file, as well as print to screen
     info!("Network Generation Complete");
-    info!("Version of DFNGen: 2.2");
+    info!("Version of dfngen-rs: {}", env!("CARGO_PKG_VERSION"));
 
     if input.stopCondition == 1 {
         info!("Final p32 values per family:");
 
-        for (i, shape) in frac_fam_opt
-            .families
-            .iter()
-            .enumerate()
-            .take(total_families)
-        {
+        for (i, shape) in frac_fam_opt.families.iter().enumerate() {
             info!(
                 "Family {} target P32 = {}, Final P32 = {}",
                 i + 1,
@@ -688,11 +671,7 @@ fn main() -> Result<(), DfngenError> {
 
     // Calculate total area, volume
     let mut user_defined_shapes_area = 0.;
-    let mut family_area = Vec::new();
-
-    if total_families > 0 {
-        family_area = vec![0.; total_families]; // Holds fracture area per family
-    }
+    let mut family_area = vec![0.; total_families];
 
     info!("Statistics Before Isolated Fractures Removed:",);
     info!("Fractures: {}", accepted_poly.len());
@@ -863,11 +842,9 @@ fn main() -> Result<(), DfngenError> {
     // Reset totalArea to 0
     user_defined_shapes_area = 0.;
 
-    if total_families > 0 {
-        //zero out array.
-        for area in family_area.iter_mut().take(total_families) {
-            *area = 0.;
-        }
+    //zero out array.
+    for area in family_area.iter_mut() {
+        *area = 0.;
     }
 
     // Calculate total fracture area, and area per family
@@ -884,22 +861,13 @@ fn main() -> Result<(), DfngenError> {
     }
 
     // Re-count number of accepted fracture per family after isloated fractures were removed
-    let mut accepted_from_fam_counters = Vec::new();
+    let mut accepted_from_fam_counters = vec![0; total_families];
 
     if total_families > 0 {
-        accepted_from_fam_counters = vec![0; total_families];
-
-        for counter in accepted_from_fam_counters.iter_mut().take(total_families) {
-            // zero counters
-            *counter = 0;
-        }
-
-        let size = final_fractures.len();
-
-        for i in 0..size {
-            if accepted_poly[final_fractures[i]].family_num >= 0 {
-                accepted_from_fam_counters
-                    [accepted_poly[final_fractures[i]].family_num as usize] += 1;
+        for i in &final_fractures {
+            let fam_num = accepted_poly[*i].family_num;
+            if fam_num >= 0 {
+                accepted_from_fam_counters[fam_num as usize] += 1;
             }
         }
     }
@@ -963,8 +931,6 @@ fn main() -> Result<(), DfngenError> {
             user_defined_shapes_area * 2. / dom_vol
         );
     }
-
-    accepted_from_fam_counters.clear();
 
     info!(
         "{} Fractures Accepted (Before Isolated Fracture Removal)",
@@ -1041,12 +1007,7 @@ fn main() -> Result<(), DfngenError> {
         info!("If this is the case, try increasing or decreasing the 'radiiListIncrease' option in the input file.");
 
         // Compare expected radii/poly size and actual
-        for (i, shape) in frac_fam_opt
-            .families
-            .iter()
-            .enumerate()
-            .take(total_families)
-        {
+        for (i, shape) in frac_fam_opt.families.iter().enumerate() {
             match shape.radius.function {
                 RadiusFunction::Constant(_) => {
                     info!(
@@ -1096,7 +1057,7 @@ fn main() -> Result<(), DfngenError> {
         pstats.triple_node_count
     );
 
-    info!("DFNGen - Complete");
+    info!("dfngen-rs - Complete");
 
     Ok(())
 }

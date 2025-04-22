@@ -1,5 +1,5 @@
 use parry3d_f64::na::{Point3, Vector3};
-use tracing::info;
+use tracing::{info, warn};
 
 use super::domain::domain_truncation;
 use super::insert_shape::print_reject_reason;
@@ -110,7 +110,7 @@ pub fn insert_user_rects_by_coord(
     triple_intersections: bool,
     n_rect_by_coord: usize,
     domain_size: &Vector3<f64>,
-    user_rect_coord_vertices: &mut Vec<f64>,
+    user_rect_coord_vertices: &[f64],
     accepted_poly: &mut Vec<Poly>,
     intpts: &mut Vec<IntersectionPoints>,
     pstats: &mut Stats,
@@ -127,7 +127,7 @@ pub fn insert_user_rects_by_coord(
             // Poly completely outside domain
             pstats.rejection_reasons.outside += 1;
             pstats.rejected_poly_count += 1;
-            info!("User Rectangle (defined by coordinates) {} was rejected for being outside the defined domain.", i + 1);
+            warn!("User Rectangle (defined by coordinates) {} was rejected for being outside the defined domain.", i + 1);
             pstats
                 .rejected_user_fracture
                 .push(RejectedUserFracture::new(i + 1, family_id));
@@ -179,6 +179,4 @@ pub fn insert_user_rects_by_coord(
                 .push(RejectedUserFracture::new(i + 1, family_id));
         }
     }
-
-    user_rect_coord_vertices.clear();
 }

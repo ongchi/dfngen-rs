@@ -46,8 +46,9 @@ pub fn dry_run(
     let mut cdf = cumsum(&frac_families.probabilities);
     let mut family_index; // Holds index to shape family of fracture being generated
     let mut force_large_fract_count = 0;
+    let mut p32_status = vec![false; frac_families.families.len()];
 
-    while input.p32Status.iter().any(|p| !p) {
+    while p32_status.iter().any(|p| !p) {
         // Index to CDF array of current family being inserted
         let mut cdf_idx = 0;
         let mut reject_counter = 0;
@@ -59,7 +60,7 @@ pub fn dry_run(
 
             // Choose CDF randomly by family
             cdf_idx = (0..force_large_fract_count)
-                .filter(|i| !input.p32Status[*i])
+                .filter(|i| !p32_status[*i])
                 .count()
                 - 1;
 
@@ -85,7 +86,7 @@ pub fn dry_run(
             // Choose a family based on probabiliyis AND their target p32 completion status
             // if a family has already met is fracture intinisty reqirement (p32) dont choose that family anymore
             family_index = index_from_prob_and_p32_status(
-                &mut input.p32Status,
+                &mut p32_status,
                 &cdf,
                 generator.clone().borrow_mut().sample(uniform_dist),
                 total_families,
@@ -174,7 +175,7 @@ pub fn dry_run(
         if frac_families.families[family_index].current_p32
             >= frac_families.families[family_index].p32_target
         {
-            input.p32Status[family_index] = true; //mark family as having its p32 requirement met
+            p32_status[family_index] = true; //mark family as having its p32 requirement met
 
             // Adjust CDF, PDF, and reduce their size by 1. Keep probabilities proportional.
             // Remove the completed families element in the CDF and famProb[]
@@ -200,13 +201,7 @@ pub fn dry_run(
     } // End while loop for inserting polyons
 
     // Reset p32 to 0
-    for (i, shape) in frac_families
-        .families
-        .iter_mut()
-        .enumerate()
-        .take(total_families)
-    {
-        input.p32Status[i] = false;
+    for shape in frac_families.families.iter_mut() {
         shape.current_p32 = 0.;
     }
 }
