@@ -5,7 +5,7 @@ use std::rc::Rc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use clap::Parser;
-use io::input::UserDefinedPolygonByCoord;
+use io::input::{UserDefinedEllByCoord, UserDefinedPolygonByCoord};
 use itertools::zip_eq;
 use parry3d_f64::na::Point3;
 use rand::distr::Uniform;
@@ -261,17 +261,18 @@ fn main() -> Result<(), DfngenError> {
         }
 
         // Insert all user ellipses by coordinates
-        if input.userEllByCoord {
+        if let Some(ref path) = input.user_ell_by_coord_file {
+            let ell_data = UserDefinedEllByCoord::from_file(path);
             insert_user_ell_by_coord(
                 input.h,
                 input.eps,
-                input.nEllNodes,
-                input.nEllByCoord,
+                ell_data.num_points,
+                ell_data.n_frac,
                 input.rFram,
                 input.disableFram,
                 input.tripleIntersections,
                 &input.domainSize,
-                &input.userEllCoordVertices,
+                &ell_data.vertices,
                 &mut accepted_poly,
                 &mut intersection_pts,
                 &mut pstats,
@@ -297,17 +298,18 @@ fn main() -> Result<(), DfngenError> {
         }
 
         // Insert all user ellipses by coordinates
-        if input.userEllByCoord {
+        if let Some(ref path) = input.user_ell_by_coord_file {
+            let ell_data = UserDefinedEllByCoord::from_file(path);
             insert_user_ell_by_coord(
                 input.h,
                 input.eps,
-                input.nEllNodes,
-                input.nEllByCoord,
+                ell_data.num_points,
+                ell_data.n_frac,
                 input.rFram,
                 input.disableFram,
                 input.tripleIntersections,
                 &input.domainSize,
-                &input.userEllCoordVertices,
+                &ell_data.vertices,
                 &mut accepted_poly,
                 &mut intersection_pts,
                 &mut pstats,

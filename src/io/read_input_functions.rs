@@ -55,25 +55,6 @@ pub fn get_rect_coords(file: &mut File, var: &mut Vec<f64>, n_rectangles: usize)
     }
 }
 
-/// Used to read in ellipse coordinates when the user is using
-/// user ellipses defined by coordinates option.
-///
-/// # Arguments
-///
-/// * `file` - file object
-/// * `out_ary` - Array to store the coordinates
-/// * `n_poly` - Number of ellipses
-/// * `n_vertices` - Number of points per ellipse
-pub fn get_cords(file: &mut File, out_ary: &mut Vec<f64>, n_poly: usize, n_vertices: usize) {
-    let mut bytes = file.bytes().map(|ch| ch.unwrap());
-    let size = n_poly * n_vertices;
-
-    for _ in 0..size * 3 {
-        let val = read!("{}", bytes);
-        out_ary.push(val)
-    }
-}
-
 pub fn read_domain_vertices(global: &mut Input, filename: &str) {
     info!("Reading in Domain Vertices from {}", filename);
 

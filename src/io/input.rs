@@ -1,11 +1,12 @@
 use std::fs::File;
+use std::io::Read;
 
 use parry3d_f64::na::{Point3, Vector3};
+use text_io::read;
 use tracing::{error, info, warn};
 
 use super::read_input_functions::{
-    get_cords, get_rect_coords, read_domain_vertices, search_var, ReadFromTextFile,
-    UserFractureReader,
+    get_rect_coords, read_domain_vertices, search_var, ReadFromTextFile, UserFractureReader,
 };
 
 use crate::{io::read_input_functions::InputReader, structures::FractureFamilyOption};
@@ -151,12 +152,11 @@ pub struct Input {
     /// False - No rectangles defined by coordinates are being used.
     pub userRecByCoord: bool,
 
-    /// True  - User ellipses defined by coordinates are being used.
-    /// False - No ellpsies defined by coordinates are being used.
-    pub userEllByCoord: bool,
-
     /// File name of user polygons defined by coordinates
     pub user_poly_by_coord_file: Option<String>,
+
+    /// File name of user ellipses defined by coordinates
+    pub user_ell_by_coord_file: Option<String>,
 
     /// Caution: Can create very large files.
     /// Outputs all fractures which were generated during
@@ -169,19 +169,9 @@ pub struct Input {
     /// Number of user rectangles defined by coordinates.
     pub nRectByCoord: usize,
 
-    /// Number of user ellipses defined by coordinates.
-    pub nEllByCoord: usize,
-
-    /// Number of nodes for user defined ellipses by coordinates
-    pub nEllNodes: usize,
-
     /// Array of rectangle coordiates.
     /// Number of elements = 4 * 3 * nRectByCoord
     pub userRectCoordVertices: Vec<f64>,
-
-    /// Array of ellipse coordiates.
-    /// Number of elements =  3 * nEllNodes * nEllByCoord
-    pub userEllCoordVertices: Vec<f64>,
 
     /// If a fracture is rejected, it will be re-translated
     /// to a new position this number of times.
@@ -419,16 +409,7 @@ pub fn read_input(input_file: &str) -> (Input, FractureFamilyOption) {
 
     // Get external fracture definition files
 
-    input_var!(userEllByCoord);
     input_var!(userRecByCoord);
-
-    if (input_var.userRectanglesOnOff || input_var.userRecByCoord)
-        && (input_var.userEllipsesOnOff || input_var.userEllByCoord)
-    {
-        input_var!(insertUserRectanglesFirst);
-    } else {
-        input_var.insertUserRectanglesFirst = false;
-    }
 
     let mut user_polygon_by_coord = false;
     input_reader.read_value("userPolygonByCoord:", &mut user_polygon_by_coord);
@@ -438,22 +419,12 @@ pub fn read_input(input_file: &str) -> (Input, FractureFamilyOption) {
         input_var.user_poly_by_coord_file = Some(path);
     }
 
-    if input_var.userEllByCoord {
-        let mut ell_file: String = String::new();
-        input_reader.read_value("EllByCoord_Input_File_Path:", &mut ell_file);
-        let mut file = File::open(&ell_file).unwrap();
-        info!("User Defined Ellipses by Coordinates File: {}", &ell_file);
-        search_var(&mut file, "nEllipses:");
-        input_var.nEllByCoord.read_from_text(&mut file);
-        search_var(&mut file, "nNodes:");
-        input_var.nEllNodes.read_from_text(&mut file);
-        search_var(&mut file, "Coordinates:");
-        get_cords(
-            &mut file,
-            &mut input_var.userEllCoordVertices,
-            input_var.nEllByCoord,
-            input_var.nEllNodes,
-        );
+    let mut user_ell_by_coord = false;
+    input_reader.read_value("userEllByCoord:", &mut user_ell_by_coord);
+    if user_ell_by_coord {
+        let mut path = String::new();
+        input_reader.read_value("EllByCoord_Input_File_Path:", &mut path);
+        input_var.user_ell_by_coord_file = Some(path);
     }
 
     if input_var.userRecByCoord {
@@ -472,6 +443,14 @@ pub fn read_input(input_file: &str) -> (Input, FractureFamilyOption) {
             &mut input_var.userRectCoordVertices,
             input_var.nRectByCoord,
         );
+    }
+
+    if (input_var.userRectanglesOnOff || input_var.userRecByCoord)
+        && (input_var.userEllipsesOnOff || user_ell_by_coord)
+    {
+        input_var!(insertUserRectanglesFirst);
+    } else {
+        input_var.insertUserRectanglesFirst = false;
     }
 
     // Error check on stopping parameter
@@ -637,6 +616,44 @@ impl UserDefinedPolygonByCoord {
             let mut tmp = [0., 0., 0.];
             tmp.read_from_text(&mut file);
             vertices.extend(tmp);
+        }
+
+        Self {
+            n_frac,
+            num_points,
+            vertices,
+        }
+    }
+}
+
+pub struct UserDefinedEllByCoord {
+    pub n_frac: usize,
+    pub num_points: usize,
+    pub vertices: Vec<f64>,
+}
+
+impl UserDefinedEllByCoord {
+    pub fn from_file(path: &str) -> Self {
+        let mut file = File::open(path).unwrap();
+
+        search_var(&mut file, "nEllipses:");
+        let mut n_frac = 0;
+        n_frac.read_from_text(&mut file);
+
+        search_var(&mut file, "nNodes:");
+        let mut num_points = 0;
+        num_points.read_from_text(&mut file);
+
+        search_var(&mut file, "Coordinates:");
+
+        let mut bytes = file.bytes().map(|ch| ch.unwrap());
+        let size = n_frac * num_points * 3;
+
+        let mut vertices = Vec::with_capacity(size * 3);
+
+        for _ in 0..size {
+            let val = read!("{}", bytes);
+            vertices.push(val)
         }
 
         Self {
