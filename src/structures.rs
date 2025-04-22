@@ -621,6 +621,7 @@ pub struct FractureFamilyOption {
 }
 
 impl FractureFamilyOption {
+    /// Generates a list of radii by distribution function of each family.
     pub fn generate_radii(
         &mut self,
         force_large_fractures: bool,
@@ -665,6 +666,15 @@ impl FractureFamilyOption {
         }
 
         Ok(())
+    }
+
+    /// Sort each family's radii list from largest to smallest.
+    /// This will allow the DFN gereration to start from largest to smallest
+    /// fractures.
+    pub fn sort_radii(&mut self) {
+        for ff in self.families.iter_mut() {
+            ff.radii_list.sort_by(|a, b| b.partial_cmp(a).unwrap())
+        }
     }
 }
 

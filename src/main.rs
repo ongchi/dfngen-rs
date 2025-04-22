@@ -20,7 +20,7 @@ use crate::{
     error::DfngenError,
     fracture::cluster_groups::get_cluster,
     fracture::domain::domain_truncation,
-    fracture::fracture_estimating::{dry_run, sort_radii},
+    fracture::fracture_estimating::dry_run,
     fracture::insert_shape::{
         generate_poly, get_family_number, print_reject_reason, re_translate_poly,
     },
@@ -154,9 +154,9 @@ fn main() -> Result<(), DfngenError> {
                     fam_id
                 );
             }
-
-            sort_radii(&mut frac_fam_opt.families);
         }
+
+        frac_fam_opt.sort_radii();
 
         // Keep count of accepted & rejected fractures by family
         pstats.accepted_from_fam.reserve(total_families);

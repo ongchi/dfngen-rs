@@ -11,23 +11,8 @@ use crate::{
     },
     io::input::Input,
     math_functions::{adjust_cdf_and_fam_prob, cumsum, get_area, index_from_prob_and_p32_status},
-    structures::{FractureFamily, FractureFamilyOption},
+    structures::FractureFamilyOption,
 };
-
-/// Sort Families Radii Lists
-///
-/// Uses std::sort to sort each family's radii list from largest to smallest.
-/// This will allow the DFN gereration to start from largest to smallest
-/// fractures.
-///
-/// # Arguments
-///
-/// * `frac_fam` - vector<FractureFamily> array of stochastic fracture families
-pub fn sort_radii(frac_fam: &mut Vec<FractureFamily>) {
-    for ff in frac_fam {
-        ff.radii_list.sort_by(|a, b| b.partial_cmp(a).unwrap())
-    }
-}
 
 /// Estimate Number of Fractures When P32 Option is Used
 ///
