@@ -5,6 +5,7 @@ use std::rc::Rc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use clap::Parser;
+use io::input::UserDefinedPolygonByCoord;
 use itertools::zip_eq;
 use parry3d_f64::na::Point3;
 use rand::distr::Uniform;
@@ -187,6 +188,7 @@ fn main() -> Result<(), DfngenError> {
     // ********************* User Defined Shapes Insertion ************************
     // User Polygons are always inserted first
     if input.userPolygonByCoord {
+        let poly_data = UserDefinedPolygonByCoord::from_file(&input.polygonFile);
         insert_user_polygon_by_coord(
             input.h,
             input.eps,
@@ -194,7 +196,7 @@ fn main() -> Result<(), DfngenError> {
             input.disableFram,
             input.tripleIntersections,
             &input.domainSize,
-            &input.polygonFile,
+            &poly_data,
             &mut accepted_poly,
             &mut intersection_pts,
             &mut pstats,

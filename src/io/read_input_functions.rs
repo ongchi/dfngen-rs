@@ -588,6 +588,7 @@ impl InputReader {
 
 pub struct UserFractureReader {
     file: File,
+    // number of fractures in file
     pub n_frac: usize,
 }
 

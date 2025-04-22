@@ -406,10 +406,8 @@ pub fn read_input(input_file: &str) -> (Input, FractureFamilyOption) {
         input_reader.read_value("UserEll_Input_File_Path:", &mut user_ell_file);
         info!("User Defined Ellipses File: {}", &user_ell_file);
 
-        input_var.user_defined_ell_fractures = Some(UserDefinedFractures::from_fracture_file(
-            &user_ell_file,
-            true,
-        ));
+        input_var.user_defined_ell_fractures =
+            Some(UserDefinedFractures::from_file(&user_ell_file, true));
     }
 
     input_var!(userRectanglesOnOff);
@@ -419,10 +417,8 @@ pub fn read_input(input_file: &str) -> (Input, FractureFamilyOption) {
         input_reader.read_value("UserRect_Input_File_Path:", &mut user_rect_file);
         info!("User Defined Rectangles File: {}", &user_rect_file);
 
-        input_var.user_defined_rect_fractures = Some(UserDefinedFractures::from_fracture_file(
-            &user_rect_file,
-            false,
-        ));
+        input_var.user_defined_rect_fractures =
+            Some(UserDefinedFractures::from_file(&user_rect_file, false));
     }
 
     input_var!(userEllByCoord);
@@ -533,7 +529,7 @@ pub struct UserDefinedFractures {
 }
 
 impl UserDefinedFractures {
-    pub fn from_fracture_file(path: &str, is_ell: bool) -> Self {
+    pub fn from_file(path: &str, is_ell: bool) -> Self {
         let mut frac_reader = if is_ell {
             UserFractureReader::new(path, "nUserEll:")
         } else {
@@ -616,6 +612,39 @@ impl UserDefinedFractures {
                 .map(|norm| Vector3::from_row_slice(&norm).normalize())
                 .collect(),
             num_points,
+        }
+    }
+}
+
+pub struct UserDefinedPolygonByCoord {
+    pub n_frac: usize,
+    pub num_points: usize,
+    pub vertices: Vec<f64>,
+}
+
+impl UserDefinedPolygonByCoord {
+    pub fn from_file(path: &str) -> Self {
+        let mut file = File::open(path).unwrap();
+
+        search_var(&mut file, "nPolygons:");
+        let mut n_frac: usize = 0;
+        n_frac.read_from_text(&mut file);
+
+        let mut num_points: usize = 0;
+        num_points.read_from_text(&mut file);
+
+        let mut vertices = Vec::with_capacity(num_points * 3);
+
+        for _ in 0..num_points {
+            let mut tmp = [0., 0., 0.];
+            tmp.read_from_text(&mut file);
+            vertices.extend(tmp);
+        }
+
+        Self {
+            n_frac,
+            num_points,
+            vertices,
         }
     }
 }

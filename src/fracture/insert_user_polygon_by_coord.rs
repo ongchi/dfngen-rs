@@ -1,5 +1,3 @@
-use std::fs::File;
-
 use parry3d_f64::na::{distance, Point3, Vector3};
 use tracing::{info, warn};
 
@@ -8,39 +6,19 @@ use super::insert_shape::print_reject_reason;
 
 use crate::{
     computational_geometry::{create_bounding_box, intersection_checking},
-    io::read_input_functions::{search_var, ReadFromTextFile},
+    io::input::UserDefinedPolygonByCoord,
     math_functions::get_area,
     structures::{IntersectionPoints, Poly, RejectedUserFracture, Stats},
 };
 
-/// Used to read in ellipse coordinates when the user is using
-/// user ellipses defined by coordinates option.
-///
-/// # Arguments
-///
-/// * `stream` - File stream
-/// * `n_vertices` - Number of vertices
-fn get_poly_coords(stream: &mut File, n_vertices: usize) -> Vec<f64> {
-    let mut vertices = Vec::with_capacity(n_vertices * 3);
-
-    for _ in 0..n_vertices {
-        let mut tmp = [0., 0., 0.];
-        tmp.read_from_text(stream);
-        vertices.extend(tmp);
-    }
-
-    vertices
-}
-
-fn create_poly(file: &mut File) -> Poly {
-    let mut n_poly_nodes: usize = 0;
-    n_poly_nodes.read_from_text(file);
+fn create_poly(polygon_data: &UserDefinedPolygonByCoord) -> Poly {
+    let n_poly_nodes = polygon_data.num_points;
 
     let mut new_poly = Poly {
         family_num: -3,
         // Set number of nodes. Needed for rotations.
         number_of_nodes: n_poly_nodes as isize,
-        vertices: get_poly_coords(file, n_poly_nodes),
+        vertices: polygon_data.vertices.clone(),
         ..Default::default()
     };
 
@@ -112,7 +90,7 @@ pub fn insert_user_polygon_by_coord(
     disable_fram: bool,
     triple_intersections: bool,
     domain_size: &Vector3<f64>,
-    polygon_file: &str,
+    poly_data: &UserDefinedPolygonByCoord,
     accepted_poly: &mut Vec<Poly>,
     intpts: &mut Vec<IntersectionPoints>,
     pstats: &mut Stats,
@@ -120,17 +98,8 @@ pub fn insert_user_polygon_by_coord(
 ) {
     let family_id = -3;
 
-    info!("Reading User Defined Polygons from {}", &polygon_file);
-    let mut file = File::open(polygon_file).unwrap();
-
-    search_var(&mut file, "nPolygons:");
-    let mut npoly: usize = 0;
-    npoly.read_from_text(&mut file);
-
-    info!("There are {} polygons", npoly);
-
-    for i in 0..npoly {
-        let mut new_poly = create_poly(&mut file);
+    for i in 0..poly_data.n_frac {
+        let mut new_poly = create_poly(poly_data);
 
         if domain_truncation(h, eps, &mut new_poly, domain_size) {
             // Poly completely outside domain
