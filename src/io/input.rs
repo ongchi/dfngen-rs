@@ -3,7 +3,7 @@ use std::io::Read;
 
 use parry3d_f64::na::{Point3, Vector3};
 use text_io::read;
-use tracing::{error, info, warn};
+use tracing::{error, info};
 
 use super::read_input_functions::{
     read_domain_vertices, search_var, ReadFromTextFile, UserFractureReader,
@@ -140,13 +140,11 @@ pub struct Input {
     ///        distributions will still be used while generating the DFN.
     pub removeFracturesLessThan: f64,
 
-    /// True  - The user is using user defined ellipses.
-    /// False - No user defined ellipses are being used.
-    pub userEllipsesOnOff: bool,
+    /// File name of user ellipses
+    pub user_ell_file: Option<String>,
 
-    /// True  - The user is using user defined rectangles.
-    /// False - No user defined rectangles are being used.
-    pub userRectanglesOnOff: bool,
+    /// File name of user rectangles
+    pub user_rect_file: Option<String>,
 
     /// File name of user polygons defined by coordinates
     pub user_poly_by_coord_file: Option<String>,
@@ -210,9 +208,6 @@ pub struct Input {
     /// True  - Ignore boundaryFaces option, keep all clusters
     ///         and remove fractures with no intersections
     pub ignoreBoundaryFaces: bool,
-
-    pub user_defined_ell_fractures: Option<UserDefinedFractures>,
-    pub user_defined_rect_fractures: Option<UserDefinedFractures>,
 }
 
 /// Reads in all input variables.
@@ -377,29 +372,25 @@ pub fn read_input(input_file: &str) -> (Input, FractureFamilyOption) {
         Vec::new()
     };
 
-    input_var!(userEllipsesOnOff);
-
-    if input_var.userEllipsesOnOff {
-        let mut user_ell_file: String = String::new();
-        input_reader.read_value("UserEll_Input_File_Path:", &mut user_ell_file);
-        info!("User Defined Ellipses File: {}", &user_ell_file);
-
-        input_var.user_defined_ell_fractures =
-            Some(UserDefinedFractures::from_file(&user_ell_file, true));
-    }
-
-    input_var!(userRectanglesOnOff);
-
-    if input_var.userRectanglesOnOff {
-        let mut user_rect_file: String = String::new();
-        input_reader.read_value("UserRect_Input_File_Path:", &mut user_rect_file);
-        info!("User Defined Rectangles File: {}", &user_rect_file);
-
-        input_var.user_defined_rect_fractures =
-            Some(UserDefinedFractures::from_file(&user_rect_file, false));
-    }
-
+    //
     // Get external fracture definition files
+    //
+
+    let mut user_ell = false;
+    input_reader.read_value("userEllipsesOnOff:", &mut user_ell);
+    if user_ell {
+        let mut path: String = String::new();
+        input_reader.read_value("UserEll_Input_File_Path:", &mut path);
+        input_var.user_ell_file = Some(path);
+    }
+
+    let mut user_rect = false;
+    input_reader.read_value("userRectanglesOnOff:", &mut user_rect);
+    if user_rect {
+        let mut path: String = String::new();
+        input_reader.read_value("UserRect_Input_File_Path:", &mut path);
+        input_var.user_rect_file = Some(path);
+    }
 
     let mut user_polygon_by_coord = false;
     input_reader.read_value("userPolygonByCoord:", &mut user_polygon_by_coord);
@@ -425,37 +416,10 @@ pub fn read_input(input_file: &str) -> (Input, FractureFamilyOption) {
         input_var.user_rect_by_coord_file = Some(path);
     }
 
-    if (input_var.userRectanglesOnOff || user_rect_by_coord)
-        && (input_var.userEllipsesOnOff || user_ell_by_coord)
-    {
+    if (user_rect || user_rect_by_coord) && (user_ell || user_ell_by_coord) {
         input_var!(insertUserRectanglesFirst);
     } else {
         input_var.insertUserRectanglesFirst = false;
-    }
-
-    // Error check on stopping parameter
-    if fracture_families.is_empty() && input_var.stopCondition != 0 {
-        // If no stochastic shapes, use nPoly option with npoly = number of user polygons
-        warn!("You have defined stopCondition = 1 (P32 program stopping condition) but have no stochastic shape families defined. Automatically setting stopCondition to 0 for use with user defined polygons and nPoly.");
-        input_var.stopCondition = 0;
-
-        if !input_var.userEllipsesOnOff && !input_var.userRectanglesOnOff && !user_rect_by_coord {
-            panic!("ERROR: All polygon generating options are off or undefined, please check input file for errors.");
-        }
-
-        let mut count = 0; // Count of user defined polygons
-
-        if let Some(user_ells) = &input_var.user_defined_ell_fractures {
-            count += user_ells.n_frac;
-        }
-
-        if let Some(user_rects) = &input_var.user_defined_rect_fractures {
-            count += user_rects.n_frac;
-        }
-
-        // Set nPoly to the amount of user defined polygons
-        // FIXME: update nPoly after all user defined fractures loaded
-        input_var.nPoly = count;
     }
 
     (

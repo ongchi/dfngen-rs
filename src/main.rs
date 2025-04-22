@@ -5,14 +5,16 @@ use std::rc::Rc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use clap::Parser;
-use io::input::{UserDefinedEllByCoord, UserDefinedPolygonByCoord, UserDefinedRectByCoord};
+use io::input::{
+    UserDefinedEllByCoord, UserDefinedFractures, UserDefinedPolygonByCoord, UserDefinedRectByCoord,
+};
 use itertools::zip_eq;
 use parry3d_f64::na::Point3;
 use rand::distr::Uniform;
 use rand::Rng;
 use rand_mt::Mt64;
 use structures::{RadiusFunction, Shape};
-use tracing::{error, info};
+use tracing::{error, info, warn};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 use crate::{
@@ -187,6 +189,9 @@ fn main() -> Result<(), DfngenError> {
 
     // ********************* User Defined Shapes Insertion ************************
     // User Polygons are always inserted first
+
+    let mut num_user_defined_fractures = 0;
+
     if let Some(ref path) = input.user_poly_by_coord_file {
         let poly_data = UserDefinedPolygonByCoord::from_file(path);
         insert_user_polygon_by_coord(
@@ -202,14 +207,13 @@ fn main() -> Result<(), DfngenError> {
             &mut pstats,
             &mut triple_points,
         );
+        num_user_defined_fractures += poly_data.n_frac;
     }
-
-    let user_defined_ell_fractures = input.user_defined_ell_fractures.take();
-    let user_defined_rect_fractures = input.user_defined_rect_fractures.take();
 
     if input.insertUserRectanglesFirst {
         // Insert user rects first
-        if let Some(user_defined_rect_fractures) = user_defined_rect_fractures {
+        if let Some(ref path) = input.user_rect_file {
+            let rect_data = UserDefinedFractures::from_file(path, false);
             insert_user_rects(
                 input.h,
                 input.eps,
@@ -221,7 +225,7 @@ fn main() -> Result<(), DfngenError> {
                 &mut intersection_pts,
                 &mut pstats,
                 &mut triple_points,
-                &user_defined_rect_fractures,
+                &rect_data,
             );
         }
 
@@ -245,7 +249,8 @@ fn main() -> Result<(), DfngenError> {
         }
 
         // Insert all user ellipses
-        if let Some(user_defined_ell_fractures) = user_defined_ell_fractures {
+        if let Some(ref path) = input.user_ell_file {
+            let ell_data = UserDefinedFractures::from_file(path, true);
             insert_user_ell(
                 input.h,
                 input.eps,
@@ -257,7 +262,7 @@ fn main() -> Result<(), DfngenError> {
                 &mut intersection_pts,
                 &mut pstats,
                 &mut triple_points,
-                &user_defined_ell_fractures,
+                &ell_data,
             );
         }
 
@@ -282,7 +287,8 @@ fn main() -> Result<(), DfngenError> {
         }
     } else {
         // Insert all user ellipses first
-        if let Some(user_defined_ell_fractures) = user_defined_ell_fractures {
+        if let Some(ref path) = input.user_ell_file {
+            let ell_data = UserDefinedFractures::from_file(path, true);
             insert_user_ell(
                 input.h,
                 input.eps,
@@ -294,7 +300,7 @@ fn main() -> Result<(), DfngenError> {
                 &mut intersection_pts,
                 &mut pstats,
                 &mut triple_points,
-                &user_defined_ell_fractures,
+                &ell_data,
             );
         }
 
@@ -319,7 +325,8 @@ fn main() -> Result<(), DfngenError> {
         }
 
         // Insert user rects
-        if let Some(user_defined_rect_fractures) = user_defined_rect_fractures {
+        if let Some(ref path) = input.user_rect_file {
+            let rect_data = UserDefinedFractures::from_file(path, false);
             insert_user_rects(
                 input.h,
                 input.eps,
@@ -331,7 +338,7 @@ fn main() -> Result<(), DfngenError> {
                 &mut intersection_pts,
                 &mut pstats,
                 &mut triple_points,
-                &user_defined_rect_fractures,
+                &rect_data,
             );
         }
 
@@ -353,6 +360,20 @@ fn main() -> Result<(), DfngenError> {
                 &mut triple_points,
             );
         }
+    }
+
+    if total_families == 0 && input.stopCondition != 0 {
+        // If no stochastic shapes, use nPoly option with npoly = number of user polygons
+        warn!("You have defined stopCondition = 1 (P32 program stopping condition) but have no stochastic shape families defined.");
+        warn!("Automatically setting stopCondition to 0 for use with user defined polygons and nPoly.");
+        input.stopCondition = 0;
+
+        if num_user_defined_fractures == 0 {
+            panic!("ERROR: No fracture defined, please check input file for errors.");
+        }
+
+        // Set nPoly to the amount of user defined polygons
+        input.nPoly = num_user_defined_fractures;
     }
 
     /*********  Probabilities (famProb) setup, CDF init  *****************/
