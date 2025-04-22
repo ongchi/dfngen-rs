@@ -6,7 +6,7 @@ use text_io::read;
 use tracing::{error, info, warn};
 
 use super::read_input_functions::{
-    get_rect_coords, read_domain_vertices, search_var, ReadFromTextFile, UserFractureReader,
+    read_domain_vertices, search_var, ReadFromTextFile, UserFractureReader,
 };
 
 use crate::{io::read_input_functions::InputReader, structures::FractureFamilyOption};
@@ -148,15 +148,14 @@ pub struct Input {
     /// False - No user defined rectangles are being used.
     pub userRectanglesOnOff: bool,
 
-    /// True  - User rectangles defined by coordinates are being used.
-    /// False - No rectangles defined by coordinates are being used.
-    pub userRecByCoord: bool,
-
     /// File name of user polygons defined by coordinates
     pub user_poly_by_coord_file: Option<String>,
 
     /// File name of user ellipses defined by coordinates
     pub user_ell_by_coord_file: Option<String>,
+
+    /// File name of user retangles defined by coordinates
+    pub user_rect_by_coord_file: Option<String>,
 
     /// Caution: Can create very large files.
     /// Outputs all fractures which were generated during
@@ -165,13 +164,6 @@ pub struct Input {
     ///     True:  Include file of all raddii, acepted + rejected fractures,
     ///            in output files (radii_All.dat).
     pub outputAllRadii: bool,
-
-    /// Number of user rectangles defined by coordinates.
-    pub nRectByCoord: usize,
-
-    /// Array of rectangle coordiates.
-    /// Number of elements = 4 * 3 * nRectByCoord
-    pub userRectCoordVertices: Vec<f64>,
 
     /// If a fracture is rejected, it will be re-translated
     /// to a new position this number of times.
@@ -409,8 +401,6 @@ pub fn read_input(input_file: &str) -> (Input, FractureFamilyOption) {
 
     // Get external fracture definition files
 
-    input_var!(userRecByCoord);
-
     let mut user_polygon_by_coord = false;
     input_reader.read_value("userPolygonByCoord:", &mut user_polygon_by_coord);
     if user_polygon_by_coord {
@@ -427,25 +417,15 @@ pub fn read_input(input_file: &str) -> (Input, FractureFamilyOption) {
         input_var.user_ell_by_coord_file = Some(path);
     }
 
-    if input_var.userRecByCoord {
-        let mut rect_file: String = String::new();
-        input_reader.read_value("RectByCoord_Input_File_Path:", &mut rect_file);
-        let mut file = File::open(&rect_file).unwrap();
-        info!(
-            "User Defined Rectangles by Coordinates File: {}",
-            &rect_file
-        );
-        search_var(&mut file, "nRectangles:");
-        input_var.nRectByCoord.read_from_text(&mut file);
-        search_var(&mut file, "Coordinates:");
-        get_rect_coords(
-            &mut file,
-            &mut input_var.userRectCoordVertices,
-            input_var.nRectByCoord,
-        );
+    let mut user_rect_by_coord = false;
+    input_reader.read_value("userRecByCoord:", &mut user_rect_by_coord);
+    if user_rect_by_coord {
+        let mut path = String::new();
+        input_reader.read_value("RectByCoord_Input_File_Path:", &mut path);
+        input_var.user_rect_by_coord_file = Some(path);
     }
 
-    if (input_var.userRectanglesOnOff || input_var.userRecByCoord)
+    if (input_var.userRectanglesOnOff || user_rect_by_coord)
         && (input_var.userEllipsesOnOff || user_ell_by_coord)
     {
         input_var!(insertUserRectanglesFirst);
@@ -459,10 +439,7 @@ pub fn read_input(input_file: &str) -> (Input, FractureFamilyOption) {
         warn!("You have defined stopCondition = 1 (P32 program stopping condition) but have no stochastic shape families defined. Automatically setting stopCondition to 0 for use with user defined polygons and nPoly.");
         input_var.stopCondition = 0;
 
-        if !input_var.userEllipsesOnOff
-            && !input_var.userRectanglesOnOff
-            && !input_var.userRecByCoord
-        {
+        if !input_var.userEllipsesOnOff && !input_var.userRectanglesOnOff && !user_rect_by_coord {
             panic!("ERROR: All polygon generating options are off or undefined, please check input file for errors.");
         }
 
@@ -476,11 +453,8 @@ pub fn read_input(input_file: &str) -> (Input, FractureFamilyOption) {
             count += user_rects.n_frac;
         }
 
-        if input_var.userRecByCoord {
-            count += input_var.nRectByCoord;
-        }
-
         // Set nPoly to the amount of user defined polygons
+        // FIXME: update nPoly after all user defined fractures loaded
         input_var.nPoly = count;
     }
 
@@ -661,5 +635,33 @@ impl UserDefinedEllByCoord {
             num_points,
             vertices,
         }
+    }
+}
+
+pub struct UserDefinedRectByCoord {
+    pub n_frac: usize,
+    pub vertices: Vec<f64>,
+}
+
+impl UserDefinedRectByCoord {
+    pub fn from_file(path: &str) -> Self {
+        let mut file = File::open(path).unwrap();
+
+        search_var(&mut file, "nRectangles:");
+        let mut n_frac = 0;
+        n_frac.read_from_text(&mut file);
+
+        search_var(&mut file, "Coordinates:");
+
+        let mut bytes = file.bytes().map(|ch| ch.unwrap());
+
+        let mut vertices = Vec::with_capacity(n_frac * 12);
+
+        for _ in 0..n_frac * 12 {
+            let val = read!("{}", bytes);
+            vertices.push(val)
+        }
+
+        Self { n_frac, vertices }
     }
 }

@@ -38,23 +38,6 @@ pub fn search_var(file: &mut File, search: &str) {
     }
 }
 
-/// Used to read in rectangualr coordinates when the user is using
-/// user rectangles defined by coordinates option.
-///
-/// # Arguments
-///
-/// * `file` - file object
-/// * `var` - OUTPUT. Pointer to array to store the coordinates
-/// * `n_rectangles` - Number of rectangles
-pub fn get_rect_coords(file: &mut File, var: &mut Vec<f64>, n_rectangles: usize) {
-    let mut bytes = file.bytes().map(|ch| ch.unwrap());
-
-    for _ in 0..n_rectangles * 12 {
-        let val = read!("{}", bytes);
-        var.push(val)
-    }
-}
-
 pub fn read_domain_vertices(global: &mut Input, filename: &str) {
     info!("Reading in Domain Vertices from {}", filename);
 

@@ -5,7 +5,7 @@ use std::rc::Rc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use clap::Parser;
-use io::input::{UserDefinedEllByCoord, UserDefinedPolygonByCoord};
+use io::input::{UserDefinedEllByCoord, UserDefinedPolygonByCoord, UserDefinedRectByCoord};
 use itertools::zip_eq;
 use parry3d_f64::na::Point3;
 use rand::distr::Uniform;
@@ -226,16 +226,17 @@ fn main() -> Result<(), DfngenError> {
         }
 
         // Insert all user rectangles by coordinates
-        if input.userRecByCoord {
+        if let Some(ref path) = input.user_rect_by_coord_file {
+            let rect_data = UserDefinedRectByCoord::from_file(path);
             insert_user_rects_by_coord(
                 input.h,
                 input.eps,
                 input.rFram,
                 input.disableFram,
                 input.tripleIntersections,
-                input.nRectByCoord,
+                rect_data.n_frac,
                 &input.domainSize,
-                &input.userRectCoordVertices,
+                &rect_data.vertices,
                 &mut accepted_poly,
                 &mut intersection_pts,
                 &mut pstats,
@@ -335,16 +336,17 @@ fn main() -> Result<(), DfngenError> {
         }
 
         // Insert all user rectangles by coordinates
-        if input.userRecByCoord {
+        if let Some(ref path) = input.user_rect_by_coord_file {
+            let rect_data = UserDefinedRectByCoord::from_file(path);
             insert_user_rects_by_coord(
                 input.h,
                 input.eps,
                 input.rFram,
                 input.disableFram,
                 input.tripleIntersections,
-                input.nRectByCoord,
+                rect_data.n_frac,
                 &input.domainSize,
-                &input.userRectCoordVertices,
+                &rect_data.vertices,
                 &mut accepted_poly,
                 &mut intersection_pts,
                 &mut pstats,
