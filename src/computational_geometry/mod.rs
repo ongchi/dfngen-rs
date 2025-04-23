@@ -7,7 +7,13 @@ use crate::{
     structures::{IntersectionPoints, Poly, Stats, TriplePtTempData},
 };
 
-pub mod polygon_boundary;
+mod domain_truncation;
+mod polygon_boundary;
+mod remove_fractures;
+
+pub use domain_truncation::domain_truncation;
+pub use polygon_boundary::polygon_boundary;
+pub use remove_fractures::remove_fractures;
 
 // Check if two vectors are parallel
 fn is_parallel(v1: &Vector3<f64>, v2: &Vector3<f64>, eps: f64) -> bool {

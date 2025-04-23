@@ -7,11 +7,12 @@ use rand::Rng;
 use rand_mt::Mt64;
 use tracing::warn;
 
-use crate::computational_geometry::{create_bounding_box, intersection_checking};
+use crate::computational_geometry::{
+    create_bounding_box, domain_truncation, intersection_checking,
+};
 use crate::distribution::generating_points::generate_theta;
 use crate::distribution::{Fisher, TruncExp, TruncLogNormal, TruncPowerLaw};
 use crate::error::DfngenError;
-use crate::fracture::domain::domain_truncation;
 use crate::fracture::insert_shape::print_reject_reason;
 use crate::math_functions::get_area;
 

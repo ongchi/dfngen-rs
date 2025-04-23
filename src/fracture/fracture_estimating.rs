@@ -4,8 +4,8 @@ use rand::{distr::Uniform, Rng};
 use rand_mt::Mt64;
 use tracing::info;
 
-use super::domain::domain_truncation;
 use crate::{
+    computational_geometry::domain_truncation,
     fracture::insert_shape::{
         generate_poly, generate_poly_with_radius, poly_boundary, re_translate_poly,
     },

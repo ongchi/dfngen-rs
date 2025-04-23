@@ -5,7 +5,7 @@ use std::rc::Rc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use clap::Parser;
-use fracture::fracture_def::{
+use fracture::user_defined_fractures::{
     UserDefinedEllByCoord, UserDefinedFractures, UserDefinedPolygonByCoord, UserDefinedRectByCoord,
 };
 use itertools::zip_eq;
@@ -17,16 +17,16 @@ use tracing::{error, info, warn};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 use crate::{
-    computational_geometry::polygon_boundary::polygon_boundary,
-    computational_geometry::{create_bounding_box, intersection_checking},
+    computational_geometry::{
+        create_bounding_box, domain_truncation, intersection_checking, polygon_boundary,
+        remove_fractures,
+    },
     error::DfngenError,
     fracture::cluster_groups::get_cluster,
-    fracture::domain::domain_truncation,
     fracture::fracture_estimating::dry_run,
     fracture::insert_shape::{
         generate_poly, get_family_number, print_reject_reason, re_translate_poly,
     },
-    fracture::remove_fractures::remove_fractures,
     io::input::read_input,
     io::output::write_output,
     math_functions::{
