@@ -1,9 +1,3 @@
-pub mod ell;
-pub mod ell_by_coord;
-pub mod polygon_by_coord;
-pub mod rect;
-pub mod rect_by_coord;
-
 use std::{fs::File, io::Read};
 
 use parry3d_f64::na::{distance, Point3, Vector3};

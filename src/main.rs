@@ -5,11 +5,6 @@ use std::rc::Rc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use clap::Parser;
-use fracture::fracture_def::ell::insert_user_ell;
-use fracture::fracture_def::ell_by_coord::insert_user_ell_by_coord;
-use fracture::fracture_def::polygon_by_coord::insert_user_polygon_by_coord;
-use fracture::fracture_def::rect::insert_user_rects;
-use fracture::fracture_def::rect_by_coord::insert_user_rects_by_coord;
 use fracture::fracture_def::{
     UserDefinedEllByCoord, UserDefinedFractures, UserDefinedPolygonByCoord, UserDefinedRectByCoord,
 };
@@ -17,7 +12,7 @@ use itertools::zip_eq;
 use rand::distr::Uniform;
 use rand::Rng;
 use rand_mt::Mt64;
-use structures::{DFNGen, RadiusFunction, Shape};
+use structures::{DFNGen, PolyOptions, RadiusFunction, Shape};
 use tracing::{error, info, warn};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
@@ -180,171 +175,67 @@ fn main() -> Result<(), DfngenError> {
     }
 
     // ********************* User Defined Shapes Insertion ************************
-    // User Polygons are always inserted first
 
     let mut num_user_defined_fractures = 0;
 
+    let poly_opts = PolyOptions {
+        h: input.h,
+        eps: input.eps,
+        domain_size: input.domainSize,
+        r_fram: input.rFram,
+        disable_fram: input.disableFram,
+        triple_intersections: input.tripleIntersections,
+    };
+
+    // User Polygons are always inserted first
     if let Some(ref path) = input.user_poly_by_coord_file {
-        let poly_data = UserDefinedPolygonByCoord::from_file(path);
-        insert_user_polygon_by_coord(
-            input.h,
-            input.eps,
-            input.rFram,
-            input.disableFram,
-            input.tripleIntersections,
-            &input.domainSize,
-            &poly_data,
-            &mut dfngen.accepted_poly,
-            &mut dfngen.intpts,
-            &mut dfngen.pstats,
-            &mut dfngen.triple_points,
-        );
-        num_user_defined_fractures += poly_data.n_frac;
+        let poly_def = UserDefinedPolygonByCoord::from_file(path);
+        for (i, poly) in poly_def.create_polys().into_iter().enumerate() {
+            dfngen.insert_poly(poly, i + 1, -3, &poly_opts);
+        }
+        num_user_defined_fractures += poly_def.n_frac;
+    }
+
+    let mut rect_polys = Vec::new();
+    let mut ell_polys = Vec::new();
+
+    if let Some(ref path) = input.user_rect_file {
+        let rect_def = UserDefinedFractures::from_file(path, false);
+        rect_polys.extend(rect_def.create_polys(poly_opts.eps));
+        num_user_defined_fractures += rect_def.n_frac;
+    }
+
+    if let Some(ref path) = input.user_rect_by_coord_file {
+        let rect_def = UserDefinedRectByCoord::from_file(path);
+        rect_polys.extend(rect_def.create_polys());
+        num_user_defined_fractures += rect_def.n_frac;
+    }
+
+    if let Some(ref path) = input.user_ell_file {
+        let ell_def = UserDefinedFractures::from_file(path, true);
+        ell_polys.extend(ell_def.create_polys(poly_opts.eps));
+        num_user_defined_fractures += ell_def.n_frac;
+    }
+
+    if let Some(ref path) = input.user_ell_by_coord_file {
+        let ell_def = UserDefinedEllByCoord::from_file(path);
+        ell_polys.extend(ell_def.create_polys());
+        num_user_defined_fractures += ell_def.n_frac;
     }
 
     if input.insertUserRectanglesFirst {
-        // Insert user rects first
-        if let Some(ref path) = input.user_rect_file {
-            let rect_data = UserDefinedFractures::from_file(path, false);
-            insert_user_rects(
-                input.h,
-                input.eps,
-                input.rFram,
-                input.disableFram,
-                input.tripleIntersections,
-                &input.domainSize,
-                &mut dfngen.accepted_poly,
-                &mut dfngen.intpts,
-                &mut dfngen.pstats,
-                &mut dfngen.triple_points,
-                &rect_data,
-            );
+        for (i, poly) in rect_polys.into_iter().enumerate() {
+            dfngen.insert_poly(poly, i + 1, -2, &poly_opts);
         }
-
-        // Insert all user rectangles by coordinates
-        if let Some(ref path) = input.user_rect_by_coord_file {
-            let rect_data = UserDefinedRectByCoord::from_file(path);
-            insert_user_rects_by_coord(
-                input.h,
-                input.eps,
-                input.rFram,
-                input.disableFram,
-                input.tripleIntersections,
-                &input.domainSize,
-                &mut dfngen.accepted_poly,
-                &mut dfngen.intpts,
-                &mut dfngen.pstats,
-                &mut dfngen.triple_points,
-                &rect_data,
-            );
-        }
-
-        // Insert all user ellipses
-        if let Some(ref path) = input.user_ell_file {
-            let ell_data = UserDefinedFractures::from_file(path, true);
-            insert_user_ell(
-                input.h,
-                input.eps,
-                input.rFram,
-                input.disableFram,
-                input.tripleIntersections,
-                &input.domainSize,
-                &mut dfngen.accepted_poly,
-                &mut dfngen.intpts,
-                &mut dfngen.pstats,
-                &mut dfngen.triple_points,
-                &ell_data,
-            );
-        }
-
-        // Insert all user ellipses by coordinates
-        if let Some(ref path) = input.user_ell_by_coord_file {
-            let ell_data = UserDefinedEllByCoord::from_file(path);
-            insert_user_ell_by_coord(
-                input.h,
-                input.eps,
-                input.rFram,
-                input.disableFram,
-                input.tripleIntersections,
-                &input.domainSize,
-                &mut dfngen.accepted_poly,
-                &mut dfngen.intpts,
-                &mut dfngen.pstats,
-                &mut dfngen.triple_points,
-                &ell_data,
-            );
+        for (i, poly) in ell_polys.into_iter().enumerate() {
+            dfngen.insert_poly(poly, i + 1, -1, &poly_opts);
         }
     } else {
-        // Insert all user ellipses first
-        if let Some(ref path) = input.user_ell_file {
-            let ell_data = UserDefinedFractures::from_file(path, true);
-            insert_user_ell(
-                input.h,
-                input.eps,
-                input.rFram,
-                input.disableFram,
-                input.tripleIntersections,
-                &input.domainSize,
-                &mut dfngen.accepted_poly,
-                &mut dfngen.intpts,
-                &mut dfngen.pstats,
-                &mut dfngen.triple_points,
-                &ell_data,
-            );
+        for (i, poly) in ell_polys.into_iter().enumerate() {
+            dfngen.insert_poly(poly, i + 1, -1, &poly_opts);
         }
-
-        // Insert all user ellipses by coordinates
-        if let Some(ref path) = input.user_ell_by_coord_file {
-            let ell_data = UserDefinedEllByCoord::from_file(path);
-            insert_user_ell_by_coord(
-                input.h,
-                input.eps,
-                input.rFram,
-                input.disableFram,
-                input.tripleIntersections,
-                &input.domainSize,
-                &mut dfngen.accepted_poly,
-                &mut dfngen.intpts,
-                &mut dfngen.pstats,
-                &mut dfngen.triple_points,
-                &ell_data,
-            );
-        }
-
-        // Insert user rects
-        if let Some(ref path) = input.user_rect_file {
-            let rect_data = UserDefinedFractures::from_file(path, false);
-            insert_user_rects(
-                input.h,
-                input.eps,
-                input.rFram,
-                input.disableFram,
-                input.tripleIntersections,
-                &input.domainSize,
-                &mut dfngen.accepted_poly,
-                &mut dfngen.intpts,
-                &mut dfngen.pstats,
-                &mut dfngen.triple_points,
-                &rect_data,
-            );
-        }
-
-        // Insert all user rectangles by coordinates
-        if let Some(ref path) = input.user_rect_by_coord_file {
-            let rect_data = UserDefinedRectByCoord::from_file(path);
-            insert_user_rects_by_coord(
-                input.h,
-                input.eps,
-                input.rFram,
-                input.disableFram,
-                input.tripleIntersections,
-                &input.domainSize,
-                &mut dfngen.accepted_poly,
-                &mut dfngen.intpts,
-                &mut dfngen.pstats,
-                &mut dfngen.triple_points,
-                &rect_data,
-            );
+        for (i, poly) in rect_polys.into_iter().enumerate() {
+            dfngen.insert_poly(poly, i + 1, -2, &poly_opts);
         }
     }
 

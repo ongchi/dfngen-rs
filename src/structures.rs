@@ -5,10 +5,15 @@ use std::{cell::RefCell, fmt::Display};
 use parry3d_f64::na::{Point3, Vector3};
 use rand::Rng;
 use rand_mt::Mt64;
+use tracing::info;
 
+use crate::computational_geometry::{create_bounding_box, intersection_checking};
 use crate::distribution::generating_points::generate_theta;
 use crate::distribution::{Fisher, TruncExp, TruncLogNormal, TruncPowerLaw};
 use crate::error::DfngenError;
+use crate::fracture::domain::domain_truncation;
+use crate::fracture::insert_shape::print_reject_reason;
+use crate::math_functions::get_area;
 
 #[derive(Clone, Default)]
 /// The Poly structre is used to create and store fracrures/polygons.
@@ -745,4 +750,69 @@ impl DFNGen {
             triple_points: Vec::new(),
         }
     }
+
+    pub fn insert_poly(&mut self, poly: Poly, poly_id: usize, family_id: i32, opts: &PolyOptions) {
+        let mut new_poly = poly;
+
+        if domain_truncation(opts.h, opts.eps, &mut new_poly, &opts.domain_size) {
+            // Poly completely outside domain
+            self.pstats.rejection_reasons.outside += 1;
+            self.pstats.rejected_poly_count += 1;
+            self.pstats
+                .rejected_user_fracture
+                .push(RejectedUserFracture::new(poly_id, family_id));
+            info!(
+                "({}, {}): rejected for being outside the defined domain.",
+                family_id, poly_id
+            );
+            return;
+        }
+
+        create_bounding_box(&mut new_poly);
+        // Line of intersection and FRAM
+        let reject_code = intersection_checking(
+            opts.h,
+            opts.eps,
+            opts.r_fram,
+            opts.disable_fram,
+            opts.triple_intersections,
+            &mut new_poly,
+            &mut self.accepted_poly,
+            &mut self.intpts,
+            &mut self.pstats,
+            &mut self.triple_points,
+        );
+
+        if reject_code == 0 {
+            // If intersection is ok (FRAM passed all tests)
+            if new_poly.truncated {
+                self.pstats.truncated += 1;
+            }
+
+            // Incriment counter of accepted polys
+            self.pstats.accepted_poly_count += 1;
+            // Calculate poly's area
+            new_poly.area = get_area(&new_poly);
+            // Add new rejectsPerAttempt counter
+            self.pstats.rejects_per_attempt.push(0);
+            self.accepted_poly.push(new_poly); // Save newPoly to accepted polys list
+        } else {
+            self.pstats.rejects_per_attempt[self.pstats.accepted_poly_count] += 1;
+            self.pstats.rejected_poly_count += 1;
+            self.pstats
+                .rejected_user_fracture
+                .push(RejectedUserFracture::new(poly_id, family_id));
+
+            print_reject_reason(reject_code, &new_poly);
+        }
+    }
+}
+
+pub struct PolyOptions {
+    pub h: f64,
+    pub eps: f64,
+    pub domain_size: Vector3<f64>,
+    pub r_fram: bool,
+    pub disable_fram: bool,
+    pub triple_intersections: bool,
 }
