@@ -1,9 +1,8 @@
-use parry3d_f64::na::Point3;
 use tracing::{info, warn};
 
 use crate::{
     computational_geometry::intersection_checking,
-    structures::{IntersectionPoints, Poly, Stats},
+    structures::{DFNGen, PolyOptions},
 };
 
 /// Remove Fractures Smaller Than Minimum Size
@@ -35,32 +34,20 @@ use crate::{
 /// NOTE: Must be executed before getCluster()
 ///       This funciton rebuilds the DFN. Using getCluster() before this
 ///       funciton executes causes undefined behavior.
-#[allow(clippy::too_many_arguments)]
-pub fn remove_fractures(
-    h: f64,
-    eps: f64,
-    r_fram: bool,
-    disable_fram: bool,
-    triple_intersections: bool,
-    min_size: f64,
-    accepted_polys: &mut Vec<Poly>,
-    int_pts: &mut Vec<IntersectionPoints>,
-    triple_points: &mut Vec<Point3<f64>>,
-    pstats: &mut Stats,
-) {
+pub fn remove_fractures(min_size: f64, opts: PolyOptions, dfngen: &mut DFNGen) {
     let mut final_poly_list = Vec::new();
     // Clear GroupData
-    pstats.group_data.clear();
+    dfngen.pstats.group_data.clear();
     // Clear FractGroup
-    pstats.fract_group.clear();
+    dfngen.pstats.fract_group.clear();
     // Clear Triple Points
-    triple_points.clear();
+    dfngen.triple_points.clear();
     // Clear IntPoints
-    int_pts.clear();
+    dfngen.intpts.clear();
     // Re-init nextGroupNum
-    pstats.next_group_num = 1;
+    dfngen.pstats.next_group_num = 1;
 
-    for poly in accepted_polys.iter_mut() {
+    for poly in dfngen.accepted_poly.iter_mut() {
         if poly.xradius < min_size {
             poly.vertices.clear();
             continue;
@@ -71,16 +58,16 @@ pub fn remove_fractures(
         new_poly.intersection_index.clear(); // Remove ref to old intersections
                                              // Find line of intersection and FRAM check
         let reject_code = intersection_checking(
-            h,
-            eps,
-            r_fram,
-            disable_fram,
-            triple_intersections,
+            opts.h,
+            opts.eps,
+            opts.r_fram,
+            opts.disable_fram,
+            opts.triple_intersections,
             &mut new_poly,
             &mut final_poly_list,
-            int_pts,
-            pstats,
-            triple_points,
+            &mut dfngen.intpts,
+            &mut dfngen.pstats,
+            &mut dfngen.triple_points,
         );
 
         // IF POLY ACCEPTED:
@@ -95,6 +82,6 @@ pub fn remove_fractures(
     }
 
     info!("Rebuilding DFN complete.");
-    accepted_polys.clear();
-    accepted_polys.extend(final_poly_list);
+    dfngen.accepted_poly.clear();
+    dfngen.accepted_poly.extend(final_poly_list);
 }
