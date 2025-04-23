@@ -309,6 +309,71 @@ impl UserDefinedEllByCoord {
             vertices,
         }
     }
+
+    pub fn create_polys(&self) -> Vec<Poly> {
+        let mut new_polys = Vec::with_capacity(self.n_frac);
+
+        for idx in 0..self.n_frac {
+            let mut new_poly = Poly {
+                family_num: -1,
+                // Set number of nodes. Needed for rotations.
+                number_of_nodes: self.num_points as isize,
+                // Initialize normal to {0,0,1}. need initialized for 3D rotation
+                normal: Vector3::new(0., 0., 1.),
+                ..Default::default()
+            };
+
+            new_poly.vertices.reserve(self.num_points * 3);
+
+            let poly_vert_idx = idx * 3 * self.num_points; // Each polygon has nEllNodes * 3 vertices
+
+            // Initialize vertices
+            for j in 0..self.num_points {
+                let v_idx = j * 3;
+                new_poly.vertices[v_idx] = self.vertices[poly_vert_idx + v_idx];
+                new_poly.vertices[v_idx + 1] = self.vertices[poly_vert_idx + 1 + v_idx];
+                new_poly.vertices[v_idx + 2] = self.vertices[poly_vert_idx + 2 + v_idx];
+            }
+
+            // Get a normal vector
+            // Vector from fist node to node accross middle of polygon
+            let pt_idx_12 = 3 * (self.num_points / 2);
+            let p1 = Point3::from_slice(&new_poly.vertices[0..3]);
+            let p2 = Point3::from_slice(&new_poly.vertices[3..6]);
+            let p_12 = Point3::from_slice(&new_poly.vertices[pt_idx_12..pt_idx_12 + 3]);
+
+            let v1 = p_12 - p1;
+            let v2 = p2 - p1;
+
+            new_poly.normal = v2.cross(&v1).normalize();
+            // Estimate radius
+            // across middle if even number of nodes
+            new_poly.xradius = 0.5 * v2.magnitude();
+
+            // Get idx for node 1/4 around polygon
+            let pt_idx_14 = 3 * (pt_idx_12 / 2);
+            // Get idx for node 3/4 around polygon
+            // across middle close to perpendicular to xradius magnitude calculation
+            let pt_idx_34 = 3 * (pt_idx_14 + pt_idx_12);
+
+            let p_14 = Point3::from_slice(&new_poly.vertices[pt_idx_14..pt_idx_14 + 3]);
+            let p_34 = Point3::from_slice(&new_poly.vertices[pt_idx_34..pt_idx_34 + 3]);
+
+            new_poly.yradius = 0.5 * distance(&p_14, &p_34);
+            new_poly.aspect_ratio = new_poly.yradius / new_poly.xradius;
+
+            // Estimate translation (middle of poly)
+            // Use midpoint between 1st and and half way around polygon
+            // Note: For polygons defined by coordinates, the coordinates
+            // themselves provide the translation. We need to estimate the center
+            // of the polygon and init. the translation array
+            new_poly.translation = 0.5 * Vector3::new(p1.x + p_12.x, p1.y + p_12.y, p1.z + p_12.z);
+
+            new_polys.push(new_poly)
+        }
+
+        new_polys
+    }
 }
 
 pub struct UserDefinedRectByCoord {

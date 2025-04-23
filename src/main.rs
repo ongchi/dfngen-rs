@@ -272,17 +272,15 @@ fn main() -> Result<(), DfngenError> {
             insert_user_ell_by_coord(
                 input.h,
                 input.eps,
-                ell_data.num_points,
-                ell_data.n_frac,
                 input.rFram,
                 input.disableFram,
                 input.tripleIntersections,
                 &input.domainSize,
-                &ell_data.vertices,
                 &mut accepted_poly,
                 &mut intersection_pts,
                 &mut pstats,
                 &mut triple_points,
+                &ell_data,
             );
         }
     } else {
@@ -310,17 +308,15 @@ fn main() -> Result<(), DfngenError> {
             insert_user_ell_by_coord(
                 input.h,
                 input.eps,
-                ell_data.num_points,
-                ell_data.n_frac,
                 input.rFram,
                 input.disableFram,
                 input.tripleIntersections,
                 &input.domainSize,
-                &ell_data.vertices,
                 &mut accepted_poly,
                 &mut intersection_pts,
                 &mut pstats,
                 &mut triple_points,
+                &ell_data,
             );
         }
 
