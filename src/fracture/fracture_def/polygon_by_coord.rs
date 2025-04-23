@@ -1,4 +1,4 @@
-use parry3d_f64::na::{distance, Point3, Vector3};
+use parry3d_f64::na::{Point3, Vector3};
 use tracing::{info, warn};
 
 use crate::{
@@ -9,59 +9,6 @@ use crate::{
 };
 
 use super::UserDefinedPolygonByCoord;
-
-fn create_poly(polygon_data: &UserDefinedPolygonByCoord) -> Poly {
-    let n_poly_nodes = polygon_data.num_points;
-
-    let mut new_poly = Poly {
-        family_num: -3,
-        // Set number of nodes. Needed for rotations.
-        number_of_nodes: n_poly_nodes as isize,
-        vertices: polygon_data.vertices.clone(),
-        ..Default::default()
-    };
-
-    // Get a normal vector
-    // Vector from fist node to node across middle of polygon
-    let mut pt_idx_12 = 3 * (n_poly_nodes / 2);
-
-    if n_poly_nodes == 3 {
-        pt_idx_12 = 8;
-    }
-
-    let p1 = Point3::from_slice(&new_poly.vertices[0..3]);
-    let p2 = Point3::from_slice(&new_poly.vertices[3..6]);
-    let p_12 = Point3::from_slice(&new_poly.vertices[pt_idx_12..pt_idx_12 + 3]);
-
-    let v1 = p_12 - p1;
-    let v2 = p2 - p1;
-
-    new_poly.normal = v2.cross(&v1).normalize();
-    // Estimate radius
-    // across middle if even number of nodes
-    // across middle close to perpendicular to xradius magnitude calculation
-    new_poly.xradius = 0.5 * v2.magnitude();
-
-    // Get idx for node 1/4 around polygon
-    let pt_idx_14 = 3 * (n_poly_nodes / 4);
-    // Get idx for node 3/4 around polygon
-    let pt_idx_34 = 3 * (3 * n_poly_nodes / 4);
-
-    let p_14 = Point3::from_slice(&new_poly.vertices[pt_idx_14..pt_idx_14 + 3]);
-    let p_34 = Point3::from_slice(&new_poly.vertices[pt_idx_34..pt_idx_34 + 3]);
-
-    new_poly.yradius = 0.5 * distance(&p_14, &p_34);
-    new_poly.aspect_ratio = new_poly.yradius / new_poly.xradius;
-
-    // Estimate translation (middle of poly)
-    // Use midpoint between 1st and and half way around polygon
-    // Note: For polygons defined by coordinates, the coordinates
-    // themselves provide the translation. We need to estimate the center
-    // of the polygon and init. the translation array
-    new_poly.translation = 0.5 * Vector3::new(p1.x + p_12.x, p1.y + p_12.y, p1.z + p_12.z);
-
-    new_poly
-}
 
 /// Inserts user polygon using defined coordinates provided by the user (see input file).
 ///
@@ -97,9 +44,9 @@ pub fn insert_user_polygon_by_coord(
 ) {
     let family_id = -3;
 
-    for i in 0..poly_data.n_frac {
-        let mut new_poly = create_poly(poly_data);
+    let polys = poly_data.create_polys();
 
+    for (i, mut new_poly) in polys.into_iter().enumerate() {
         if domain_truncation(h, eps, &mut new_poly, domain_size) {
             // Poly completely outside domain
             pstats.rejection_reasons.outside += 1;
