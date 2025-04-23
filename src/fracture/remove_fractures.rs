@@ -34,7 +34,7 @@ use crate::{
 /// NOTE: Must be executed before getCluster()
 ///       This funciton rebuilds the DFN. Using getCluster() before this
 ///       funciton executes causes undefined behavior.
-pub fn remove_fractures(min_size: f64, opts: PolyOptions, dfngen: &mut DFNGen) {
+pub fn remove_fractures(min_size: f64, opts: &PolyOptions, dfngen: &mut DFNGen) {
     let mut final_poly_list = Vec::new();
     // Clear GroupData
     dfngen.pstats.group_data.clear();

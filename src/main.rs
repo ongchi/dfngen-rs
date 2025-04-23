@@ -650,7 +650,7 @@ fn main() -> Result<(), DfngenError> {
             input.removeFracturesLessThan
         );
         let size = dfngen.accepted_poly.len();
-        remove_fractures(input.removeFracturesLessThan, poly_opts, &mut dfngen);
+        remove_fractures(input.removeFracturesLessThan, &poly_opts, &mut dfngen);
         info!(
             "Removed {} fractures with radius less than {}",
             size - dfngen.accepted_poly.len(),
@@ -662,17 +662,10 @@ fn main() -> Result<(), DfngenError> {
         info!("Extracting fractures from a polygon boundary domain");
         let size = dfngen.accepted_poly.len();
         polygon_boundary(
-            input.h,
-            input.eps,
-            input.rFram,
-            input.disableFram,
-            input.tripleIntersections,
+            &poly_opts,
             input.numOfDomainVertices,
             &input.domainVertices,
-            &mut dfngen.accepted_poly,
-            &mut dfngen.intpts,
-            &mut dfngen.triple_points,
-            &mut dfngen.pstats,
+            &mut dfngen,
         );
         info!(
             "Removed {} fractures outside subdomain",

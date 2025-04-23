@@ -4,7 +4,7 @@ use tracing::info;
 use crate::{
     computational_geometry::intersection_checking,
     error,
-    structures::{IntersectionPoints, Poly, Stats},
+    structures::{DFNGen, Poly, PolyOptions},
 };
 
 fn in_polygon_boundary(
@@ -97,59 +97,52 @@ fn in_polygon_boundary(
 /// * `pstats` - Stats structure (DFN Statisctics)
 #[allow(clippy::too_many_arguments)]
 pub fn polygon_boundary(
-    h: f64,
-    eps: f64,
-    r_fram: bool,
-    disable_fram: bool,
-    triple_intersections: bool,
+    opts: &PolyOptions,
     num_of_domain_vertices: usize,
     domain_vertices: &[Point3<f64>],
-    accepted_polys: &mut Vec<Poly>,
-    int_pts: &mut Vec<IntersectionPoints>,
-    triple_points: &mut Vec<Point3<f64>>,
-    pstats: &mut Stats,
+    dfngen: &mut DFNGen,
 ) {
     let mut final_poly_list: Vec<Poly> = Vec::new();
 
     // Clear GroupData
-    pstats.group_data.clear();
+    dfngen.pstats.group_data.clear();
     // Clear FractGroup
-    pstats.fract_group.clear();
+    dfngen.pstats.fract_group.clear();
     // Clear Triple Points
-    triple_points.clear();
+    dfngen.triple_points.clear();
     // Clear IntPoints
-    int_pts.clear();
+    dfngen.intpts.clear();
     // Re-init nextGroupNum
-    pstats.next_group_num = 1;
+    dfngen.pstats.next_group_num = 1;
 
-    for i in 0..accepted_polys.len() {
-        let x = accepted_polys[i].translation[0];
-        let y = accepted_polys[i].translation[1];
+    for i in 0..dfngen.accepted_poly.len() {
+        let x = dfngen.accepted_poly[i].translation[0];
+        let y = dfngen.accepted_poly[i].translation[1];
 
         // cout << "fracture " << i + 1 << " center " << x << "," << y << endl;
         if !in_polygon_boundary(num_of_domain_vertices, domain_vertices, x, y) {
-            accepted_polys.clear();
+            dfngen.accepted_poly.clear();
             continue;
         }
 
-        let new_poly = &mut accepted_polys[i];
+        let new_poly = &mut dfngen.accepted_poly[i];
         new_poly.group_num = 0; // Reset cluster group number
         new_poly.intersection_index.clear(); // Remove ref to old intersections
                                              // Find line of intersection and FRAM check
-        let reject_code = if disable_fram {
+        let reject_code = if opts.disable_fram {
             0
         } else {
             intersection_checking(
-                h,
-                eps,
-                r_fram,
-                disable_fram,
-                triple_intersections,
+                opts.h,
+                opts.eps,
+                opts.r_fram,
+                opts.disable_fram,
+                opts.triple_intersections,
                 new_poly,
                 &mut final_poly_list,
-                int_pts,
-                pstats,
-                triple_points,
+                &mut dfngen.intpts,
+                &mut dfngen.pstats,
+                &mut dfngen.triple_points,
             )
         };
 
@@ -165,6 +158,6 @@ pub fn polygon_boundary(
     }
 
     info!("Rebuilding DFN complete.");
-    accepted_polys.clear();
-    accepted_polys.extend(final_poly_list);
+    dfngen.accepted_poly.clear();
+    dfngen.accepted_poly.extend(final_poly_list);
 }
