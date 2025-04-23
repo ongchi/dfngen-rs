@@ -86,7 +86,7 @@ fn main() -> Result<(), DfngenError> {
     // Values are set to true once the families p32 requirement is met.
     // Once all elements have values all set to true, all families have had their
     // P32 requirement
-    let mut p32_status = vec![false; frac_fam_opt.families.len()];
+    let mut p32_status = vec![false; total_families];
 
     let generator = Rc::new(RefCell::new(Mt64::new(match input.seed {
         0 => SystemTime::now()
@@ -152,18 +152,13 @@ fn main() -> Result<(), DfngenError> {
 
         frac_fam_opt.sort_radii();
 
-        let n_families = frac_fam_opt.families.len();
         // Keep count of accepted & rejected fractures by family
-        dfngen.pstats.accepted_from_fam.reserve(n_families);
-        dfngen.pstats.rejected_from_fam.reserve(n_families);
-        // Save sizes of pre-generated radii lists per family.
-        // Print as part of statistics to user
-        dfngen.pstats.expected_from_fam.reserve(n_families);
+        dfngen.pstats.accepted_from_fam = vec![0; total_families];
+        dfngen.pstats.rejected_from_fam = vec![0; total_families];
 
-        // Zero arrays, init expectedFromFam array
         for fracture_family in &frac_fam_opt.families {
-            dfngen.pstats.accepted_from_fam.push(0);
-            dfngen.pstats.rejected_from_fam.push(0);
+            // Save sizes of pre-generated radii lists per family.
+            // Print as part of statistics to user
             dfngen
                 .pstats
                 .expected_from_fam
