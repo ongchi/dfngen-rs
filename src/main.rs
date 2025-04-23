@@ -89,12 +89,6 @@ fn main() -> Result<(), DfngenError> {
         triple_intersections: input.tripleIntersections,
     };
 
-    // Used with stopCondition = 1, P32 option.
-    // Values are set to true once the families p32 requirement is met.
-    // Once all elements have values all set to true, all families have had their
-    // P32 requirement
-    let mut p32_status = vec![false; total_families];
-
     let generator = Rc::new(RefCell::new(Mt64::new(match input.seed {
         0 => SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -199,37 +193,29 @@ fn main() -> Result<(), DfngenError> {
         input.nPoly = num_user_defined_fractures;
     }
 
-    /*********  Probabilities (famProb) setup, CDF init  *****************/
-    // 'CDF' size will shrink along when used with fracture intensity (P32) option
-    let mut cdf = Vec::new();
-    let mut cdf_size = total_families;
-
     if !frac_fam_opt.families.is_empty() {
-        // Convert famProb to CDF
-        cdf = cumsum(&frac_fam_opt.probabilities);
-    }
+        // 'cdf' size will shrink along when used with fracture intensity (P32) option
+        let mut cdf = cumsum(&frac_fam_opt.probabilities);
+        let mut cdf_size = total_families;
 
-    let radii_folder = format!("{}/radii", cli.output_folder);
-    let mut radii_all = None;
+        // Initialize uniform distribution on [0,1]
+        let uniform_dist = Uniform::new(0., 1.)?;
 
-    if input.outputAllRadii {
-        let file = radii_folder + "/radii_All.dat";
-        radii_all = Some(File::open(file)?);
-        radii_all.as_mut().map(|f| f.write_all("Format: xRadius yRadius Family# (-1 = userRectangle, 0 = userEllipse, > 0 is family in order of famProb)\n".as_bytes()));
-    }
+        let radii_folder = format!("{}/radii", cli.output_folder);
+        let mut radii_all = None;
 
-    // Initialize uniform distribution on [0,1]
-    let uniform_dist = Uniform::new(0., 1.)?;
+        if input.outputAllRadii {
+            let file = radii_folder + "/radii_All.dat";
+            radii_all = Some(File::open(file)?);
+            radii_all.as_mut().map(|f| f.write_all("Format: xRadius yRadius Family# (-1 = userRectangle, 0 = userEllipse, > 0 is family in order of famProb)\n".as_bytes()));
+        }
 
-    if !frac_fam_opt.families.is_empty() {
-        // Holds index to current 'shapeFamily' being inserted
-        let mut family_index;
+        // Used with stopCondition = 1, P32 option.
+        // Values are set to true once the families p32 requirement is met.
+        // Once all elements have values all set to true, all families have had their
+        // P32 requirement
+        let mut p32_status = vec![false; total_families];
 
-        /******************************************************************************************/
-        /**************************             MAIN LOOP            ******************************/
-
-        // NOTE: p32Complete() works on global array 'p32Status'
-        // p32Complete() only needs argument of the number of defined shape families
         // ********* Begin stochastic fracture insertion ***********
         while (input.stopCondition == 0 && dfngen.pstats.accepted_poly_count < input.nPoly)
             || (input.stopCondition == 1 && p32_status.iter().any(|p| !p))
@@ -237,24 +223,22 @@ fn main() -> Result<(), DfngenError> {
             // cdfIdx holds the index to the CDF array for the current shape family being inserted
             let mut cdf_idx = 0;
 
-            if input.stopCondition == 0 {
+            let family_index = if input.stopCondition == 0 {
                 // nPoly Option
                 // Choose a family based purely on famProb probabilities
-                family_index =
-                    index_from_prob(&cdf, generator.clone().borrow_mut().sample(uniform_dist));
-            }
-            // Choose a family based on probabiliyis AND their target p32 completion status.
-            // If a family has already met is fracture intinisty req. (p32) don't choose that family anymore
-            else {
+                index_from_prob(&cdf, generator.clone().borrow_mut().sample(uniform_dist))
+            } else {
                 // P32 Option
-                family_index = index_from_prob_and_p32_status(
+                // Choose a family based on probabiliyis AND their target p32 completion status.
+                // If a family has already met is fracture intinisty req. (p32) don't choose that family anymore
+                index_from_prob_and_p32_status(
                     &mut p32_status,
                     &cdf,
                     generator.clone().borrow_mut().sample(uniform_dist),
                     total_families,
                     &mut cdf_idx,
-                );
-            }
+                )
+            };
 
             let mut new_poly = generate_poly(
                 input.h,
