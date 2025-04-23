@@ -5,7 +5,7 @@ use std::{cell::RefCell, fmt::Display};
 use parry3d_f64::na::{Point3, Vector3};
 use rand::Rng;
 use rand_mt::Mt64;
-use tracing::info;
+use tracing::warn;
 
 use crate::computational_geometry::{create_bounding_box, intersection_checking};
 use crate::distribution::generating_points::generate_theta;
@@ -761,7 +761,7 @@ impl DFNGen {
             self.pstats
                 .rejected_user_fracture
                 .push(RejectedUserFracture::new(poly_id, family_id));
-            info!(
+            warn!(
                 "({}, {}): rejected for being outside the defined domain.",
                 family_id, poly_id
             );
