@@ -238,13 +238,12 @@ fn main() -> Result<(), DfngenError> {
                 input.rFram,
                 input.disableFram,
                 input.tripleIntersections,
-                rect_data.n_frac,
                 &input.domainSize,
-                &rect_data.vertices,
                 &mut accepted_poly,
                 &mut intersection_pts,
                 &mut pstats,
                 &mut triple_points,
+                &rect_data,
             );
         }
 
@@ -347,13 +346,12 @@ fn main() -> Result<(), DfngenError> {
                 input.rFram,
                 input.disableFram,
                 input.tripleIntersections,
-                rect_data.n_frac,
                 &input.domainSize,
-                &rect_data.vertices,
                 &mut accepted_poly,
                 &mut intersection_pts,
                 &mut pstats,
                 &mut triple_points,
+                &rect_data,
             );
         }
     }

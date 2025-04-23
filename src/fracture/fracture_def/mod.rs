@@ -402,4 +402,80 @@ impl UserDefinedRectByCoord {
 
         Self { n_frac, vertices }
     }
+
+    pub fn create_polys(&self) -> Vec<Poly> {
+        let mut new_polys = Vec::with_capacity(self.n_frac);
+
+        for idx in 0..self.n_frac {
+            let mut new_poly = Poly {
+                family_num: -2,
+                // Set number of nodes. Needed for rotations.
+                number_of_nodes: 4,
+                ..Default::default()
+            };
+
+            new_poly.vertices.reserve(12); // 4 * {x,y,z}
+            let poly_vert_idx = idx * 12; // Each polygon has 4 vertices (12 elements, 4*{x,y,z}))
+
+            // Initialize vertices
+            for j in 0..4 {
+                let v_idx = j * 3;
+                new_poly.vertices[v_idx] = self.vertices[poly_vert_idx + v_idx];
+                new_poly.vertices[v_idx + 1] = self.vertices[poly_vert_idx + 1 + v_idx];
+                new_poly.vertices[v_idx + 2] = self.vertices[poly_vert_idx + 2 + v_idx];
+            }
+
+            // Check that rectangle lays one a single plane:
+            // let xProd1 = cross Product vector (1st node to 2nd node) with vector(1st node to 3rd node)
+            // and xProd2 = cross product vector (1st node to 3th node) with vector (1st node to 4th node)
+            // Then, cross product xProd1 and xProd2, if this produces zero vector, all coords are on the same plane
+            // v1 is vector from first vertice to third vertice
+            // Vector from fist node to 3rd node (vector through middle of sqare)
+            let p1 = Point3::from_slice(&new_poly.vertices[0..3]);
+            let p2 = Point3::from_slice(&new_poly.vertices[3..6]);
+            let p3 = Point3::from_slice(&new_poly.vertices[6..9]);
+            let p4 = Point3::from_slice(&new_poly.vertices[9..12]);
+
+            let v1 = p3 - p1;
+            let v2 = p2 - p1;
+            let v3 = p4 - p1;
+            let x_prod1 = v2.cross(&v1).normalize();
+            // let x_prod2 = crossProduct(&v3, &v1);
+            // let x_prod3 = crossProduct(&x_prod1, &x_prod2);
+            //will be zero vector if all vertices are on the same plane
+            //TODO: Error check below is too sensitive. Adjust it.
+            // Error check for points not on the same plane
+            //        if (std::abs(magnitude(xProd3[0],xProd3[1],xProd3[2])) > eps) { //points do not lay on the same plane. reject poly else meshing will fail
+            // if (!(std::abs(xProd3[0]) < eps && std::abs(xProd3[1]) < eps && std::abs(xProd3[2]) < eps)) {
+            //     delete[] newPoly.vertices;
+            //     pstats.rejectedPolyCount++;
+            //     std::cout << "\nUser Rectangle (defined by coordinates) " << i+1 << " was rejected. The defined vertices are not co-planar.\n";
+            //     std::cout << "Please check user defined coordinates for rectanle " << i+1 << " in input file\n";
+            //     delete[] xProd1;
+            //     delete[] xProd2;
+            //     delete[] xProd3;
+            //     continue; //go to next poly
+            // }
+
+            // Set normal vector
+            new_poly.normal = x_prod1;
+
+            // Set radius (x and y radii might be switched based on order of users coordinates)
+            new_poly.xradius = 0.5 * v2.magnitude();
+            new_poly.yradius = 0.5 * v3.magnitude();
+            new_poly.aspect_ratio = new_poly.yradius / new_poly.xradius;
+
+            // Estimate translation
+            // Use midpoint between 1st and 3rd vertices
+            // Note: For polygons defined by coordinates, the coordinates
+            // themselves provide the translation. We are just filling the
+            // translation array for completeness even though the translation
+            // array might not be used
+            new_poly.translation = 0.5 * Vector3::new(p1.x + p3.x, p1.y + p3.y, p1.z + p3.z);
+
+            new_polys.push(new_poly)
+        }
+
+        new_polys
+    }
 }
