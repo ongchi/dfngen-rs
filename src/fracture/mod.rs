@@ -3,3 +3,4 @@ pub mod fracture_estimating;
 pub mod insert_shape;
 pub mod user_defined_fractures;
 
+pub use user_defined_fractures::insert_user_defined_fractures;

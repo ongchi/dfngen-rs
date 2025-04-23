@@ -5,14 +5,10 @@ use std::rc::Rc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use clap::Parser;
-use fracture::user_defined_fractures::{
-    UserDefinedEllByCoord, UserDefinedFractures, UserDefinedPolygonByCoord, UserDefinedRectByCoord,
-};
 use itertools::zip_eq;
 use rand::distr::Uniform;
 use rand::Rng;
 use rand_mt::Mt64;
-use structures::{DFNGen, PolyOptions, RadiusFunction, Shape};
 use tracing::{error, info, warn};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
@@ -27,11 +23,13 @@ use crate::{
     fracture::insert_shape::{
         generate_poly, get_family_number, print_reject_reason, re_translate_poly,
     },
+    fracture::insert_user_defined_fractures,
     io::input::read_input,
     io::output::write_output,
     math_functions::{
         adjust_cdf_and_fam_prob, cumsum, get_area, index_from_prob, index_from_prob_and_p32_status,
     },
+    structures::{DFNGen, PolyOptions, RadiusFunction, Shape},
 };
 
 mod computational_geometry;
@@ -81,6 +79,15 @@ fn main() -> Result<(), DfngenError> {
     // Read input variables. Most input variables are global
     let (mut input, mut frac_fam_opt) = read_input(&cli.input_file);
     let total_families = frac_fam_opt.families.len();
+
+    let poly_opts = PolyOptions {
+        h: input.h,
+        eps: input.eps,
+        domain_size: input.domainSize,
+        r_fram: input.rFram,
+        disable_fram: input.disableFram,
+        triple_intersections: input.tripleIntersections,
+    };
 
     // Used with stopCondition = 1, P32 option.
     // Values are set to true once the families p32 requirement is met.
@@ -169,70 +176,14 @@ fn main() -> Result<(), DfngenError> {
         dfngen.pstats.rejects_per_attempt.push(0);
     }
 
-    // ********************* User Defined Shapes Insertion ************************
+    // ********************* User Defined Fractures Insertion ************************
 
-    let mut num_user_defined_fractures = 0;
-
-    let poly_opts = PolyOptions {
-        h: input.h,
-        eps: input.eps,
-        domain_size: input.domainSize,
-        r_fram: input.rFram,
-        disable_fram: input.disableFram,
-        triple_intersections: input.tripleIntersections,
-    };
-
-    // User Polygons are always inserted first
-    if let Some(ref path) = input.user_poly_by_coord_file {
-        let poly_def = UserDefinedPolygonByCoord::from_file(path);
-        for (i, poly) in poly_def.create_polys().into_iter().enumerate() {
-            dfngen.insert_poly(poly, i + 1, -3, &poly_opts);
-        }
-        num_user_defined_fractures += poly_def.n_frac;
-    }
-
-    let mut rect_polys = Vec::new();
-    let mut ell_polys = Vec::new();
-
-    if let Some(ref path) = input.user_rect_file {
-        let rect_def = UserDefinedFractures::from_file(path, false);
-        rect_polys.extend(rect_def.create_polys(poly_opts.eps));
-        num_user_defined_fractures += rect_def.n_frac;
-    }
-
-    if let Some(ref path) = input.user_rect_by_coord_file {
-        let rect_def = UserDefinedRectByCoord::from_file(path);
-        rect_polys.extend(rect_def.create_polys());
-        num_user_defined_fractures += rect_def.n_frac;
-    }
-
-    if let Some(ref path) = input.user_ell_file {
-        let ell_def = UserDefinedFractures::from_file(path, true);
-        ell_polys.extend(ell_def.create_polys(poly_opts.eps));
-        num_user_defined_fractures += ell_def.n_frac;
-    }
-
-    if let Some(ref path) = input.user_ell_by_coord_file {
-        let ell_def = UserDefinedEllByCoord::from_file(path);
-        ell_polys.extend(ell_def.create_polys());
-        num_user_defined_fractures += ell_def.n_frac;
-    }
-
-    if input.insertUserRectanglesFirst {
-        for (i, poly) in rect_polys.into_iter().enumerate() {
-            dfngen.insert_poly(poly, i + 1, -2, &poly_opts);
-        }
-        for (i, poly) in ell_polys.into_iter().enumerate() {
-            dfngen.insert_poly(poly, i + 1, -1, &poly_opts);
-        }
-    } else {
-        for (i, poly) in ell_polys.into_iter().enumerate() {
-            dfngen.insert_poly(poly, i + 1, -1, &poly_opts);
-        }
-        for (i, poly) in rect_polys.into_iter().enumerate() {
-            dfngen.insert_poly(poly, i + 1, -2, &poly_opts);
-        }
-    }
+    let num_user_defined_fractures = insert_user_defined_fractures(
+        input.insertUserRectanglesFirst,
+        &input.ext_fracture_files,
+        &poly_opts,
+        &mut dfngen,
+    );
 
     if total_families == 0 && input.stopCondition != 0 {
         // If no stochastic shapes, use nPoly option with npoly = number of user polygons

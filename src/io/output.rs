@@ -100,9 +100,9 @@ pub fn write_output(
     write_user_rejected_fracture_information(pstats, &output);
     // Write families to output Files
     write_frac_fams(
-        input.user_ell_file.is_some(),
-        input.user_rect_file.is_some(),
-        input.user_poly_by_coord_file.is_some(),
+        input.ext_fracture_files.user_ell_file.is_some(),
+        input.ext_fracture_files.user_rect_file.is_some(),
+        input.ext_fracture_files.user_poly_by_coord_file.is_some(),
         input.stopCondition,
         input.nFamEll,
         &input.layers,
@@ -142,17 +142,17 @@ pub fn write_output(
             write_all_accepted_radii_of_family(i as isize, accepted_poly, &radii_folder);
         }
 
-        if input.user_rect_file.is_some() {
+        if input.ext_fracture_files.user_rect_file.is_some() {
             // Fractures are marked -2 for user rects
             write_all_accepted_radii_of_family(-2, accepted_poly, &radii_folder);
         }
 
-        if input.user_ell_file.is_some() {
+        if input.ext_fracture_files.user_ell_file.is_some() {
             // Fractures are marked -1 for user ellipses
             write_all_accepted_radii_of_family(-1, accepted_poly, &radii_folder);
         }
 
-        if input.user_poly_by_coord_file.is_some() {
+        if input.ext_fracture_files.user_poly_by_coord_file.is_some() {
             // Fractures are marked -3 for user user polygons
             write_all_accepted_radii_of_family(-3, accepted_poly, &radii_folder);
         }
@@ -166,15 +166,15 @@ pub fn write_output(
             write_final_radii_of_family(final_fractures, i as isize, accepted_poly, &radii_folder);
         }
 
-        if input.user_rect_file.is_some() {
+        if input.ext_fracture_files.user_rect_file.is_some() {
             write_final_radii_of_family(final_fractures, -1, accepted_poly, &radii_folder);
         }
 
-        if input.user_ell_file.is_some() {
+        if input.ext_fracture_files.user_ell_file.is_some() {
             write_final_radii_of_family(final_fractures, -2, accepted_poly, &radii_folder);
         }
 
-        if input.user_poly_by_coord_file.is_some() {
+        if input.ext_fracture_files.user_poly_by_coord_file.is_some() {
             write_final_radii_of_family(final_fractures, -3, accepted_poly, &radii_folder);
         }
     }

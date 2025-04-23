@@ -5,6 +5,24 @@ use super::read_input_functions::read_domain_vertices;
 
 use crate::{io::read_input_functions::InputReader, structures::FractureFamilyOption};
 
+#[derive(Default, Debug)]
+pub struct ExternalFractureFiles {
+    /// File name of user polygons defined by coordinates
+    pub user_poly_by_coord_file: Option<String>,
+
+    /// File name of user ellipses defined by coordinates
+    pub user_ell_by_coord_file: Option<String>,
+
+    /// File name of user retangles defined by coordinates
+    pub user_rect_by_coord_file: Option<String>,
+
+    /// File name of user ellipses
+    pub user_ell_file: Option<String>,
+
+    /// File name of user rectangles
+    pub user_rect_file: Option<String>,
+}
+
 #[allow(non_snake_case)]
 #[derive(Default, Debug)]
 pub struct Input {
@@ -134,21 +152,6 @@ pub struct Input {
     ///        distributions will still be used while generating the DFN.
     pub removeFracturesLessThan: f64,
 
-    /// File name of user ellipses
-    pub user_ell_file: Option<String>,
-
-    /// File name of user rectangles
-    pub user_rect_file: Option<String>,
-
-    /// File name of user polygons defined by coordinates
-    pub user_poly_by_coord_file: Option<String>,
-
-    /// File name of user ellipses defined by coordinates
-    pub user_ell_by_coord_file: Option<String>,
-
-    /// File name of user retangles defined by coordinates
-    pub user_rect_by_coord_file: Option<String>,
-
     /// Caution: Can create very large files.
     /// Outputs all fractures which were generated during
     /// DFN generation (Accepted + Rejected).
@@ -202,6 +205,8 @@ pub struct Input {
     /// True  - Ignore boundaryFaces option, keep all clusters
     ///         and remove fractures with no intersections
     pub ignoreBoundaryFaces: bool,
+
+    pub ext_fracture_files: ExternalFractureFiles,
 }
 
 /// Reads in all input variables.
@@ -375,7 +380,7 @@ pub fn read_input(input_file: &str) -> (Input, FractureFamilyOption) {
     if user_ell {
         let mut path: String = String::new();
         input_reader.read_value("UserEll_Input_File_Path:", &mut path);
-        input_var.user_ell_file = Some(path);
+        input_var.ext_fracture_files.user_ell_file = Some(path);
     }
 
     let mut user_rect = false;
@@ -383,7 +388,7 @@ pub fn read_input(input_file: &str) -> (Input, FractureFamilyOption) {
     if user_rect {
         let mut path: String = String::new();
         input_reader.read_value("UserRect_Input_File_Path:", &mut path);
-        input_var.user_rect_file = Some(path);
+        input_var.ext_fracture_files.user_rect_file = Some(path);
     }
 
     let mut user_polygon_by_coord = false;
@@ -391,7 +396,7 @@ pub fn read_input(input_file: &str) -> (Input, FractureFamilyOption) {
     if user_polygon_by_coord {
         let mut path = String::new();
         input_reader.read_value("PolygonByCoord_Input_File_Path:", &mut path);
-        input_var.user_poly_by_coord_file = Some(path);
+        input_var.ext_fracture_files.user_poly_by_coord_file = Some(path);
     }
 
     let mut user_ell_by_coord = false;
@@ -399,7 +404,7 @@ pub fn read_input(input_file: &str) -> (Input, FractureFamilyOption) {
     if user_ell_by_coord {
         let mut path = String::new();
         input_reader.read_value("EllByCoord_Input_File_Path:", &mut path);
-        input_var.user_ell_by_coord_file = Some(path);
+        input_var.ext_fracture_files.user_ell_by_coord_file = Some(path);
     }
 
     let mut user_rect_by_coord = false;
@@ -407,7 +412,7 @@ pub fn read_input(input_file: &str) -> (Input, FractureFamilyOption) {
     if user_rect_by_coord {
         let mut path = String::new();
         input_reader.read_value("RectByCoord_Input_File_Path:", &mut path);
-        input_var.user_rect_by_coord_file = Some(path);
+        input_var.ext_fracture_files.user_rect_by_coord_file = Some(path);
     }
 
     if (user_rect || user_rect_by_coord) && (user_ell || user_ell_by_coord) {

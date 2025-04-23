@@ -6,11 +6,77 @@ use text_io::read;
 use crate::{
     computational_geometry::{apply_rotation2_d, apply_rotation3_d, translate},
     distribution::generating_points::generate_theta,
-    io::read_input_functions::{search_var, ReadFromTextFile, UserFractureReader},
-    structures::Poly,
+    io::{
+        input::ExternalFractureFiles,
+        read_input_functions::{search_var, ReadFromTextFile, UserFractureReader},
+    },
+    structures::{DFNGen, Poly, PolyOptions},
 };
 
 use super::insert_shape::{initialize_ell_vertices, initialize_rect_vertices};
+
+pub fn insert_user_defined_fractures(
+    rect_first: bool,
+    files: &ExternalFractureFiles,
+    poly_opts: &PolyOptions,
+    dfngen: &mut DFNGen,
+) -> usize {
+    let mut num_user_defined_fractures = 0;
+
+    // User Polygons are always inserted first
+    if let Some(ref path) = files.user_poly_by_coord_file {
+        let poly_def = UserDefinedPolygonByCoord::from_file(path);
+        for (i, poly) in poly_def.create_polys().into_iter().enumerate() {
+            dfngen.insert_poly(poly, i + 1, -3, poly_opts);
+        }
+        num_user_defined_fractures += poly_def.n_frac;
+    }
+
+    let mut rect_polys = Vec::new();
+    let mut ell_polys = Vec::new();
+
+    if let Some(ref path) = files.user_rect_file {
+        let rect_def = UserDefinedFractures::from_file(path, false);
+        rect_polys.extend(rect_def.create_polys(poly_opts.eps));
+        num_user_defined_fractures += rect_def.n_frac;
+    }
+
+    if let Some(ref path) = files.user_rect_by_coord_file {
+        let rect_def = UserDefinedRectByCoord::from_file(path);
+        rect_polys.extend(rect_def.create_polys());
+        num_user_defined_fractures += rect_def.n_frac;
+    }
+
+    if let Some(ref path) = files.user_ell_file {
+        let ell_def = UserDefinedFractures::from_file(path, true);
+        ell_polys.extend(ell_def.create_polys(poly_opts.eps));
+        num_user_defined_fractures += ell_def.n_frac;
+    }
+
+    if let Some(ref path) = files.user_ell_by_coord_file {
+        let ell_def = UserDefinedEllByCoord::from_file(path);
+        ell_polys.extend(ell_def.create_polys());
+        num_user_defined_fractures += ell_def.n_frac;
+    }
+
+    if rect_first {
+        for (i, poly) in rect_polys.into_iter().enumerate() {
+            dfngen.insert_poly(poly, i + 1, -2, poly_opts);
+        }
+        for (i, poly) in ell_polys.into_iter().enumerate() {
+            dfngen.insert_poly(poly, i + 1, -1, poly_opts);
+        }
+    } else {
+        for (i, poly) in ell_polys.into_iter().enumerate() {
+            dfngen.insert_poly(poly, i + 1, -1, poly_opts);
+        }
+        for (i, poly) in rect_polys.into_iter().enumerate() {
+            dfngen.insert_poly(poly, i + 1, -2, poly_opts);
+        }
+    }
+
+    num_user_defined_fractures
+}
 
 #[derive(Debug)]
 pub struct UserDefinedFractures {
