@@ -14,11 +14,10 @@ use fracture::fracture_def::{
     UserDefinedEllByCoord, UserDefinedFractures, UserDefinedPolygonByCoord, UserDefinedRectByCoord,
 };
 use itertools::zip_eq;
-use parry3d_f64::na::Point3;
 use rand::distr::Uniform;
 use rand::Rng;
 use rand_mt::Mt64;
-use structures::{RadiusFunction, Shape};
+use structures::{DFNGen, RadiusFunction, Shape};
 use tracing::{error, info, warn};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
@@ -38,7 +37,6 @@ use crate::{
     math_functions::{
         adjust_cdf_and_fam_prob, cumsum, get_area, index_from_prob, index_from_prob_and_p32_status,
     },
-    structures::{IntersectionPoints, Poly, Stats},
 };
 
 mod computational_geometry;
@@ -83,14 +81,7 @@ fn main() -> Result<(), DfngenError> {
     info!("Starting dfngen-rs");
 
     /************* Initialize Arrays/Vectors and Structures **************/
-    // Vector to store accepted polygons/fractures
-    let mut accepted_poly: Vec<Poly> = Vec::new();
-    // Vector for storing intersections
-    let mut intersection_pts: Vec<IntersectionPoints> = Vec::new();
-    // Vector for storing triple intersection points
-    let mut triple_points: Vec<Point3<f64>> = Vec::new();
-    // Statistics structure:
-    let mut pstats = Stats::new();
+    let mut dfngen = DFNGen::new();
 
     // Read input variables. Most input variables are global
     let (mut input, mut frac_fam_opt) = read_input(&cli.input_file);
@@ -168,23 +159,24 @@ fn main() -> Result<(), DfngenError> {
 
         let n_families = frac_fam_opt.families.len();
         // Keep count of accepted & rejected fractures by family
-        pstats.accepted_from_fam.reserve(n_families);
-        pstats.rejected_from_fam.reserve(n_families);
+        dfngen.pstats.accepted_from_fam.reserve(n_families);
+        dfngen.pstats.rejected_from_fam.reserve(n_families);
         // Save sizes of pre-generated radii lists per family.
         // Print as part of statistics to user
-        pstats.expected_from_fam.reserve(n_families);
+        dfngen.pstats.expected_from_fam.reserve(n_families);
 
         // Zero arrays, init expectedFromFam array
         for fracture_family in &frac_fam_opt.families {
-            pstats.accepted_from_fam.push(0);
-            pstats.rejected_from_fam.push(0);
-            pstats
+            dfngen.pstats.accepted_from_fam.push(0);
+            dfngen.pstats.rejected_from_fam.push(0);
+            dfngen
+                .pstats
                 .expected_from_fam
                 .push(fracture_family.radii_list.len());
         }
 
         // Init first rejects per insertion attempt counter
-        pstats.rejects_per_attempt.push(0);
+        dfngen.pstats.rejects_per_attempt.push(0);
     }
 
     // ********************* User Defined Shapes Insertion ************************
@@ -202,10 +194,10 @@ fn main() -> Result<(), DfngenError> {
             input.tripleIntersections,
             &input.domainSize,
             &poly_data,
-            &mut accepted_poly,
-            &mut intersection_pts,
-            &mut pstats,
-            &mut triple_points,
+            &mut dfngen.accepted_poly,
+            &mut dfngen.intpts,
+            &mut dfngen.pstats,
+            &mut dfngen.triple_points,
         );
         num_user_defined_fractures += poly_data.n_frac;
     }
@@ -221,10 +213,10 @@ fn main() -> Result<(), DfngenError> {
                 input.disableFram,
                 input.tripleIntersections,
                 &input.domainSize,
-                &mut accepted_poly,
-                &mut intersection_pts,
-                &mut pstats,
-                &mut triple_points,
+                &mut dfngen.accepted_poly,
+                &mut dfngen.intpts,
+                &mut dfngen.pstats,
+                &mut dfngen.triple_points,
                 &rect_data,
             );
         }
@@ -239,10 +231,10 @@ fn main() -> Result<(), DfngenError> {
                 input.disableFram,
                 input.tripleIntersections,
                 &input.domainSize,
-                &mut accepted_poly,
-                &mut intersection_pts,
-                &mut pstats,
-                &mut triple_points,
+                &mut dfngen.accepted_poly,
+                &mut dfngen.intpts,
+                &mut dfngen.pstats,
+                &mut dfngen.triple_points,
                 &rect_data,
             );
         }
@@ -257,10 +249,10 @@ fn main() -> Result<(), DfngenError> {
                 input.disableFram,
                 input.tripleIntersections,
                 &input.domainSize,
-                &mut accepted_poly,
-                &mut intersection_pts,
-                &mut pstats,
-                &mut triple_points,
+                &mut dfngen.accepted_poly,
+                &mut dfngen.intpts,
+                &mut dfngen.pstats,
+                &mut dfngen.triple_points,
                 &ell_data,
             );
         }
@@ -275,10 +267,10 @@ fn main() -> Result<(), DfngenError> {
                 input.disableFram,
                 input.tripleIntersections,
                 &input.domainSize,
-                &mut accepted_poly,
-                &mut intersection_pts,
-                &mut pstats,
-                &mut triple_points,
+                &mut dfngen.accepted_poly,
+                &mut dfngen.intpts,
+                &mut dfngen.pstats,
+                &mut dfngen.triple_points,
                 &ell_data,
             );
         }
@@ -293,10 +285,10 @@ fn main() -> Result<(), DfngenError> {
                 input.disableFram,
                 input.tripleIntersections,
                 &input.domainSize,
-                &mut accepted_poly,
-                &mut intersection_pts,
-                &mut pstats,
-                &mut triple_points,
+                &mut dfngen.accepted_poly,
+                &mut dfngen.intpts,
+                &mut dfngen.pstats,
+                &mut dfngen.triple_points,
                 &ell_data,
             );
         }
@@ -311,10 +303,10 @@ fn main() -> Result<(), DfngenError> {
                 input.disableFram,
                 input.tripleIntersections,
                 &input.domainSize,
-                &mut accepted_poly,
-                &mut intersection_pts,
-                &mut pstats,
-                &mut triple_points,
+                &mut dfngen.accepted_poly,
+                &mut dfngen.intpts,
+                &mut dfngen.pstats,
+                &mut dfngen.triple_points,
                 &ell_data,
             );
         }
@@ -329,10 +321,10 @@ fn main() -> Result<(), DfngenError> {
                 input.disableFram,
                 input.tripleIntersections,
                 &input.domainSize,
-                &mut accepted_poly,
-                &mut intersection_pts,
-                &mut pstats,
-                &mut triple_points,
+                &mut dfngen.accepted_poly,
+                &mut dfngen.intpts,
+                &mut dfngen.pstats,
+                &mut dfngen.triple_points,
                 &rect_data,
             );
         }
@@ -347,10 +339,10 @@ fn main() -> Result<(), DfngenError> {
                 input.disableFram,
                 input.tripleIntersections,
                 &input.domainSize,
-                &mut accepted_poly,
-                &mut intersection_pts,
-                &mut pstats,
-                &mut triple_points,
+                &mut dfngen.accepted_poly,
+                &mut dfngen.intpts,
+                &mut dfngen.pstats,
+                &mut dfngen.triple_points,
                 &rect_data,
             );
         }
@@ -402,7 +394,7 @@ fn main() -> Result<(), DfngenError> {
         // NOTE: p32Complete() works on global array 'p32Status'
         // p32Complete() only needs argument of the number of defined shape families
         // ********* Begin stochastic fracture insertion ***********
-        while (input.stopCondition == 0 && pstats.accepted_poly_count < input.nPoly)
+        while (input.stopCondition == 0 && dfngen.pstats.accepted_poly_count < input.nPoly)
             || (input.stopCondition == 1 && p32_status.iter().any(|p| !p))
         {
             // cdfIdx holds the index to the CDF array for the current shape family being inserted
@@ -465,7 +457,7 @@ fn main() -> Result<(), DfngenError> {
                 if domain_truncation(input.h, input.eps, &mut new_poly, &input.domainSize) {
                     // Poly was completely outside domain, or was truncated to less than
                     // 3 vertices due to vertices being too close together
-                    pstats.rejection_reasons.outside += 1;
+                    dfngen.pstats.rejection_reasons.outside += 1;
 
                     // Test if newPoly has reached its limit of insertion attempts
                     if reject_counter >= input.rejectsPerFracture {
@@ -502,23 +494,23 @@ fn main() -> Result<(), DfngenError> {
                     input.disableFram,
                     input.tripleIntersections,
                     &mut new_poly,
-                    &mut accepted_poly,
-                    &mut intersection_pts,
-                    &mut pstats,
-                    &mut triple_points,
+                    &mut dfngen.accepted_poly,
+                    &mut dfngen.intpts,
+                    &mut dfngen.pstats,
+                    &mut dfngen.triple_points,
                 );
 
                 // IF POLY ACCEPTED:
                 if reject_code == 0 {
                     // Intersections are ok
                     // Incriment counter of accepted polys
-                    pstats.accepted_poly_count += 1;
-                    pstats.accepted_from_fam[family_index] += 1;
+                    dfngen.pstats.accepted_poly_count += 1;
+                    dfngen.pstats.accepted_from_fam[family_index] += 1;
                     // Make new rejection counter for next fracture attempt
-                    pstats.rejects_per_attempt.push(0);
+                    dfngen.pstats.rejects_per_attempt.push(0);
 
                     if new_poly.truncated {
-                        pstats.truncated += 1;
+                        dfngen.pstats.truncated += 1;
                     }
 
                     // Calculate poly's area
@@ -573,10 +565,13 @@ fn main() -> Result<(), DfngenError> {
                     }
 
                     // Output to user: print running program status to user
-                    if pstats.accepted_poly_count % 200 == 0 {
-                        info!("Accepted {} fractures", pstats.accepted_poly_count);
-                        info!("Rejected {} fractures", pstats.rejected_poly_count);
-                        info!("Re-translated {} fractures", pstats.retranslated_poly_count);
+                    if dfngen.pstats.accepted_poly_count % 200 == 0 {
+                        info!("Accepted {} fractures", dfngen.pstats.accepted_poly_count);
+                        info!("Rejected {} fractures", dfngen.pstats.rejected_poly_count);
+                        info!(
+                            "Re-translated {} fractures",
+                            dfngen.pstats.retranslated_poly_count
+                        );
                         info!("Current p32 values per family:");
 
                         for (i, shape) in frac_fam_opt.families.iter().enumerate() {
@@ -604,14 +599,14 @@ fn main() -> Result<(), DfngenError> {
                     }
 
                     // SAVING POLYGON (intersection and triple points saved witchin intersectionChecking())
-                    accepted_poly.push(new_poly.clone()); // SAVE newPoly to accepted polys list
+                    dfngen.accepted_poly.push(new_poly.clone()); // SAVE newPoly to accepted polys list
                 } else {
                     // Poly rejected
                     // Inc reject counter for current poly
                     reject_counter += 1;
                     // Inc reject counter for current attempt
                     // (number of rejects until next fracture accepted)
-                    pstats.rejects_per_attempt[pstats.accepted_poly_count] += 1;
+                    dfngen.pstats.rejects_per_attempt[dfngen.pstats.accepted_poly_count] += 1;
 
                     if input.printRejectReasons {
                         print_reject_reason(reject_code, &new_poly);
@@ -619,8 +614,8 @@ fn main() -> Result<(), DfngenError> {
 
                     if reject_counter >= input.rejectsPerFracture {
                         new_poly.vertices.clear(); // Delete manually, created with new[]
-                        pstats.rejected_poly_count += 1;
-                        pstats.rejected_from_fam[family_index] += 1;
+                        dfngen.pstats.rejected_poly_count += 1;
+                        dfngen.pstats.rejected_from_fam[family_index] += 1;
                         // Stop retranslating polygon if its reached its reject limit
                         break; // Break will cause code to go to next poly
                     } else {
@@ -629,7 +624,7 @@ fn main() -> Result<(), DfngenError> {
                             info!("Translating rejected fracture to new position");
                         }
 
-                        pstats.retranslated_poly_count += 1;
+                        dfngen.pstats.retranslated_poly_count += 1;
                         re_translate_poly(
                             input.eps,
                             &input.domainSize,
@@ -649,8 +644,8 @@ fn main() -> Result<(), DfngenError> {
 
         // Remove last element off the rejects per attempt counter.
         // It will have one extra item due to how each element is initialized.
-        if !pstats.rejects_per_attempt.is_empty() {
-            let _ = pstats.rejects_per_attempt.pop();
+        if !dfngen.pstats.rejects_per_attempt.is_empty() {
+            let _ = dfngen.pstats.rejects_per_attempt.pop();
         }
     }
 
@@ -659,7 +654,7 @@ fn main() -> Result<(), DfngenError> {
     // On close to node rejections, close to edge is counted as well.
     // To get the correct number we must subtract the close to node count
     // (they were counted in closeToEdge AND closeToNode)
-    pstats.rejection_reasons.close_to_edge -= pstats.rejection_reasons.close_to_node;
+    dfngen.pstats.rejection_reasons.close_to_edge -= dfngen.pstats.rejection_reasons.close_to_node;
 
     // // Assign apertures and permiability to accepted polygons
     // for (unsigned int i = 0; i < acceptedPoly.size(); i++) {
@@ -695,16 +690,16 @@ fn main() -> Result<(), DfngenError> {
     let mut family_area = vec![0.; total_families];
 
     info!("Statistics Before Isolated Fractures Removed:",);
-    info!("Fractures: {}", accepted_poly.len());
-    info!("Truncated: {}", pstats.truncated);
+    info!("Fractures: {}", dfngen.accepted_poly.len());
+    info!("Truncated: {}", dfngen.pstats.truncated);
 
     // Calculate total fracture area, and area per family
-    for i in 0..accepted_poly.len() {
-        let area = accepted_poly[i].area;
-        pstats.area_before_removal += area;
+    for i in 0..dfngen.accepted_poly.len() {
+        let area = dfngen.accepted_poly[i].area;
+        dfngen.pstats.area_before_removal += area;
 
-        if accepted_poly[i].family_num >= 0 {
-            family_area[accepted_poly[i].family_num as usize] += area;
+        if dfngen.accepted_poly[i].family_num >= 0 {
+            family_area[dfngen.accepted_poly[i].family_num as usize] += area;
         } else {
             // User-defined polygon
             user_defined_shapes_area += area;
@@ -713,22 +708,22 @@ fn main() -> Result<(), DfngenError> {
 
     info!(
         "Total Surface Area: {} m^2",
-        pstats.area_before_removal * 2.
+        dfngen.pstats.area_before_removal * 2.
     );
     info!(
         "Total Fracture Density (P30): {}",
-        accepted_poly.len() as f64 / dom_vol
+        dfngen.accepted_poly.len() as f64 / dom_vol
     );
     info!(
         "Total Fracture Intensity (P32): {}",
-        (pstats.area_before_removal * 2.) / dom_vol
+        (dfngen.pstats.area_before_removal * 2.) / dom_vol
     );
 
     // Print family stats to user
     for (i, (frac_fam, fam_area)) in zip_eq(&frac_fam_opt.families, &family_area).enumerate() {
         info!("Family: {}", i + 1);
-        info!("Accepted: {}", pstats.accepted_from_fam[i],);
-        info!("Rejected: {}", pstats.rejected_from_fam[i]);
+        info!("Accepted: {}", dfngen.pstats.accepted_from_fam[i],);
+        info!("Rejected: {}", dfngen.pstats.rejected_from_fam[i]);
 
         if frac_fam.layer > 0 {
             let idx = (frac_fam.layer - 1) * 2;
@@ -768,7 +763,7 @@ fn main() -> Result<(), DfngenError> {
             "Removing fractures with radius less than {} and rebuilding DFN",
             input.removeFracturesLessThan
         );
-        let size = accepted_poly.len();
+        let size = dfngen.accepted_poly.len();
         remove_fractures(
             input.h,
             input.eps,
@@ -776,21 +771,21 @@ fn main() -> Result<(), DfngenError> {
             input.disableFram,
             input.tripleIntersections,
             input.removeFracturesLessThan,
-            &mut accepted_poly,
-            &mut intersection_pts,
-            &mut triple_points,
-            &mut pstats,
+            &mut dfngen.accepted_poly,
+            &mut dfngen.intpts,
+            &mut dfngen.triple_points,
+            &mut dfngen.pstats,
         );
         info!(
             "Removed {} fractures with radius less than {}",
-            size - accepted_poly.len(),
+            size - dfngen.accepted_poly.len(),
             input.removeFracturesLessThan
         );
     }
 
     if input.polygonBoundaryFlag {
         info!("Extracting fractures from a polygon boundary domain");
-        let size = accepted_poly.len();
+        let size = dfngen.accepted_poly.len();
         polygon_boundary(
             input.h,
             input.eps,
@@ -799,14 +794,14 @@ fn main() -> Result<(), DfngenError> {
             input.tripleIntersections,
             input.numOfDomainVertices,
             &input.domainVertices,
-            &mut accepted_poly,
-            &mut intersection_pts,
-            &mut triple_points,
-            &mut pstats,
+            &mut dfngen.accepted_poly,
+            &mut dfngen.intpts,
+            &mut dfngen.triple_points,
+            &mut dfngen.pstats,
         );
         info!(
             "Removed {} fractures outside subdomain",
-            size - accepted_poly.len()
+            size - dfngen.accepted_poly.len()
         );
     }
 
@@ -822,7 +817,7 @@ fn main() -> Result<(), DfngenError> {
         input.keepOnlyLargestCluster,
         input.ignoreBoundaryFaces,
         &input.boundaryFaces,
-        &pstats,
+        &dfngen.pstats,
     );
     // Sort fracture indices to retain order by acceptance
     final_fractures.sort();
@@ -838,7 +833,7 @@ fn main() -> Result<(), DfngenError> {
             input.keepOnlyLargestCluster,
             input.ignoreBoundaryFaces,
             &input.boundaryFaces,
-            &pstats,
+            &dfngen.pstats,
         );
         //if still no fractures, there is no fracture network
     }
@@ -854,11 +849,11 @@ fn main() -> Result<(), DfngenError> {
     info!("Final Number of Fractures: {}", final_fractures.len());
     info!(
         "Isolated Fractures Removed: {}",
-        accepted_poly.len() - final_fractures.len()
+        dfngen.accepted_poly.len() - final_fractures.len()
     );
     info!(
         "Fractures before isolated fractures removed:: {}",
-        accepted_poly.len()
+        dfngen.accepted_poly.len()
     );
     // Reset totalArea to 0
     user_defined_shapes_area = 0.;
@@ -870,11 +865,11 @@ fn main() -> Result<(), DfngenError> {
 
     // Calculate total fracture area, and area per family
     for i in 0..final_fractures.len() {
-        let area = accepted_poly[final_fractures[i]].area;
-        pstats.area_after_removal += area;
+        let area = dfngen.accepted_poly[final_fractures[i]].area;
+        dfngen.pstats.area_after_removal += area;
 
-        if accepted_poly[final_fractures[i]].family_num >= 0 {
-            family_area[accepted_poly[final_fractures[i]].family_num as usize] += area;
+        if dfngen.accepted_poly[final_fractures[i]].family_num >= 0 {
+            family_area[dfngen.accepted_poly[final_fractures[i]].family_num as usize] += area;
         } else {
             // User-defined polygon
             user_defined_shapes_area += area;
@@ -886,21 +881,24 @@ fn main() -> Result<(), DfngenError> {
 
     if total_families > 0 {
         for i in &final_fractures {
-            let fam_num = accepted_poly[*i].family_num;
+            let fam_num = dfngen.accepted_poly[*i].family_num;
             if fam_num >= 0 {
                 accepted_from_fam_counters[fam_num as usize] += 1;
             }
         }
     }
 
-    info!("Total Surface Area: {} m^2", pstats.area_after_removal * 2.);
+    info!(
+        "Total Surface Area: {} m^2",
+        dfngen.pstats.area_after_removal * 2.
+    );
     info!(
         "Total Fracture Density (P30): {}",
         final_fractures.len() as f64 / dom_vol
     );
     info!(
         "Total Fracture Intensity (P32): {}",
-        (pstats.area_after_removal * 2.) / dom_vol
+        (dfngen.pstats.area_after_removal * 2.) / dom_vol
     );
 
     // Print family stats to user
@@ -912,10 +910,10 @@ fn main() -> Result<(), DfngenError> {
         );
         info!(
             "Isolated Fractures Removed: {}",
-            pstats.accepted_from_fam[i] - accepted_from_fam_counters[i]
+            dfngen.pstats.accepted_from_fam[i] - accepted_from_fam_counters[i]
         );
-        info!("Accepted: {}", pstats.accepted_from_fam[i]);
-        info!("Rejected: {}", pstats.rejected_from_fam[i]);
+        info!("Accepted: {}", dfngen.pstats.accepted_from_fam[i]);
+        info!("Rejected: {}", dfngen.pstats.rejected_from_fam[i]);
 
         if frac_fam_opt.families[i].layer > 0 {
             let idx = (frac_fam_opt.families[i].layer - 1) * 2;
@@ -955,16 +953,19 @@ fn main() -> Result<(), DfngenError> {
 
     info!(
         "{} Fractures Accepted (Before Isolated Fracture Removal)",
-        accepted_poly.len()
+        dfngen.accepted_poly.len()
     );
     info!(
         "{} Final Fractures (After Isolated Fracture Removal)",
         final_fractures.len()
     );
-    info!("Total Fractures Rejected: {}", pstats.rejected_poly_count);
+    info!(
+        "Total Fractures Rejected: {}",
+        dfngen.pstats.rejected_poly_count
+    );
     info!(
         "Total Fractures Re-translated: {}",
-        pstats.retranslated_poly_count
+        dfngen.pstats.retranslated_poly_count
     );
 
     if print_connectivity_error {
@@ -979,47 +980,56 @@ fn main() -> Result<(), DfngenError> {
     //************ Intersection Stats ***************
     info!(
         "Number of Triple Intersection Points (Before Isolated Fracture Removal): {}",
-        triple_points.len()
+        dfngen.triple_points.len()
     );
     // Shrink intersection stats
     info!("Intersection Statistics:");
-    info!("Number of Intersections: {}", intersection_pts.len());
+    info!("Number of Intersections: {}", dfngen.intpts.len());
     info!(
         "Intersections Shortened: {}",
-        pstats.intersections_shortened
+        dfngen.pstats.intersections_shortened
     );
     info!(
         "Original Intersection (Before Intersection Shrinking) Length: {} m",
-        pstats.original_length
+        dfngen.pstats.original_length
     );
     info!(
         "Intersection Length Discarded: {} m",
-        pstats.discarded_length
+        dfngen.pstats.discarded_length
     );
     info!(
         "Final Intersection Length: {} m",
-        pstats.original_length - pstats.discarded_length
+        dfngen.pstats.original_length - dfngen.pstats.discarded_length
     );
     // *********** Rejection Stats *******************
     info!("Rejection Statistics:");
     info!(
         "{} Short Intersections",
-        pstats.rejection_reasons.short_intersection
+        dfngen.pstats.rejection_reasons.short_intersection
     );
-    info!("{} Close to Node", pstats.rejection_reasons.close_to_node);
-    info!("{} Close to Edge", pstats.rejection_reasons.close_to_edge);
+    info!(
+        "{} Close to Node",
+        dfngen.pstats.rejection_reasons.close_to_node
+    );
+    info!(
+        "{} Close to Edge",
+        dfngen.pstats.rejection_reasons.close_to_edge
+    );
     info!(
         "{} Vertex Close to Edge",
-        pstats.rejection_reasons.close_point_to_edge
+        dfngen.pstats.rejection_reasons.close_point_to_edge
     );
-    info!("{} Outside of Domain", pstats.rejection_reasons.outside);
+    info!(
+        "{} Outside of Domain",
+        dfngen.pstats.rejection_reasons.outside
+    );
     info!(
         "{} Triple intersection Rejections",
-        pstats.rejection_reasons.triple
+        dfngen.pstats.rejection_reasons.triple
     );
     info!(
         "{} Intersections Close to Other Intersections",
-        pstats.rejection_reasons.inter_close_to_inter
+        dfngen.pstats.rejection_reasons.inter_close_to_inter
     );
 
     if total_families > 0 {
@@ -1042,12 +1052,12 @@ fn main() -> Result<(), DfngenError> {
                         "{} Family {} Estimated: {}",
                         shape.shape,
                         get_family_number(input.nFamEll, i as isize, shape.shape),
-                        pstats.expected_from_fam[i]
+                        dfngen.pstats.expected_from_fam[i]
                     );
 
                     info!(
                         "Actual: {}",
-                        pstats.accepted_from_fam[i] + pstats.rejected_from_fam[i]
+                        dfngen.pstats.accepted_from_fam[i] + dfngen.pstats.rejected_from_fam[i]
                     );
                 }
             }
@@ -1060,10 +1070,10 @@ fn main() -> Result<(), DfngenError> {
     write_output(
         &input,
         &cli.output_folder,
-        &mut accepted_poly,
-        &mut intersection_pts,
-        &mut triple_points,
-        &mut pstats,
+        &mut dfngen.accepted_poly,
+        &mut dfngen.intpts,
+        &mut dfngen.triple_points,
+        &mut dfngen.pstats,
         &final_fractures,
         &frac_fam_opt,
     );
@@ -1073,9 +1083,9 @@ fn main() -> Result<(), DfngenError> {
     // Print number of duplicate nodes (pstats.intersectionsNodeCount is set in writeOutpu() )
     info!(
         "Lagrit Should Remove {} Nodes ({}/2 - {})",
-        pstats.intersection_node_count / 2 - pstats.triple_node_count,
-        pstats.intersection_node_count,
-        pstats.triple_node_count
+        dfngen.pstats.intersection_node_count / 2 - dfngen.pstats.triple_node_count,
+        dfngen.pstats.intersection_node_count,
+        dfngen.pstats.triple_node_count
     );
 
     info!("dfngen-rs - Complete");

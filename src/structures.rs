@@ -721,3 +721,28 @@ impl Stats {
         }
     }
 }
+
+pub struct DFNGen {
+    // Statistics structure:
+    pub pstats: Stats,
+
+    // Vector to store accepted polygons/fractures
+    pub accepted_poly: Vec<Poly>,
+
+    // Vector for storing intersections
+    pub intpts: Vec<IntersectionPoints>,
+
+    // Vector for storing triple intersection points
+    pub triple_points: Vec<Point3<f64>>,
+}
+
+impl DFNGen {
+    pub fn new() -> Self {
+        Self {
+            pstats: Stats::new(),
+            accepted_poly: Vec::new(),
+            intpts: Vec::new(),
+            triple_points: Vec::new(),
+        }
+    }
+}
