@@ -1,5 +1,6 @@
 use std::{fs::File, io::Read};
 
+use itertools::zip_eq;
 use parry3d_f64::na::{distance, Point3, Vector3};
 use text_io::read;
 
@@ -34,9 +35,11 @@ pub fn insert_user_defined_fractures(
     let mut ell_polys = Vec::new();
 
     if let Some(ref path) = files.user_rect_file {
-        let rect_def = UserDefinedFractures::from_file(path, false);
-        rect_polys.extend(rect_def.create_polys(poly_opts.eps));
-        num_user_defined_fractures += rect_def.n_frac;
+        let rect_def = FractureDef::from_file(path, poly_opts.eps, false);
+        for frac in rect_def.into_iter() {
+            rect_polys.push(frac.try_into().unwrap());
+            num_user_defined_fractures += 1;
+        }
     }
 
     if let Some(ref path) = files.user_rect_by_coord_file {
@@ -48,9 +51,11 @@ pub fn insert_user_defined_fractures(
     }
 
     if let Some(ref path) = files.user_ell_file {
-        let ell_def = UserDefinedFractures::from_file(path, true);
-        ell_polys.extend(ell_def.create_polys(poly_opts.eps));
-        num_user_defined_fractures += ell_def.n_frac;
+        let ell_def = FractureDef::from_file(path, poly_opts.eps, true);
+        for frac in ell_def.into_iter() {
+            ell_polys.push(frac.try_into().unwrap());
+            num_user_defined_fractures += 1;
+        }
     }
 
     if let Some(ref path) = files.user_ell_by_coord_file {
@@ -269,19 +274,40 @@ impl TryInto<Poly> for FractureNodesDef {
     }
 }
 
+/// User-defined fractures that are defined by a set of properties.
 #[derive(Debug)]
-pub struct UserDefinedFractures {
-    pub n_frac: usize,
-    pub radii: Vec<f64>,
-    pub beta: Vec<f64>,
-    pub aspect: Vec<f64>,
-    pub translation: Vec<[f64; 3]>,
-    pub normal: Vec<Vector3<f64>>,
-    pub num_points: Vec<usize>,
+pub struct FractureDef {
+    eps: f64, // TODO: Move this parameter into global
+    num_nodes: usize,
+    radius: f64,
+    beta: f64,
+    aspect_ratio: f64,
+    translation: [f64; 3],
+    normal: [f64; 3],
 }
 
-impl UserDefinedFractures {
-    pub fn from_file(path: &str, is_ell: bool) -> Self {
+impl FractureDef {
+    pub fn new(
+        eps: f64,
+        num_nodes: usize,
+        radius: f64,
+        beta: f64,
+        aspect_ratio: f64,
+        translation: [f64; 3],
+        normal: [f64; 3],
+    ) -> Self {
+        Self {
+            eps,
+            num_nodes,
+            radius,
+            beta,
+            aspect_ratio,
+            translation,
+            normal,
+        }
+    }
+
+    pub fn from_file(path: &str, eps: f64, is_ell: bool) -> Vec<Self> {
         let mut frac_reader = if is_ell {
             UserFractureReader::new(path, "nUserEll:")
         } else {
@@ -351,82 +377,84 @@ impl UserDefinedFractures {
 
         if is_ell {
             frac_reader.read_vec("Number_of_Vertices:", &mut num_points);
+        } else {
+            num_points = vec![0; frac_reader.n_frac];
         }
 
-        UserDefinedFractures {
-            n_frac: frac_reader.n_frac,
-            radii,
-            beta,
-            aspect,
-            translation,
-            normal: normal
-                .into_iter()
-                .map(|norm| Vector3::from_row_slice(&norm).normalize())
-                .collect(),
-            num_points,
+        let mut fractures = Vec::new();
+
+        for (((((num_nodes, radius), beta), aspect_ratio), translation), normal) in zip_eq(
+            zip_eq(
+                zip_eq(zip_eq(zip_eq(num_points, radii), beta), aspect),
+                translation,
+            ),
+            normal,
+        ) {
+            fractures.push(FractureDef::new(
+                eps,
+                if is_ell { num_nodes } else { 0 },
+                radius,
+                beta,
+                aspect_ratio,
+                translation,
+                normal,
+            ))
         }
+
+        fractures
     }
+}
 
-    pub fn create_polys(&self, eps: f64) -> Vec<Poly> {
-        let is_rect = self.num_points.is_empty();
+impl TryInto<Poly> for FractureDef {
+    type Error = DfngenError;
+    fn try_into(self) -> Result<Poly, Self::Error> {
+        let is_rect = self.num_nodes == 0;
 
-        let mut polys = Vec::new();
+        let number_of_nodes = if is_rect { 4 } else { self.num_nodes as isize };
+        let family_num = if is_rect { -2 } else { -1 };
+        let normal = Vector3::from_row_slice(&self.normal);
 
-        for idx in 0..self.n_frac {
-            let number_of_nodes = if is_rect {
-                4
-            } else {
-                self.num_points[idx] as isize
-            };
-            let family_num = if is_rect { -2 } else { -1 };
+        let mut new_poly = Poly {
+            // Set number of nodes. Needed for rotations.
+            family_num,
+            number_of_nodes,
+            // Initialize normal to {0,0,1}. need initialized for 3D rotation
+            normal: Vector3::new(0., 0., 1.),
+            translation: Vector3::from_row_slice(&self.translation),
+            vertices: Vec::with_capacity(number_of_nodes as usize * 3),
+            ..Default::default()
+        };
 
-            let mut new_poly = Poly {
-                // Set number of nodes. Needed for rotations.
-                family_num,
-                number_of_nodes,
-                // Initialize normal to {0,0,1}. need initialized for 3D rotation
-                normal: Vector3::new(0., 0., 1.),
-                translation: Vector3::from_row_slice(&self.translation[idx]),
-                vertices: Vec::with_capacity(number_of_nodes as usize * 3),
-                ..Default::default()
-            };
-
-            if is_rect {
-                // initialize_rect_vertices() sets newpoly.xradius, newpoly.yradius, newpoly.aperture
-                initialize_rect_vertices(&mut new_poly, self.radii[idx], self.aspect[idx]);
-            } else {
-                // Generate theta array used to place vertices
-                let theta_ary = generate_theta(self.aspect[idx], self.num_points[idx]);
-                // Initialize vertices on x-y plane
-                initialize_ell_vertices(
-                    &mut new_poly,
-                    self.radii[idx],
-                    self.aspect[idx],
-                    &theta_ary,
-                    self.num_points[idx],
-                );
-            }
-
-            // Apply 2d rotation matrix, twist around origin
-            // Assumes polygon on x-y plane
-            // Angle must be in rad
-            apply_rotation2_d(&mut new_poly, self.beta[idx]);
-
-            // Rotate vertices to uenormal[index] (new normal)
-            apply_rotation3_d(&mut new_poly, &self.normal[idx], eps);
-
-            // Save newPoly's new normal vector
-            new_poly.normal = self.normal[idx];
-
-            // Translate newPoly to uetranslation
-            translate(
+        if is_rect {
+            // initialize_rect_vertices() sets newpoly.xradius, newpoly.yradius, newpoly.aperture
+            initialize_rect_vertices(&mut new_poly, self.radius, self.aspect_ratio);
+        } else {
+            // Generate theta array used to place vertices
+            let theta_ary = generate_theta(self.aspect_ratio, self.num_nodes);
+            // Initialize vertices on x-y plane
+            initialize_ell_vertices(
                 &mut new_poly,
-                Vector3::from_row_slice(&self.translation[idx]),
+                self.radius,
+                self.aspect_ratio,
+                &theta_ary,
+                self.num_nodes,
             );
-
-            polys.push(new_poly)
         }
 
-        polys
+        // Apply 2d rotation matrix, twist around origin
+        // Assumes polygon on x-y plane
+        // Angle must be in rad
+        apply_rotation2_d(&mut new_poly, self.beta);
+
+        // Rotate vertices to uenormal[index] (new normal)
+        apply_rotation3_d(&mut new_poly, &normal, self.eps);
+
+        // Save newPoly's new normal vector
+        new_poly.normal = normal;
+
+        // Translate newPoly to uetranslation
+        translate(&mut new_poly, Vector3::from_row_slice(&self.translation));
+
+        Ok(new_poly)
     }
 }
