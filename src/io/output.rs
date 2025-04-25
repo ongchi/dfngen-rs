@@ -6,14 +6,12 @@ use std::{
 use parry3d_f64::na::{distance, Point3, Vector3};
 use tracing::info;
 
-use super::input::Input;
-use crate::{
-    computational_geometry::poly_and_intersection_rotation_to_xy,
-    distribution::generating_points::discretize_line_of_intersection,
-    fracture::insert_shape::get_family_number,
-    math_functions::sorted_index,
-    structures::{FractureFamilyOption, IntersectionPoints, Poly, Shape, Stats},
-};
+use crate::computational_geometry::poly_and_intersection_rotation_to_xy;
+use crate::distribution::generating_points::discretize_line_of_intersection;
+use crate::fracture::{fracture_family::FractureFamilyOption, insert_shape::get_family_number};
+use crate::io::input::Input;
+use crate::math_functions::sorted_index;
+use crate::structures::{IntersectionPoints, Poly, Shape, Stats};
 
 /// Writes all output
 ///

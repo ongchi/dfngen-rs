@@ -5,6 +5,7 @@ use std::rc::Rc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use clap::Parser;
+use fracture::fracture_family::RadiusOption;
 use itertools::zip_eq;
 use rand::distr::Uniform;
 use rand::Rng;
@@ -12,25 +13,21 @@ use rand_mt::Mt64;
 use tracing::{error, info, warn};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
-use crate::{
-    computational_geometry::{
-        create_bounding_box, domain_truncation, intersection_checking, polygon_boundary,
-        remove_fractures,
-    },
-    error::DfngenError,
-    fracture::cluster_groups::get_cluster,
-    fracture::fracture_estimating::dry_run,
-    fracture::insert_shape::{
-        generate_poly, get_family_number, print_reject_reason, re_translate_poly,
-    },
-    fracture::insert_user_defined_fractures,
-    io::input::read_input,
-    io::output::write_output,
-    math_functions::{
-        adjust_cdf_and_fam_prob, cumsum, get_area, index_from_prob, index_from_prob_and_p32_status,
-    },
-    structures::{DFNGen, PolyOptions, RadiusFunction, Shape},
+use crate::computational_geometry::{
+    create_bounding_box, domain_truncation, intersection_checking, polygon_boundary,
+    remove_fractures,
 };
+use crate::error::DfngenError;
+use crate::fracture::cluster_groups::get_cluster;
+use crate::fracture::fracture_estimating::dry_run;
+use crate::fracture::insert_shape::{get_family_number, print_reject_reason, re_translate_poly};
+use crate::fracture::insert_user_defined_fractures;
+use crate::io::input::read_input;
+use crate::io::output::write_output;
+use crate::math_functions::{
+    adjust_cdf_and_fam_prob, cumsum, get_area, index_from_prob, index_from_prob_and_p32_status,
+};
+use crate::structures::{DFNGen, PolyOptions, RadiusFunction, Shape};
 
 mod computational_geometry;
 mod distribution;
@@ -240,18 +237,17 @@ fn main() -> Result<(), DfngenError> {
                 )
             };
 
-            let mut new_poly = generate_poly(
+            let mut new_poly = frac_fam_opt.families[family_index].create_poly(
                 input.h,
+                input.eps,
                 input.nFamEll,
+                family_index,
+                RadiusOption::FromCacheOrRng,
                 &input.domainSize,
                 &input.domainSizeIncrease,
                 &input.layers,
                 &input.regions,
-                input.eps,
-                &mut frac_fam_opt.families[family_index],
                 generator.clone(),
-                family_index as isize,
-                true,
             );
 
             if input.outputAllRadii {

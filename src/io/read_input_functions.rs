@@ -9,8 +9,9 @@ use text_io::read;
 use tracing::{debug, info, warn};
 
 use crate::distribution::Fisher;
+use crate::fracture::fracture_family::{FractureFamily, FractureFamilyBuilder};
 use crate::io::input::Input;
-use crate::structures::{FractureFamily, FractureFamilyBuilder, RadiusDistribution};
+use crate::structures::RadiusDistribution;
 
 /// Searches for variable in files, moves file pointer to position
 /// after word. Used to read in varlable values

@@ -4,14 +4,12 @@ use rand::{distr::Uniform, Rng};
 use rand_mt::Mt64;
 use tracing::info;
 
-use crate::{
-    computational_geometry::domain_truncation,
-    fracture::insert_shape::{
-        generate_poly, generate_poly_with_radius, poly_boundary, re_translate_poly,
-    },
-    io::input::Input,
-    math_functions::{adjust_cdf_and_fam_prob, cumsum, get_area, index_from_prob_and_p32_status},
-    structures::FractureFamilyOption,
+use crate::computational_geometry::domain_truncation;
+use crate::fracture::fracture_family::{FractureFamilyOption, RadiusOption};
+use crate::fracture::insert_shape::re_translate_poly;
+use crate::io::input::Input;
+use crate::math_functions::{
+    adjust_cdf_and_fam_prob, cumsum, get_area, index_from_prob_and_p32_status,
 };
 
 /// Estimate Number of Fractures When P32 Option is Used
@@ -55,30 +53,26 @@ pub fn dry_run(
         let mut new_poly = if (force_large_fract_count < frac_families.families.len())
             && input.forceLargeFractures
         {
-            let radius = frac_families.families[force_large_fract_count].radius.max;
-            family_index = force_large_fract_count;
-
             // Choose CDF randomly by family
             cdf_idx = (0..force_large_fract_count)
                 .filter(|i| !p32_status[*i])
                 .count()
                 - 1;
 
+            family_index = force_large_fract_count;
             force_large_fract_count += 1;
-            let boundary = poly_boundary(
+
+            frac_families.families[family_index].create_poly(
+                input.h,
+                input.eps,
+                input.nFamEll,
+                family_index,
+                RadiusOption::MaxRadius,
                 &input.domainSize,
                 &input.domainSizeIncrease,
                 &input.layers,
                 &input.regions,
-                &frac_families.families[force_large_fract_count - 1],
-            );
-            generate_poly_with_radius(
-                input.eps,
-                radius,
-                &frac_families.families[force_large_fract_count - 1],
-                boundary,
                 generator.clone(),
-                family_index as isize,
             )
         } else {
             // Choose a family based on probabiliyis AND their target p32 completion status
@@ -92,18 +86,18 @@ pub fn dry_run(
                 total_families,
                 &mut cdf_idx,
             );
-            generate_poly(
+
+            frac_families.families[family_index].create_poly(
                 input.h,
+                input.eps,
                 input.nFamEll,
+                family_index,
+                RadiusOption::FromRng,
                 &input.domainSize,
                 &input.domainSizeIncrease,
                 &input.layers,
                 &input.regions,
-                input.eps,
-                &mut frac_families.families[family_index],
                 generator.clone(),
-                family_index as isize,
-                false,
             )
         };
 

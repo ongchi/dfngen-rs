@@ -3,17 +3,14 @@ use std::{fs::File, io::Read};
 use parry3d_f64::na::{distance, Point3, Vector3};
 use text_io::read;
 
-use crate::{
-    computational_geometry::{apply_rotation2_d, apply_rotation3_d, translate},
-    distribution::generating_points::generate_theta,
-    io::{
-        input::ExternalFractureFiles,
-        read_input_functions::{search_var, ReadFromTextFile, UserFractureReader},
-    },
-    structures::{DFNGen, Poly, PolyOptions},
+use crate::computational_geometry::{apply_rotation2_d, apply_rotation3_d, translate};
+use crate::distribution::generating_points::generate_theta;
+use crate::fracture::insert_shape::{initialize_ell_vertices, initialize_rect_vertices};
+use crate::io::{
+    input::ExternalFractureFiles,
+    read_input_functions::{search_var, ReadFromTextFile, UserFractureReader},
 };
-
-use super::insert_shape::{initialize_ell_vertices, initialize_rect_vertices};
+use crate::structures::{DFNGen, Poly, PolyOptions};
 
 pub fn insert_user_defined_fractures(
     rect_first: bool,

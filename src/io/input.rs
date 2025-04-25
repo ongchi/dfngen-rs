@@ -3,7 +3,8 @@ use tracing::{error, info};
 
 use super::read_input_functions::read_domain_vertices;
 
-use crate::{io::read_input_functions::InputReader, structures::FractureFamilyOption};
+use crate::fracture::fracture_family::FractureFamilyOption;
+use crate::io::read_input_functions::InputReader;
 
 #[derive(Default, Debug)]
 pub struct ExternalFractureFiles {
