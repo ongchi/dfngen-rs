@@ -5,6 +5,7 @@ use text_io::read;
 
 use crate::computational_geometry::{apply_rotation2_d, apply_rotation3_d, translate};
 use crate::distribution::generating_points::generate_theta;
+use crate::error::DfngenError;
 use crate::fracture::insert_shape::{initialize_ell_vertices, initialize_rect_vertices};
 use crate::io::{
     input::ExternalFractureFiles,
@@ -22,11 +23,11 @@ pub fn insert_user_defined_fractures(
 
     // User Polygons are always inserted first
     if let Some(ref path) = files.user_poly_by_coord_file {
-        let poly_def = UserDefinedPolygonByCoord::from_file(path);
-        for (i, poly) in poly_def.create_polys().into_iter().enumerate() {
-            dfngen.insert_poly(poly, i + 1, -3, poly_opts);
+        let poly_def = FractureNodesDef::from_poly_file(path);
+        for (i, frac) in poly_def.into_iter().enumerate() {
+            dfngen.insert_poly(frac.try_into().unwrap(), i + 1, -3, poly_opts);
+            num_user_defined_fractures += 1;
         }
-        num_user_defined_fractures += poly_def.n_frac;
     }
 
     let mut rect_polys = Vec::new();
@@ -39,9 +40,11 @@ pub fn insert_user_defined_fractures(
     }
 
     if let Some(ref path) = files.user_rect_by_coord_file {
-        let rect_def = UserDefinedRectByCoord::from_file(path);
-        rect_polys.extend(rect_def.create_polys());
-        num_user_defined_fractures += rect_def.n_frac;
+        let rect_def = FractureNodesDef::from_rect_file(path);
+        for frac in rect_def.into_iter() {
+            rect_polys.push(frac.try_into().unwrap());
+            num_user_defined_fractures += 1;
+        }
     }
 
     if let Some(ref path) = files.user_ell_file {
@@ -51,9 +54,11 @@ pub fn insert_user_defined_fractures(
     }
 
     if let Some(ref path) = files.user_ell_by_coord_file {
-        let ell_def = UserDefinedEllByCoord::from_file(path);
-        ell_polys.extend(ell_def.create_polys());
-        num_user_defined_fractures += ell_def.n_frac;
+        let ell_def = FractureNodesDef::from_ell_file(path);
+        for frac in ell_def.into_iter() {
+            ell_polys.push(frac.try_into().unwrap());
+            num_user_defined_fractures += 1;
+        }
     }
 
     if rect_first {
@@ -73,6 +78,195 @@ pub fn insert_user_defined_fractures(
     }
 
     num_user_defined_fractures
+}
+
+/// User-defined fractures that are defined by a set of nodes.
+#[derive(Debug)]
+pub enum FractureNodesDef {
+    Ellipse(Vec<[f64; 3]>),
+    Rectangle(Vec<[f64; 3]>),
+    Polygon(Vec<[f64; 3]>),
+}
+
+impl FractureNodesDef {
+    pub fn new_ell(nodes: Vec<[f64; 3]>) -> Result<Self, DfngenError> {
+        Ok(Self::Ellipse(nodes))
+    }
+
+    pub fn new_rect(nodes: Vec<[f64; 3]>) -> Result<Self, DfngenError> {
+        if nodes.len() != 4 {
+            Err(DfngenError::ValueError(
+                "User defined rectangle must have 4 nodes".to_string(),
+            ))
+        } else {
+            Ok(Self::Rectangle(nodes))
+        }
+    }
+
+    pub fn new_poly(nodes: Vec<[f64; 3]>) -> Result<Self, DfngenError> {
+        Ok(Self::Polygon(nodes))
+    }
+
+    /// Reads a file containing user-defined fractures defined by ellipse vertices.
+    pub fn from_ell_file(path: &str) -> Vec<Self> {
+        let mut file = File::open(path).unwrap();
+
+        search_var(&mut file, "nEllipses:");
+        let mut n_frac: usize = 0;
+        n_frac.read_from_text(&mut file);
+
+        search_var(&mut file, "nNodes:");
+        let mut num_points: usize = 0;
+        num_points.read_from_text(&mut file);
+
+        search_var(&mut file, "Coordinates:");
+        let mut bytes = file.bytes().map(|ch| ch.unwrap());
+
+        let mut fractures = Vec::new();
+
+        for _ in 0..n_frac {
+            let mut nodes = Vec::new();
+            for _ in 0..num_points {
+                let mut tmp = [0., 0., 0.];
+                for val in &mut tmp {
+                    *val = read!("{}", bytes);
+                }
+                nodes.push(tmp);
+            }
+            fractures.push(FractureNodesDef::new_ell(nodes).unwrap());
+        }
+
+        fractures
+    }
+
+    /// Reads a file containing user-defined fractures defined by rectangle vertices.
+    pub fn from_rect_file(path: &str) -> Vec<Self> {
+        let mut file = File::open(path).unwrap();
+
+        search_var(&mut file, "nRectangles:");
+        let mut n_frac: usize = 0;
+        n_frac.read_from_text(&mut file);
+
+        search_var(&mut file, "Coordinates:");
+
+        let mut bytes = file.bytes().map(|ch| ch.unwrap());
+
+        let mut fractures = Vec::new();
+
+        for _ in 0..n_frac {
+            let mut nodes = Vec::new();
+            for _ in 0..4 {
+                let mut tmp = [0., 0., 0.];
+                for val in &mut tmp {
+                    *val = read!("{}", bytes);
+                }
+                nodes.push(tmp);
+            }
+            fractures.push(FractureNodesDef::new_rect(nodes).unwrap());
+        }
+
+        fractures
+    }
+
+    /// Reads a file containing user-defined fractures defined by polygon vertices.
+    pub fn from_poly_file(path: &str) -> Vec<Self> {
+        let mut file = File::open(path).unwrap();
+
+        search_var(&mut file, "nPolygons:");
+        let mut n_frac: usize = 0;
+        n_frac.read_from_text(&mut file);
+
+        let mut num_points: usize = 0;
+        num_points.read_from_text(&mut file);
+
+        let mut fractures = Vec::new();
+
+        for _ in 0..n_frac {
+            let mut nodes = Vec::new();
+            for _ in 0..num_points {
+                let mut tmp = [0., 0., 0.];
+                tmp.read_from_text(&mut file);
+                nodes.push(tmp);
+            }
+            fractures.push(FractureNodesDef::new_poly(nodes).unwrap());
+        }
+
+        fractures
+    }
+}
+
+impl TryInto<Poly> for FractureNodesDef {
+    type Error = DfngenError;
+
+    fn try_into(self) -> Result<Poly, Self::Error> {
+        let mut poly = Poly::default();
+
+        let nodes = match self {
+            Self::Ellipse(ref nodes) => {
+                poly.family_num = -1;
+                nodes
+            }
+            Self::Rectangle(ref nodes) => {
+                poly.family_num = -2;
+                nodes
+            }
+            Self::Polygon(ref nodes) => {
+                poly.family_num = -3;
+                nodes
+            }
+        };
+
+        poly.number_of_nodes = nodes.len() as isize;
+
+        // Get a normal vector
+        // Vector from fist node to node accross middle of polygon
+        let pt_idx_12 = nodes.len() / 2;
+        let p1 = Point3::from_slice(&nodes[0]);
+        let p2 = Point3::from_slice(&nodes[1]);
+        let p_12 = Point3::from_slice(&nodes[pt_idx_12]);
+
+        let v1 = p_12 - p1;
+        let v2 = p2 - p1;
+
+        poly.normal = v2.cross(&v1).normalize();
+
+        // Estimate translation (middle node)
+        // Use midpoint between 1st and and half way around polygon
+        // Note: For polygons defined by coordinates, the coordinates
+        // themselves provide the translation. We need to estimate the center
+        // of the polygon and init. the translation array
+        poly.translation = 0.5 * Vector3::new(p1.x + p_12.x, p1.y + p_12.y, p1.z + p_12.z);
+
+        // Estimate radius
+        // across middle if even number of nodes
+        poly.xradius = 0.5 * v2.magnitude();
+        match self {
+            Self::Ellipse(_) | Self::Polygon(_) => {
+                // Get idx for node 1/4 around polygon
+                let pt_idx_14 = nodes.len() / 4;
+                // Get idx for node 3/4 around polygon
+                // across middle close to perpendicular to xradius magnitude calculation
+                let pt_idx_34 = pt_idx_14 + pt_idx_12;
+
+                let p_14 = Point3::from_slice(&nodes[pt_idx_14]);
+                let p_34 = Point3::from_slice(&nodes[pt_idx_34]);
+
+                poly.yradius = 0.5 * distance(&p_14, &p_34);
+            }
+            Self::Rectangle(_) => {
+                let p4 = Point3::from_slice(&nodes[3]);
+                let v3 = p4 - p1;
+
+                // Set radius (x and y radii might be switched based on order of users coordinates)
+                poly.yradius = 0.5 * v3.magnitude();
+            }
+        }
+
+        poly.aspect_ratio = poly.yradius / poly.xradius;
+        poly.vertices = nodes.iter().flat_map(|&node| node.to_vec()).collect();
+
+        Ok(poly)
+    }
 }
 
 #[derive(Debug)]
@@ -188,9 +382,8 @@ impl UserDefinedFractures {
 
             let mut new_poly = Poly {
                 // Set number of nodes. Needed for rotations.
-                number_of_nodes,
                 family_num,
-                group_num: 0,
+                number_of_nodes,
                 // Initialize normal to {0,0,1}. need initialized for 3D rotation
                 normal: Vector3::new(0., 0., 1.),
                 translation: Vector3::from_row_slice(&self.translation[idx]),
@@ -235,304 +428,5 @@ impl UserDefinedFractures {
         }
 
         polys
-    }
-}
-
-pub struct UserDefinedPolygonByCoord {
-    pub n_frac: usize,
-    pub num_points: usize,
-    pub vertices: Vec<f64>,
-}
-
-impl UserDefinedPolygonByCoord {
-    pub fn from_file(path: &str) -> Self {
-        let mut file = File::open(path).unwrap();
-
-        search_var(&mut file, "nPolygons:");
-        let mut n_frac: usize = 0;
-        n_frac.read_from_text(&mut file);
-
-        let mut num_points: usize = 0;
-        num_points.read_from_text(&mut file);
-
-        let mut vertices = Vec::with_capacity(num_points * 3);
-
-        for _ in 0..num_points {
-            let mut tmp = [0., 0., 0.];
-            tmp.read_from_text(&mut file);
-            vertices.extend(tmp);
-        }
-
-        Self {
-            n_frac,
-            num_points,
-            vertices,
-        }
-    }
-
-    pub fn create_polys(&self) -> Vec<Poly> {
-        let mut new_polys = Vec::with_capacity(self.n_frac);
-
-        let n_poly_nodes = self.num_points;
-
-        for _ in 0..self.n_frac {
-            let mut new_poly = Poly {
-                family_num: -3,
-                // Set number of nodes. Needed for rotations.
-                number_of_nodes: n_poly_nodes as isize,
-                vertices: self.vertices.clone(),
-                ..Default::default()
-            };
-
-            // Get a normal vector
-            // Vector from fist node to node across middle of polygon
-            let mut pt_idx_12 = 3 * (n_poly_nodes / 2);
-
-            if n_poly_nodes == 3 {
-                pt_idx_12 = 8;
-            }
-
-            let p1 = Point3::from_slice(&new_poly.vertices[0..3]);
-            let p2 = Point3::from_slice(&new_poly.vertices[3..6]);
-            let p_12 = Point3::from_slice(&new_poly.vertices[pt_idx_12..pt_idx_12 + 3]);
-
-            let v1 = p_12 - p1;
-            let v2 = p2 - p1;
-
-            new_poly.normal = v2.cross(&v1).normalize();
-            // Estimate radius
-            // across middle if even number of nodes
-            // across middle close to perpendicular to xradius magnitude calculation
-            new_poly.xradius = 0.5 * v2.magnitude();
-
-            // Get idx for node 1/4 around polygon
-            let pt_idx_14 = 3 * (n_poly_nodes / 4);
-            // Get idx for node 3/4 around polygon
-            let pt_idx_34 = 3 * (3 * n_poly_nodes / 4);
-
-            let p_14 = Point3::from_slice(&new_poly.vertices[pt_idx_14..pt_idx_14 + 3]);
-            let p_34 = Point3::from_slice(&new_poly.vertices[pt_idx_34..pt_idx_34 + 3]);
-
-            new_poly.yradius = 0.5 * distance(&p_14, &p_34);
-            new_poly.aspect_ratio = new_poly.yradius / new_poly.xradius;
-
-            // Estimate translation (middle of poly)
-            // Use midpoint between 1st and and half way around polygon
-            // Note: For polygons defined by coordinates, the coordinates
-            // themselves provide the translation. We need to estimate the center
-            // of the polygon and init. the translation array
-            new_poly.translation = 0.5 * Vector3::new(p1.x + p_12.x, p1.y + p_12.y, p1.z + p_12.z);
-
-            new_polys.push(new_poly)
-        }
-
-        new_polys
-    }
-}
-
-pub struct UserDefinedEllByCoord {
-    pub n_frac: usize,
-    pub num_points: usize,
-    pub vertices: Vec<f64>,
-}
-
-impl UserDefinedEllByCoord {
-    pub fn from_file(path: &str) -> Self {
-        let mut file = File::open(path).unwrap();
-
-        search_var(&mut file, "nEllipses:");
-        let mut n_frac = 0;
-        n_frac.read_from_text(&mut file);
-
-        search_var(&mut file, "nNodes:");
-        let mut num_points = 0;
-        num_points.read_from_text(&mut file);
-
-        search_var(&mut file, "Coordinates:");
-
-        let mut bytes = file.bytes().map(|ch| ch.unwrap());
-        let size = n_frac * num_points * 3;
-
-        let mut vertices = Vec::with_capacity(size * 3);
-
-        for _ in 0..size {
-            let val = read!("{}", bytes);
-            vertices.push(val)
-        }
-
-        Self {
-            n_frac,
-            num_points,
-            vertices,
-        }
-    }
-
-    pub fn create_polys(&self) -> Vec<Poly> {
-        let mut new_polys = Vec::with_capacity(self.n_frac);
-
-        for idx in 0..self.n_frac {
-            let mut new_poly = Poly {
-                family_num: -1,
-                // Set number of nodes. Needed for rotations.
-                number_of_nodes: self.num_points as isize,
-                // Initialize normal to {0,0,1}. need initialized for 3D rotation
-                normal: Vector3::new(0., 0., 1.),
-                ..Default::default()
-            };
-
-            new_poly.vertices.reserve(self.num_points * 3);
-
-            let poly_vert_idx = idx * 3 * self.num_points; // Each polygon has nEllNodes * 3 vertices
-
-            // Initialize vertices
-            for j in 0..self.num_points {
-                let v_idx = j * 3;
-                new_poly.vertices[v_idx] = self.vertices[poly_vert_idx + v_idx];
-                new_poly.vertices[v_idx + 1] = self.vertices[poly_vert_idx + 1 + v_idx];
-                new_poly.vertices[v_idx + 2] = self.vertices[poly_vert_idx + 2 + v_idx];
-            }
-
-            // Get a normal vector
-            // Vector from fist node to node accross middle of polygon
-            let pt_idx_12 = 3 * (self.num_points / 2);
-            let p1 = Point3::from_slice(&new_poly.vertices[0..3]);
-            let p2 = Point3::from_slice(&new_poly.vertices[3..6]);
-            let p_12 = Point3::from_slice(&new_poly.vertices[pt_idx_12..pt_idx_12 + 3]);
-
-            let v1 = p_12 - p1;
-            let v2 = p2 - p1;
-
-            new_poly.normal = v2.cross(&v1).normalize();
-            // Estimate radius
-            // across middle if even number of nodes
-            new_poly.xradius = 0.5 * v2.magnitude();
-
-            // Get idx for node 1/4 around polygon
-            let pt_idx_14 = 3 * (pt_idx_12 / 2);
-            // Get idx for node 3/4 around polygon
-            // across middle close to perpendicular to xradius magnitude calculation
-            let pt_idx_34 = 3 * (pt_idx_14 + pt_idx_12);
-
-            let p_14 = Point3::from_slice(&new_poly.vertices[pt_idx_14..pt_idx_14 + 3]);
-            let p_34 = Point3::from_slice(&new_poly.vertices[pt_idx_34..pt_idx_34 + 3]);
-
-            new_poly.yradius = 0.5 * distance(&p_14, &p_34);
-            new_poly.aspect_ratio = new_poly.yradius / new_poly.xradius;
-
-            // Estimate translation (middle of poly)
-            // Use midpoint between 1st and and half way around polygon
-            // Note: For polygons defined by coordinates, the coordinates
-            // themselves provide the translation. We need to estimate the center
-            // of the polygon and init. the translation array
-            new_poly.translation = 0.5 * Vector3::new(p1.x + p_12.x, p1.y + p_12.y, p1.z + p_12.z);
-
-            new_polys.push(new_poly)
-        }
-
-        new_polys
-    }
-}
-
-pub struct UserDefinedRectByCoord {
-    pub n_frac: usize,
-    pub vertices: Vec<f64>,
-}
-
-impl UserDefinedRectByCoord {
-    pub fn from_file(path: &str) -> Self {
-        let mut file = File::open(path).unwrap();
-
-        search_var(&mut file, "nRectangles:");
-        let mut n_frac = 0;
-        n_frac.read_from_text(&mut file);
-
-        search_var(&mut file, "Coordinates:");
-
-        let mut bytes = file.bytes().map(|ch| ch.unwrap());
-
-        let mut vertices = Vec::with_capacity(n_frac * 12);
-
-        for _ in 0..n_frac * 12 {
-            let val = read!("{}", bytes);
-            vertices.push(val)
-        }
-
-        Self { n_frac, vertices }
-    }
-
-    pub fn create_polys(&self) -> Vec<Poly> {
-        let mut new_polys = Vec::with_capacity(self.n_frac);
-
-        for idx in 0..self.n_frac {
-            let mut new_poly = Poly {
-                family_num: -2,
-                // Set number of nodes. Needed for rotations.
-                number_of_nodes: 4,
-                ..Default::default()
-            };
-
-            new_poly.vertices.reserve(12); // 4 * {x,y,z}
-            let poly_vert_idx = idx * 12; // Each polygon has 4 vertices (12 elements, 4*{x,y,z}))
-
-            // Initialize vertices
-            for j in 0..4 {
-                let v_idx = j * 3;
-                new_poly.vertices[v_idx] = self.vertices[poly_vert_idx + v_idx];
-                new_poly.vertices[v_idx + 1] = self.vertices[poly_vert_idx + 1 + v_idx];
-                new_poly.vertices[v_idx + 2] = self.vertices[poly_vert_idx + 2 + v_idx];
-            }
-
-            // Check that rectangle lays one a single plane:
-            // let xProd1 = cross Product vector (1st node to 2nd node) with vector(1st node to 3rd node)
-            // and xProd2 = cross product vector (1st node to 3th node) with vector (1st node to 4th node)
-            // Then, cross product xProd1 and xProd2, if this produces zero vector, all coords are on the same plane
-            // v1 is vector from first vertice to third vertice
-            // Vector from fist node to 3rd node (vector through middle of sqare)
-            let p1 = Point3::from_slice(&new_poly.vertices[0..3]);
-            let p2 = Point3::from_slice(&new_poly.vertices[3..6]);
-            let p3 = Point3::from_slice(&new_poly.vertices[6..9]);
-            let p4 = Point3::from_slice(&new_poly.vertices[9..12]);
-
-            let v1 = p3 - p1;
-            let v2 = p2 - p1;
-            let v3 = p4 - p1;
-            let x_prod1 = v2.cross(&v1).normalize();
-            // let x_prod2 = crossProduct(&v3, &v1);
-            // let x_prod3 = crossProduct(&x_prod1, &x_prod2);
-            //will be zero vector if all vertices are on the same plane
-            //TODO: Error check below is too sensitive. Adjust it.
-            // Error check for points not on the same plane
-            //        if (std::abs(magnitude(xProd3[0],xProd3[1],xProd3[2])) > eps) { //points do not lay on the same plane. reject poly else meshing will fail
-            // if (!(std::abs(xProd3[0]) < eps && std::abs(xProd3[1]) < eps && std::abs(xProd3[2]) < eps)) {
-            //     delete[] newPoly.vertices;
-            //     pstats.rejectedPolyCount++;
-            //     std::cout << "\nUser Rectangle (defined by coordinates) " << i+1 << " was rejected. The defined vertices are not co-planar.\n";
-            //     std::cout << "Please check user defined coordinates for rectanle " << i+1 << " in input file\n";
-            //     delete[] xProd1;
-            //     delete[] xProd2;
-            //     delete[] xProd3;
-            //     continue; //go to next poly
-            // }
-
-            // Set normal vector
-            new_poly.normal = x_prod1;
-
-            // Set radius (x and y radii might be switched based on order of users coordinates)
-            new_poly.xradius = 0.5 * v2.magnitude();
-            new_poly.yradius = 0.5 * v3.magnitude();
-            new_poly.aspect_ratio = new_poly.yradius / new_poly.xradius;
-
-            // Estimate translation
-            // Use midpoint between 1st and 3rd vertices
-            // Note: For polygons defined by coordinates, the coordinates
-            // themselves provide the translation. We are just filling the
-            // translation array for completeness even though the translation
-            // array might not be used
-            new_poly.translation = 0.5 * Vector3::new(p1.x + p3.x, p1.y + p3.y, p1.z + p3.z);
-
-            new_polys.push(new_poly)
-        }
-
-        new_polys
     }
 }
