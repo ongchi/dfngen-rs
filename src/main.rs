@@ -238,7 +238,6 @@ fn main() -> Result<(), DfngenError> {
             };
 
             let mut new_poly = frac_fam_opt.families[family_index].create_poly(
-                input.h,
                 input.eps,
                 input.nFamEll,
                 family_index,

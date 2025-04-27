@@ -9,7 +9,7 @@ use rand_mt::Mt64;
 use tracing::warn;
 
 use crate::computational_geometry::{apply_rotation2_d, apply_rotation3_d, translate};
-use crate::distribution::generating_points::random_translation;
+use crate::distribution::generating_points::{generate_theta, random_position};
 use crate::error;
 use crate::fracture::fracture_family::FractureFamily;
 use crate::structures::{Poly, Shape};
@@ -162,15 +162,7 @@ pub fn re_translate_poly(
 
         // Translate to new position
         let bbox = poly_boundary(domain_size, domain_size_increase, layers, regions, frac_fam);
-        let t = random_translation(
-            generator.clone(),
-            bbox.mins.x,
-            bbox.maxs.x,
-            bbox.mins.y,
-            bbox.maxs.y,
-            bbox.mins.z,
-            bbox.maxs.z,
-        );
+        let t = random_position(bbox, generator.clone());
 
         // Translate - will also set translation vector in poly structure
         translate(new_poly, t);
@@ -191,11 +183,18 @@ pub fn re_translate_poly(
 
         match frac_fam.shape {
             Shape::Ellipse(n) => {
+                let theta_list = generate_theta(
+                    frac_fam.aspect_ratio,
+                    match frac_fam.shape {
+                        Shape::Ellipse(n) => n as usize,
+                        Shape::Rectangle => 4,
+                    },
+                );
                 initialize_ell_vertices(
                     new_poly,
                     new_poly.xradius,
                     frac_fam.aspect_ratio,
-                    &frac_fam.theta_list,
+                    &theta_list,
                     n as usize,
                 );
             }
@@ -242,15 +241,7 @@ pub fn re_translate_poly(
         // Translate to new position
         // Translate() will also set translation vector in poly structure
         let bbox = poly_boundary(domain_size, domain_size_increase, layers, regions, frac_fam);
-        let t = random_translation(
-            generator.clone(),
-            bbox.mins.x,
-            bbox.maxs.x,
-            bbox.mins.y,
-            bbox.maxs.y,
-            bbox.mins.z,
-            bbox.maxs.z,
-        );
+        let t = random_position(bbox, generator.clone());
 
         translate(new_poly, t);
     }

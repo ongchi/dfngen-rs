@@ -1,17 +1,15 @@
 use std::{cell::RefCell, rc::Rc};
 
-use parry3d_f64::bounding_volume::Aabb;
 use parry3d_f64::na::Vector3;
 use rand::Rng;
 use rand_distr::Uniform;
 use rand_mt::Mt64;
 
 use crate::computational_geometry::{apply_rotation2_d, apply_rotation3_d, translate};
-use crate::distribution::generating_points::random_translation;
+use crate::distribution::generating_points::random_position;
 use crate::distribution::{generating_points::generate_theta, Fisher};
-use crate::distribution::{TruncExp, TruncLogNormal, TruncPowerLaw};
 use crate::error::DfngenError;
-use crate::structures::{Poly, RadiusDistribution, RadiusFunction, Shape};
+use crate::structures::{Poly, RadiusDistribution, Shape};
 
 use super::insert_shape::{
     get_family_number, initialize_ell_vertices, initialize_rect_vertices, poly_boundary,
@@ -24,9 +22,6 @@ pub struct FractureFamily {
     pub shape: Shape,
 
     pub radius: RadiusDistribution,
-
-    /// Array of thetas to build poly from, initialized while reading input and building shape structures
-    pub theta_list: Vec<f64>,
 
     /// Current index to the radii list 'radiiList'.
     pub radii_idx: usize,
@@ -63,7 +58,7 @@ pub struct FractureFamily {
     pub orientation: Fisher,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum RadiusOption {
     FromCacheOrRng,
     FromRng,
@@ -78,7 +73,6 @@ impl FractureFamily {
     #[allow(clippy::too_many_arguments)]
     pub fn create_poly(
         &mut self,
-        h: f64,
         eps: f64,
         n_fam_ell: usize,
         fam_idx: usize,
@@ -90,35 +84,84 @@ impl FractureFamily {
         generator: Rc<RefCell<Mt64>>,
     ) -> Poly {
         let radius = match radius_opt {
-            RadiusOption::FromCacheOrRng => generate_radius(
-                h,
-                n_fam_ell,
-                self,
-                generator.clone(),
-                fam_idx as isize,
-                true,
-            ),
-            RadiusOption::FromRng => generate_radius(
-                h,
-                n_fam_ell,
-                self,
-                generator.clone(),
-                fam_idx as isize,
-                false,
-            ),
+            RadiusOption::FromCacheOrRng | RadiusOption::FromRng => {
+                if self.radii_idx >= self.radii_list.len() || radius_opt == RadiusOption::FromRng {
+                    // If out of radii from list, insert random radius
+                    match self.radius.sample(generator.clone()) {
+                        Ok(radius) => radius,
+                        Err(_) => panic!(
+                                "distribution for {} family {} has been unable to generate a fracture with radius within set parameters after 1000 consecutive tries.",
+                                &self.shape,
+                                get_family_number(n_fam_ell, fam_idx as isize, self.shape),
+                            )
+                    }
+                } else {
+                    // Insert radius from list
+                    let radius = self.radii_list[self.radii_idx];
+                    self.radii_idx += 1;
+                    radius
+                }
+            }
             RadiusOption::MaxRadius => self.radius.max,
         };
 
-        let boundary = poly_boundary(domain_size, domain_size_inc, layers, regions, self);
+        let bbox = poly_boundary(domain_size, domain_size_inc, layers, regions, self);
 
-        generate_poly_with_radius(
-            eps,
-            radius,
-            self,
-            boundary,
-            generator.clone(),
-            fam_idx as isize,
-        )
+        // New polygon to build
+        let mut new_poly = Poly::default();
+        // Initialize normal to {0,0,1}. ( All polys start on x-y plane )
+        new_poly.normal = Vector3::new(0., 0., 1.);
+        new_poly.number_of_nodes = self.shape.number_of_nodes() as isize;
+        new_poly.vertices = Vec::with_capacity((3 * new_poly.number_of_nodes) as usize); //numPoints*{x,y,z}
+        new_poly.family_num = fam_idx as isize;
+
+        match self.shape {
+            Shape::Ellipse(n) => {
+                let theta_list = generate_theta(
+                    self.aspect_ratio,
+                    match self.shape {
+                        Shape::Ellipse(n) => n as usize,
+                        Shape::Rectangle => 4,
+                    },
+                );
+                initialize_ell_vertices(
+                    &mut new_poly,
+                    radius,
+                    self.aspect_ratio,
+                    &theta_list,
+                    n as usize,
+                );
+            }
+            Shape::Rectangle => {
+                initialize_rect_vertices(&mut new_poly, radius, self.aspect_ratio);
+            }
+        }
+
+        // Initialize beta based on distrubution type: 0 = unifrom on [0,2PI], 1 = constant
+        let beta = if !self.beta_distribution {
+            let uniform_dist = Uniform::new(0., 2. * std::f64::consts::PI).unwrap();
+            generator.borrow_mut().sample(uniform_dist)
+        } else {
+            self.beta
+        };
+
+        // Apply 2d rotation matrix, twist around origin
+        // assumes polygon on x-y plane
+        // Angle must be in rad
+        apply_rotation2_d(&mut new_poly, beta);
+
+        // Rotate vertices to norm (new normal)
+        let norm = self.normal_vector(generator.clone()).normalize();
+        apply_rotation3_d(&mut new_poly, &norm, eps);
+
+        // Save newPoly's new normal vector
+        new_poly.normal = norm;
+
+        // Translate - will also set translation vector in poly structure
+        let position = random_position(bbox, generator.clone());
+        translate(&mut new_poly, position);
+
+        new_poly
     }
 }
 
@@ -182,25 +225,14 @@ impl FractureFamilyBuilder {
     }
 
     pub fn build(&mut self) -> Result<FractureFamily, String> {
-        let frac_family = self
+        let shape = self
             .number_of_nodes
             .map(Shape::Ellipse)
             .unwrap_or(Shape::Rectangle);
-        let aspect_ratio = self
-            .aspect_ratio
-            .ok_or("aspect ration is required".to_string())?;
-        let theta_list = generate_theta(
-            aspect_ratio,
-            match frac_family {
-                Shape::Ellipse(n) => n as usize,
-                Shape::Rectangle => 4,
-            },
-        );
 
         Ok(FractureFamily {
-            shape: frac_family,
+            shape,
             radius: self.radius.take().ok_or("radius is required".to_string())?,
-            theta_list,
             radii_idx: 0,
             radii_list: Vec::new(),
             layer: self.layer.ok_or("layer is required".to_string())?,
@@ -260,19 +292,18 @@ impl FractureFamilyOption {
                 Shape::Rectangle => rect_id += 1,
             };
 
-            match frac_fam.radius.sample(
-                (self.probabilities[i] * n_poly as f64).ceil() as usize,
-                generator.clone(),
-            ) {
-                Ok(radii) => frac_fam.radii_list.extend(radii),
-                Err(_) => {
-                    return Err(DfngenError::TooManySmallFractures {
-                        shape: frac_fam.shape,
-                        id: match frac_fam.shape {
-                            Shape::Ellipse(_) => ell_id,
-                            Shape::Rectangle => rect_id,
-                        },
-                    });
+            for _ in 0..((self.probabilities[i] * n_poly as f64).ceil() as usize) {
+                match frac_fam.radius.sample(generator.clone()) {
+                    Ok(radius) => frac_fam.radii_list.push(radius),
+                    Err(_) => {
+                        return Err(DfngenError::TooManySmallFractures {
+                            shape: frac_fam.shape,
+                            id: match frac_fam.shape {
+                                Shape::Ellipse(_) => ell_id,
+                                Shape::Rectangle => rect_id,
+                            },
+                        });
+                    }
                 }
             }
         }
@@ -288,145 +319,4 @@ impl FractureFamilyOption {
             ff.radii_list.sort_by(|a, b| b.partial_cmp(a).unwrap())
         }
     }
-}
-
-pub fn generate_radius(
-    h: f64,
-    n_fam_ell: usize,
-    frac_fam: &mut FractureFamily,
-    generator: Rc<RefCell<Mt64>>,
-    family_index: isize,
-    use_list: bool,
-) -> f64 {
-    let radius_distr = &frac_fam.radius;
-    match radius_distr.function {
-        RadiusFunction::Constant(c) => c,
-        ref others => {
-            if frac_fam.radii_idx >= frac_fam.radii_list.len() || !use_list {
-                // If out of radii from list, insert random radius
-                let distr = match others {
-                    RadiusFunction::LogNormal { mu, sigma } => {
-                        let min_val = f64::max(h, radius_distr.min);
-                        let distr =
-                            TruncLogNormal::new(min_val, radius_distr.max, *mu, *sigma).unwrap();
-                        generator.clone().borrow_mut().sample(distr)
-                    }
-                    RadiusFunction::TruncatedPowerLaw { alpha } => {
-                        let distr = TruncPowerLaw::new(radius_distr.min, radius_distr.max, *alpha);
-                        Ok(generator.clone().borrow_mut().sample(distr))
-                    }
-                    RadiusFunction::Exponential { lambda } => {
-                        let min_val = f64::max(h, radius_distr.min);
-                        let distr = TruncExp::new(min_val, radius_distr.max, *lambda).unwrap();
-
-                        generator.clone().borrow_mut().sample(distr)
-                    }
-                    RadiusFunction::Constant(_) => unreachable!(),
-                };
-
-                match distr {
-                            Ok(radius) => radius,
-                            Err(_) => panic!(
-                                    "distribution for {} family {} has been unable to generate a fracture with radius within set parameters after 1000 consecutive tries.",
-                                    &frac_fam.shape,
-                                    get_family_number(n_fam_ell, family_index, frac_fam.shape),
-                                )
-                        }
-            } else {
-                // Insert radius from list
-                let radius = frac_fam.radii_list[frac_fam.radii_idx];
-                frac_fam.radii_idx += 1;
-                radius
-            }
-        }
-    }
-}
-
-/// Generate Polygon/Fracture With Given Radius
-///
-/// Similar to generatePoly() except the radius is passed to the function.
-/// Generates a polygon
-/// Shape (ell or rect) still comes from the fractures' familiy
-///
-/// NOTE: Function does not create bouding box. The bouding box has to be
-///       created after fracture truncation
-///
-/// # Arguments
-///
-/// * `orientation_option` - Orientation option
-/// * `eps` - Epsilon value for floating point comparisons
-/// * `radius` - Radius for polygon
-/// * `fracture_fam` - fracture family to generate fracture from
-/// * `bbox` - Bounding box
-/// * `generator` - Random generator
-/// * `family_index` - Index of 'FractureFamily' in the frac_fam array in main()
-///
-/// # Returns
-///
-/// Polygon with radius passed in arg 1 and shape based on `frac_fam`
-pub fn generate_poly_with_radius(
-    eps: f64,
-    radius: f64,
-    frac_fam: &FractureFamily,
-    bbox: Aabb,
-    generator: Rc<RefCell<Mt64>>,
-    family_index: isize,
-) -> Poly {
-    // New polygon to build
-    let mut new_poly = Poly::default();
-    // Initialize normal to {0,0,1}. ( All polys start on x-y plane )
-    new_poly.normal = Vector3::new(0., 0., 1.);
-    new_poly.number_of_nodes = frac_fam.shape.number_of_nodes() as isize;
-    new_poly.vertices = Vec::with_capacity((3 * new_poly.number_of_nodes) as usize); //numPoints*{x,y,z}
-    new_poly.family_num = family_index;
-
-    match frac_fam.shape {
-        Shape::Ellipse(n) => {
-            initialize_ell_vertices(
-                &mut new_poly,
-                radius,
-                frac_fam.aspect_ratio,
-                &frac_fam.theta_list,
-                n as usize,
-            );
-        }
-        Shape::Rectangle => {
-            initialize_rect_vertices(&mut new_poly, radius, frac_fam.aspect_ratio);
-        }
-    }
-
-    // Initialize beta based on distrubution type: 0 = unifrom on [0,2PI], 1 = constant
-    let beta = if !frac_fam.beta_distribution {
-        let uniform_dist = Uniform::new(0., 2. * std::f64::consts::PI).unwrap();
-        generator.borrow_mut().sample(uniform_dist)
-    } else {
-        frac_fam.beta
-    };
-
-    // Apply 2d rotation matrix, twist around origin
-    // assumes polygon on x-y plane
-    // Angle must be in rad
-    apply_rotation2_d(&mut new_poly, beta);
-
-    // Rotate vertices to norm (new normal)
-    let norm = frac_fam.normal_vector(generator.clone()).normalize();
-    apply_rotation3_d(&mut new_poly, &norm, eps);
-
-    // Save newPoly's new normal vector
-    new_poly.normal = norm;
-
-    let translation = random_translation(
-        generator.clone(),
-        bbox.mins.x,
-        bbox.maxs.x,
-        bbox.mins.y,
-        bbox.maxs.y,
-        bbox.mins.z,
-        bbox.maxs.z,
-    );
-
-    // Translate - will also set translation vector in poly structure
-    translate(&mut new_poly, translation);
-
-    new_poly
 }

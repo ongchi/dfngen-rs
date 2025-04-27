@@ -63,7 +63,6 @@ pub fn dry_run(
             force_large_fract_count += 1;
 
             frac_families.families[family_index].create_poly(
-                input.h,
                 input.eps,
                 input.nFamEll,
                 family_index,
@@ -88,7 +87,6 @@ pub fn dry_run(
             );
 
             frac_families.families[family_index].create_poly(
-                input.h,
                 input.eps,
                 input.nFamEll,
                 family_index,

@@ -1,5 +1,6 @@
 use std::{cell::RefCell, rc::Rc};
 
+use parry3d_f64::bounding_volume::Aabb;
 use parry3d_f64::na::{Point3, Vector3};
 use rand::distr::Uniform;
 use rand::Rng;
@@ -62,29 +63,11 @@ pub fn discretize_line_of_intersection(
     points_list
 }
 
-/// Returns random TRANSLATION
-///
-/// # Arguments
-///
-/// * `rng` - Random generator, see std c++ <random> library
-/// * `x_min` - Minimum x for random x
-/// * `x_max` - Maximum x for random x
-/// * `y_min` - Minimum y for random y
-/// * `y_max` - Maximum y for random y
-/// * `z_min` - Minimum z for random z
-/// * `z_max` - Maximum z for random z
-pub fn random_translation(
-    rng: Rc<RefCell<Mt64>>,
-    x_min: f64,
-    x_max: f64,
-    y_min: f64,
-    y_max: f64,
-    z_min: f64,
-    z_max: f64,
-) -> Vector3<f64> {
-    let distribution_x = Uniform::new(x_min, x_max).unwrap();
-    let distribution_y = Uniform::new(y_min, y_max).unwrap();
-    let distribution_z = Uniform::new(z_min, z_max).unwrap();
+/// Returns random position within a bounding box
+pub fn random_position(boundary: Aabb, rng: Rc<RefCell<Mt64>>) -> Vector3<f64> {
+    let distribution_x = Uniform::new(boundary.mins.x, boundary.maxs.x).unwrap();
+    let distribution_y = Uniform::new(boundary.mins.y, boundary.maxs.y).unwrap();
+    let distribution_z = Uniform::new(boundary.mins.z, boundary.maxs.z).unwrap();
 
     let x = rng.borrow_mut().sample(distribution_x);
     let y = rng.borrow_mut().sample(distribution_y);
