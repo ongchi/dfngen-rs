@@ -242,10 +242,6 @@ fn main() -> Result<(), DfngenError> {
                 input.nFamEll,
                 family_index,
                 RadiusOption::FromCacheOrRng,
-                &input.domainSize,
-                &input.domainSizeIncrease,
-                &input.layers,
-                &input.regions,
                 generator.clone(),
             );
 
@@ -286,10 +282,6 @@ fn main() -> Result<(), DfngenError> {
                         // Retranslate poly and try again, preserving normal, size, and shape
                         re_translate_poly(
                             input.eps,
-                            &input.domainSize,
-                            &input.domainSizeIncrease,
-                            &input.layers,
-                            &input.regions,
                             &mut new_poly,
                             &frac_fam_opt.families[family_index],
                             generator.clone(),
@@ -333,24 +325,24 @@ fn main() -> Result<(), DfngenError> {
                     new_poly.area = get_area(&new_poly);
 
                     // Update P32
-                    if frac_fam_opt.families[family_index].layer == 0
-                        && frac_fam_opt.families[family_index].region == 0
+                    if frac_fam_opt.families[family_index].layer_id == 0
+                        && frac_fam_opt.families[family_index].region_id == 0
                     {
                         // Whole domain
                         frac_fam_opt.families[family_index].current_p32 +=
                             new_poly.area * 2. / dom_vol;
-                    } else if frac_fam_opt.families[family_index].layer > 0
-                        && frac_fam_opt.families[family_index].region == 0
+                    } else if frac_fam_opt.families[family_index].layer_id > 0
+                        && frac_fam_opt.families[family_index].region_id == 0
                     {
                         // Layer
                         frac_fam_opt.families[family_index].current_p32 += new_poly.area * 2.
-                            / input.layerVol[frac_fam_opt.families[family_index].layer - 1];
-                    } else if frac_fam_opt.families[family_index].layer == 0
-                        && frac_fam_opt.families[family_index].region > 0
+                            / input.layerVol[frac_fam_opt.families[family_index].layer_id - 1];
+                    } else if frac_fam_opt.families[family_index].layer_id == 0
+                        && frac_fam_opt.families[family_index].region_id > 0
                     {
                         // Region
                         frac_fam_opt.families[family_index].current_p32 += new_poly.area * 2.
-                            / input.regionVol[frac_fam_opt.families[family_index].region - 1];
+                            / input.regionVol[frac_fam_opt.families[family_index].region_id - 1];
                     }
 
                     if input.stopCondition == 1 {
@@ -443,10 +435,6 @@ fn main() -> Result<(), DfngenError> {
                         dfngen.pstats.retranslated_poly_count += 1;
                         re_translate_poly(
                             input.eps,
-                            &input.domainSize,
-                            &input.domainSizeIncrease,
-                            &input.layers,
-                            &input.regions,
                             &mut new_poly,
                             &frac_fam_opt.families[family_index],
                             generator.clone(),
@@ -541,9 +529,9 @@ fn main() -> Result<(), DfngenError> {
         info!("Accepted: {}", dfngen.pstats.accepted_from_fam[i],);
         info!("Rejected: {}", dfngen.pstats.rejected_from_fam[i]);
 
-        if frac_fam.layer > 0 {
-            let idx = (frac_fam.layer - 1) * 2;
-            info!("Layer: {}", frac_fam.layer,);
+        if frac_fam.layer_id > 0 {
+            let idx = (frac_fam.layer_id - 1) * 2;
+            info!("Layer: {}", frac_fam.layer_id,);
             info!(
                 "Layer {{-z, +z}}: {{{}, {}}}",
                 input.layers[idx],
@@ -553,9 +541,9 @@ fn main() -> Result<(), DfngenError> {
             info!("Layer: Whole Domain");
         }
 
-        if frac_fam.region > 0 {
-            let idx = (frac_fam.region - 1) * 6;
-            info!("Region: {}", frac_fam.region);
+        if frac_fam.region_id > 0 {
+            let idx = (frac_fam.region_id - 1) * 6;
+            info!("Region: {}", frac_fam.region_id);
             info!("{{-x,+x,-y,+y,-z,+z}}: {:?}", &input.regions[idx..idx + 6]);
         } else {
             info!("Region: Whole Domain");
@@ -713,9 +701,9 @@ fn main() -> Result<(), DfngenError> {
         info!("Accepted: {}", dfngen.pstats.accepted_from_fam[i]);
         info!("Rejected: {}", dfngen.pstats.rejected_from_fam[i]);
 
-        if frac_fam_opt.families[i].layer > 0 {
-            let idx = (frac_fam_opt.families[i].layer - 1) * 2;
-            info!("Layer: {}", frac_fam_opt.families[i].layer);
+        if frac_fam_opt.families[i].layer_id > 0 {
+            let idx = (frac_fam_opt.families[i].layer_id - 1) * 2;
+            info!("Layer: {}", frac_fam_opt.families[i].layer_id);
             info!(
                 "Layer {{-z, +z}}: {{{}, {}}}",
                 input.layers[idx],
@@ -725,9 +713,9 @@ fn main() -> Result<(), DfngenError> {
             info!("Layer: Whole Domain");
         }
 
-        if frac_fam_opt.families[i].region > 0 {
-            let idx = (frac_fam_opt.families[i].region - 1) * 6;
-            info!("Region: {}", frac_fam_opt.families[i].region);
+        if frac_fam_opt.families[i].region_id > 0 {
+            let idx = (frac_fam_opt.families[i].region_id - 1) * 6;
+            info!("Region: {}", frac_fam_opt.families[i].region_id);
             info!("{{-x,+x,-y,+y,-z,+z}}: {:?}", &input.regions[idx..idx + 6]);
         } else {
             info!("Region: Whole Domain");

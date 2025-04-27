@@ -1201,23 +1201,23 @@ fn write_frac_fams(
             .unwrap();
 
         // Print layer family belongs to
-        if shape.layer == 0 {
+        if shape.layer_id == 0 {
             file.write_all("Layer: Entire domain\n".as_bytes()).unwrap();
         } else {
-            let idx = (shape.layer - 1) * 2;
-            file.write_all(format!("Layer Number: {}\n", shape.layer).as_bytes())
+            let idx = (shape.layer_id - 1) * 2;
+            file.write_all(format!("Layer Number: {}\n", shape.layer_id).as_bytes())
                 .unwrap();
             file.write_all(format!("Layer: {{{}, {}}}\n", layers[idx], layers[idx + 1]).as_bytes())
                 .unwrap();
         }
 
         // Print layer family belongs to
-        if shape.region == 0 {
+        if shape.region_id == 0 {
             file.write_all("Region: Entire domain\n".as_bytes())
                 .unwrap();
         } else {
-            let idx = (shape.region - 1) * 6;
-            file.write_all(format!("Region Number: {}\n", shape.region).as_bytes())
+            let idx = (shape.region_id - 1) * 6;
+            file.write_all(format!("Region Number: {}\n", shape.region_id).as_bytes())
                 .unwrap();
             file.write_all(
                 format!(

@@ -454,7 +454,14 @@ impl InputReader {
             .collect()
     }
 
-    pub fn read_fracture_family(&mut self, prefix: &str) -> Vec<FractureFamily> {
+    pub fn read_fracture_family(
+        &mut self,
+        prefix: &str,
+        layers: &[f64],
+        regions: &[f64],
+        domain_size: &Vector3<f64>,
+        domain_size_increase: &Vector3<f64>,
+    ) -> Vec<FractureFamily> {
         macro_rules! read_var {
             ($label:expr,$var_name:ident) => {
                 self.read_value(&format!("{}{}:", prefix, $label), &mut $var_name);
@@ -530,7 +537,13 @@ impl InputReader {
                 fracfam_builder
                     .radius(radius)
                     .aspect_ratio(aspect_ratio[i])
-                    .orientation(orien);
+                    .orientation(orien)
+                    .layer_id(layer[i])
+                    .region_id(region[i])
+                    .layers(layers)
+                    .regions(regions)
+                    .domain_size(domain_size)
+                    .domain_size_increase(domain_size_increase);
 
                 if beta_distribution[i] {
                     fracfam_builder.beta(beta[beta_count]);
@@ -540,8 +553,6 @@ impl InputReader {
                 if stop_condition {
                     fracfam_builder.p32_target(p32_target[i]);
                 }
-
-                fracfam_builder.layer(layer[i]).region(region[i]);
 
                 frac_family.push(fracfam_builder.build().unwrap());
             }

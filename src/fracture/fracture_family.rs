@@ -1,5 +1,6 @@
 use std::{cell::RefCell, rc::Rc};
 
+use parry3d_f64::bounding_volume::Aabb;
 use parry3d_f64::na::Vector3;
 use rand::Rng;
 use rand_distr::Uniform;
@@ -11,9 +12,7 @@ use crate::distribution::{generating_points::generate_theta, Fisher};
 use crate::error::DfngenError;
 use crate::structures::{Poly, RadiusDistribution, Shape};
 
-use super::insert_shape::{
-    get_family_number, initialize_ell_vertices, initialize_rect_vertices, poly_boundary,
-};
+use super::insert_shape::{get_family_number, initialize_ell_vertices, initialize_rect_vertices};
 
 /// FractureFamily is used to hold varibales for all types of stochastic shapes. During getInput(),
 /// all stochastic families for both recaangles and ellipses are parsed from the user input
@@ -31,11 +30,11 @@ pub struct FractureFamily {
 
     /// Layer the family belongs to. 0 is entire domain, greater than 0 is a layer.
     /// e.g. 2 would be the second layer listed in the input file under "layers:".
-    pub layer: usize,
+    pub layer_id: usize,
 
     /// Region the family belongs to. 0 is entire domain, greater than 0 is a region.
     /// e.g. 2 would be the second region listed in the input file under "regions:".
-    pub region: usize,
+    pub region_id: usize,
 
     /// Aspect ratio for family.
     pub aspect_ratio: f64,
@@ -56,6 +55,8 @@ pub struct FractureFamily {
     pub beta: f64,
 
     pub orientation: Fisher,
+
+    pub boundary: Aabb,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -77,10 +78,6 @@ impl FractureFamily {
         n_fam_ell: usize,
         fam_idx: usize,
         radius_opt: RadiusOption,
-        domain_size: &Vector3<f64>,
-        domain_size_inc: &Vector3<f64>,
-        layers: &[f64],
-        regions: &[f64],
         generator: Rc<RefCell<Mt64>>,
     ) -> Poly {
         let radius = match radius_opt {
@@ -104,8 +101,6 @@ impl FractureFamily {
             }
             RadiusOption::MaxRadius => self.radius.max,
         };
-
-        let bbox = poly_boundary(domain_size, domain_size_inc, layers, regions, self);
 
         // New polygon to build
         let mut new_poly = Poly::default();
@@ -158,7 +153,7 @@ impl FractureFamily {
         new_poly.normal = norm;
 
         // Translate - will also set translation vector in poly structure
-        let position = random_position(bbox, generator.clone());
+        let position = random_position(self.boundary, generator.clone());
         translate(&mut new_poly, position);
 
         new_poly
@@ -166,18 +161,22 @@ impl FractureFamily {
 }
 
 #[derive(Default)]
-pub struct FractureFamilyBuilder {
+pub struct FractureFamilyBuilder<'a> {
     number_of_nodes: Option<u8>,
     radius: Option<RadiusDistribution>,
     orientation: Option<Fisher>,
     aspect_ratio: Option<f64>,
     beta: Option<f64>,
     p32_target: Option<f64>,
-    layer: Option<usize>,
-    region: Option<usize>,
+    layer_id: Option<usize>,
+    region_id: Option<usize>,
+    layers: Option<&'a [f64]>,
+    regions: Option<&'a [f64]>,
+    domain_size: Option<&'a Vector3<f64>>,
+    domain_size_inc: Option<&'a Vector3<f64>>,
 }
 
-impl FractureFamilyBuilder {
+impl<'a> FractureFamilyBuilder<'a> {
     pub fn new() -> Self {
         Self {
             ..Default::default()
@@ -214,13 +213,33 @@ impl FractureFamilyBuilder {
         self
     }
 
-    pub fn layer(&mut self, layer: usize) -> &mut Self {
-        self.layer = Some(layer);
+    pub fn layer_id(&mut self, layer: usize) -> &mut Self {
+        self.layer_id = Some(layer);
         self
     }
 
-    pub fn region(&mut self, region: usize) -> &mut Self {
-        self.region = Some(region);
+    pub fn region_id(&mut self, region: usize) -> &mut Self {
+        self.region_id = Some(region);
+        self
+    }
+
+    pub fn layers(&mut self, layers: &'a [f64]) -> &mut Self {
+        self.layers = Some(layers);
+        self
+    }
+
+    pub fn regions(&mut self, regions: &'a [f64]) -> &mut Self {
+        self.regions = Some(regions);
+        self
+    }
+
+    pub fn domain_size(&mut self, domain_size: &'a Vector3<f64>) -> &mut Self {
+        self.domain_size = Some(domain_size);
+        self
+    }
+
+    pub fn domain_size_increase(&mut self, domain_size_inc: &'a Vector3<f64>) -> &mut Self {
+        self.domain_size_inc = Some(domain_size_inc);
         self
     }
 
@@ -230,13 +249,61 @@ impl FractureFamilyBuilder {
             .map(Shape::Ellipse)
             .unwrap_or(Shape::Rectangle);
 
+        let layers = self.layers.ok_or("layers is required".to_string())?;
+        let regions = self.regions.ok_or("regions is required".to_string())?;
+        let layer_id = self.layer_id.ok_or("layer_id is required".to_string())?;
+        let region_id = self.region_id.ok_or("region_id is required".to_string())?;
+
+        let domain_size = self
+            .domain_size
+            .ok_or("domain size is required".to_string())?;
+        let domain_size_increase = self
+            .domain_size_inc
+            .ok_or("domain size increase is required".to_string())?;
+
+        let (mins, maxs) = if layer_id == 0 && region_id == 0 {
+            // The family layer is the whole domain
+            let mins = (-domain_size - domain_size_increase) / 2.;
+            let maxs = (domain_size + domain_size_increase) / 2.;
+            (mins, maxs)
+        } else if layer_id > 0 && region_id == 0 {
+            // Family belongs to a certain layer, frac_fam.layer is > zero
+            // Layers start at 1, but the array of layers start at 0, hence
+            // the subtraction by 1
+            // Layer 0 is reservered to be the entire domain
+            let layer_idx = (layer_id - 1) * 2;
+            let _mins = (-domain_size - domain_size_increase) / 2.;
+            let _maxs = (domain_size + domain_size_increase) / 2.;
+            // Layers only apply to z coordinates
+            let mins = Vector3::new(_mins.x, _mins.y, layers[layer_idx]);
+            let maxs = Vector3::new(_maxs.x, _maxs.y, layers[layer_idx + 1]);
+            (mins, maxs)
+        } else if layer_id == 0 && region_id > 0 {
+            let region_idx = (region_id - 1) * 6;
+            let mins = Vector3::new(
+                regions[region_idx],
+                regions[region_idx + 2],
+                regions[region_idx + 4],
+            );
+            let maxs = Vector3::new(
+                regions[region_idx + 1],
+                regions[region_idx + 3],
+                regions[region_idx + 5],
+            );
+            (mins, maxs)
+        } else {
+            return Err("Layer and Region both defined for this Family.".to_string());
+        };
+
+        let boundary = Aabb::new(mins.into(), maxs.into());
+
         Ok(FractureFamily {
             shape,
             radius: self.radius.take().ok_or("radius is required".to_string())?,
             radii_idx: 0,
             radii_list: Vec::new(),
-            layer: self.layer.ok_or("layer is required".to_string())?,
-            region: self.region.ok_or("region is required".to_string())?,
+            layer_id,
+            region_id,
             aspect_ratio: self
                 .aspect_ratio
                 .ok_or("aspect ratio is required".to_string())?,
@@ -248,6 +315,7 @@ impl FractureFamilyBuilder {
                 .orientation
                 .take()
                 .ok_or("orientation is required".to_string())?,
+            boundary,
         })
     }
 }

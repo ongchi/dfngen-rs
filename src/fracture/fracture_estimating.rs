@@ -67,10 +67,6 @@ pub fn dry_run(
                 input.nFamEll,
                 family_index,
                 RadiusOption::MaxRadius,
-                &input.domainSize,
-                &input.domainSizeIncrease,
-                &input.layers,
-                &input.regions,
                 generator.clone(),
             )
         } else {
@@ -91,10 +87,6 @@ pub fn dry_run(
                 input.nFamEll,
                 family_index,
                 RadiusOption::FromRng,
-                &input.domainSize,
-                &input.domainSizeIncrease,
-                &input.layers,
-                &input.regions,
                 generator.clone(),
             )
         };
@@ -117,10 +109,6 @@ pub fn dry_run(
                 // Retranslate poly and try again, preserving normal, size, and shape
                 re_translate_poly(
                     input.eps,
-                    &input.domainSize,
-                    &input.domainSizeIncrease,
-                    &input.layers,
-                    &input.regions,
                     &mut new_poly,
                     &frac_families.families[family_index],
                     generator.clone(),
@@ -138,23 +126,23 @@ pub fn dry_run(
         new_poly.area = get_area(&new_poly);
 
         // Update P32
-        if frac_families.families[family_index].layer == 0
-            && frac_families.families[family_index].region == 0
+        if frac_families.families[family_index].layer_id == 0
+            && frac_families.families[family_index].region_id == 0
         {
             // Whole domain
             frac_families.families[family_index].current_p32 += new_poly.area * 2. / dom_vol;
-        } else if frac_families.families[family_index].layer > 0
-            && frac_families.families[family_index].region == 0
+        } else if frac_families.families[family_index].layer_id > 0
+            && frac_families.families[family_index].region_id == 0
         {
             // Layer
-            frac_families.families[family_index].current_p32 +=
-                new_poly.area * 2. / input.layerVol[frac_families.families[family_index].layer - 1];
-        } else if frac_families.families[family_index].layer == 0
-            && frac_families.families[family_index].region > 0
+            frac_families.families[family_index].current_p32 += new_poly.area * 2.
+                / input.layerVol[frac_families.families[family_index].layer_id - 1];
+        } else if frac_families.families[family_index].layer_id == 0
+            && frac_families.families[family_index].region_id > 0
         {
             // Region
             frac_families.families[family_index].current_p32 += new_poly.area * 2.
-                / input.regionVol[frac_families.families[family_index].region - 1];
+                / input.regionVol[frac_families.families[family_index].region_id - 1];
         }
 
         // Save radius for real DFN generation

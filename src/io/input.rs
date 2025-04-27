@@ -168,10 +168,6 @@ pub struct Input {
     /// families (Set to 1 to ignore this feature)
     pub rejectsPerFracture: usize,
 
-    /// Z - layers in the DFN
-    /// Number of layers defined.
-    numOfLayers: usize,
-
     /// Array of layers:
     /// e.g. {+z1, -z1, +z2, -z2, ... , +zn, -zn}
     pub layers: Vec<f64>,
@@ -179,10 +175,6 @@ pub struct Input {
     /// Array of volumes for each defined layer, in the same order
     /// which layers were listed.
     pub layerVol: Vec<f64>,
-
-    // Regions in the DFN
-    /// Number of regions defined.
-    numOfRegions: usize,
 
     /// Array of regions:
     /// e.g. {+z1, -z1, +z2, -z2, ... , +zn, -zn}
@@ -236,44 +228,46 @@ pub fn read_input(input_file: &str) -> (Input, FractureFamilyOption) {
     input_var!(stopCondition);
     input_var!(printRejectReasons);
     input_var!(domainSize);
-    input_var!(numOfLayers);
 
-    if input_var.numOfLayers > 0 {
-        let mut layers: Vec<f64> = Vec::with_capacity(input_var.numOfLayers * 2); // Multiply by 2 for +z and -z for each layer
+    let mut n_layers: usize = 0;
+    input_reader.read_value("numOfLayers:", &mut n_layers);
+    if n_layers > 0 {
+        input_var.layers.reserve(n_layers * 2); // Multiply by 2 for +z and -z for each layer
+        input_var!(layers);
 
-        input_reader.read_value("layers:", &mut layers);
-
-        for i in 0..input_var.numOfLayers {
+        for i in 0..n_layers {
             let idx = i * 2;
             info!(
                 "    Layer {}{{-z,+z}}: {:?}, Volume: ",
                 i + 1,
-                &layers[idx..idx + 2]
+                &input_var.layers[idx..idx + 2]
             );
             let vol = input_var.domainSize[0]
                 * input_var.domainSize[1]
-                * ((layers[idx + 1] as isize - layers[idx] as isize).abs() as f64);
+                * ((input_var.layers[idx + 1] as isize - input_var.layers[idx] as isize).abs()
+                    as f64);
             info!("{} m^3", vol);
         }
     }
 
-    input_reader.read_value("numOfRegions:", &mut input_var.numOfRegions);
-    if input_var.numOfRegions > 0 {
-        let mut regions: Vec<isize> = Vec::with_capacity(input_var.numOfRegions * 6); // Multiply by 6 xmin, xmax, ymin, ymax, zmin, zmax
-        input_reader.read_value("regions:", &mut regions);
+    let mut n_regions: usize = 0;
+    input_reader.read_value("numOfRegions:", &mut n_regions);
+    if n_regions > 0 {
+        input_var.regions.reserve(n_regions * 6); // Multiply by 6 xmin, xmax, ymin, ymax, zmin, zmax
+        input_var!(regions);
 
-        info!("Number of Regions: {}", input_var.numOfRegions);
+        info!("Number of Regions: {}", n_regions);
 
-        for i in 0..input_var.numOfRegions {
+        for i in 0..n_regions {
             let idx = i * 6;
             info!(
                 " Region {}: {{-x,+x,-y,+y,-z,+z}}: {:?}",
                 i + 1,
-                &regions[idx..idx + 6]
+                &input_var.regions[idx..idx + 6]
             );
-            let vol = (regions[idx + 1] - regions[idx]).abs()
-                * (regions[idx + 3] - regions[idx + 2]).abs()
-                * (regions[idx + 5] - regions[idx + 4]).abs();
+            let vol = (input_var.regions[idx + 1] - input_var.regions[idx]).abs()
+                * (input_var.regions[idx + 3] - input_var.regions[idx + 2]).abs()
+                * (input_var.regions[idx + 5] - input_var.regions[idx + 4]).abs();
             info!(" Volume: {} m^3", vol);
         }
     }
@@ -350,8 +344,20 @@ pub fn read_input(input_file: &str) -> (Input, FractureFamilyOption) {
         }
     }
 
-    fracture_families.extend(input_reader.read_fracture_family("e"));
-    fracture_families.extend(input_reader.read_fracture_family("r"));
+    fracture_families.extend(input_reader.read_fracture_family(
+        "e",
+        &input_var.layers,
+        &input_var.regions,
+        &input_var.domainSize,
+        &input_var.domainSizeIncrease,
+    ));
+    fracture_families.extend(input_reader.read_fracture_family(
+        "r",
+        &input_var.layers,
+        &input_var.regions,
+        &input_var.domainSize,
+        &input_var.domainSizeIncrease,
+    ));
 
     let fracture_family_probabilities = if !fracture_families.is_empty() {
         input_var!(radiiListIncrease);

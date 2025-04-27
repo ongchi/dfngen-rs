@@ -1,8 +1,6 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use parry3d_f64::bounding_volume::Aabb;
-use parry3d_f64::na::Vector3;
 use rand::distr::Uniform;
 use rand::Rng;
 use rand_mt::Mt64;
@@ -10,54 +8,8 @@ use tracing::warn;
 
 use crate::computational_geometry::{apply_rotation2_d, apply_rotation3_d, translate};
 use crate::distribution::generating_points::{generate_theta, random_position};
-use crate::error;
 use crate::fracture::fracture_family::FractureFamily;
 use crate::structures::{Poly, Shape};
-
-pub fn poly_boundary(
-    domain_size: &Vector3<f64>,
-    domain_size_increase: &Vector3<f64>,
-    layers: &[f64],
-    regions: &[f64],
-    frac_fam: &FractureFamily,
-) -> Aabb {
-    let (mins, maxs) = if frac_fam.layer == 0 && frac_fam.region == 0 {
-        // The family layer is the whole domain
-        let mins = (-domain_size - domain_size_increase) / 2.;
-        let maxs = (domain_size + domain_size_increase) / 2.;
-        (mins, maxs)
-    } else if frac_fam.layer > 0 && frac_fam.region == 0 {
-        // Family belongs to a certain layer, frac_fam.layer is > zero
-        // Layers start at 1, but the array of layers start at 0, hence
-        // the subtraction by 1
-        // Layer 0 is reservered to be the entire domain
-        let layer_idx = (frac_fam.layer - 1) * 2;
-        let _mins = (-domain_size - domain_size_increase) / 2.;
-        let _maxs = (domain_size + domain_size_increase) / 2.;
-        // Layers only apply to z coordinates
-        let mins = Vector3::new(_mins.x, _mins.y, layers[layer_idx]);
-        let maxs = Vector3::new(_maxs.x, _maxs.y, layers[layer_idx + 1]);
-        (mins, maxs)
-    } else if frac_fam.layer == 0 && frac_fam.region > 0 {
-        let region_idx = (frac_fam.region - 1) * 6;
-        let mins = Vector3::new(
-            regions[region_idx],
-            regions[region_idx + 2],
-            regions[region_idx + 4],
-        );
-        let maxs = Vector3::new(
-            regions[region_idx + 1],
-            regions[region_idx + 3],
-            regions[region_idx + 5],
-        );
-        (mins, maxs)
-    } else {
-        error!("Layer and Region both defined for this Family.");
-        panic!()
-    };
-
-    Aabb::new(mins.into(), maxs.into())
-}
 
 /// Initialize Rectangular Vertices
 ///
@@ -138,10 +90,6 @@ pub fn initialize_ell_vertices(
 #[allow(clippy::too_many_arguments)]
 pub fn re_translate_poly(
     eps: f64,
-    domain_size: &Vector3<f64>,
-    domain_size_increase: &Vector3<f64>,
-    layers: &[f64],
-    regions: &[f64],
     new_poly: &mut Poly,
     frac_fam: &FractureFamily,
     generator: Rc<RefCell<Mt64>>,
@@ -161,8 +109,7 @@ pub fn re_translate_poly(
         }
 
         // Translate to new position
-        let bbox = poly_boundary(domain_size, domain_size_increase, layers, regions, frac_fam);
-        let t = random_position(bbox, generator.clone());
+        let t = random_position(frac_fam.boundary, generator.clone());
 
         // Translate - will also set translation vector in poly structure
         translate(new_poly, t);
@@ -240,8 +187,7 @@ pub fn re_translate_poly(
         new_poly.normal = normal_b;
         // Translate to new position
         // Translate() will also set translation vector in poly structure
-        let bbox = poly_boundary(domain_size, domain_size_increase, layers, regions, frac_fam);
-        let t = random_position(bbox, generator.clone());
+        let t = random_position(frac_fam.boundary, generator.clone());
 
         translate(new_poly, t);
     }
