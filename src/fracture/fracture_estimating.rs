@@ -4,7 +4,7 @@ use rand::{distr::Uniform, Rng};
 use rand_mt::Mt64;
 use tracing::info;
 
-use crate::fracture::fracture_family::{FractureFamilyOption, RadiusOption};
+use crate::fracture::fracture_family::{FractureFamilyCollection, RadiusOption};
 use crate::fracture::insert_shape::re_translate_poly;
 use crate::io::input::Input;
 use crate::math_functions::{adjust_cdf_and_fam_prob, cumsum, index_from_prob_and_p32_status};
@@ -24,7 +24,7 @@ use crate::math_functions::{adjust_cdf_and_fam_prob, cumsum, index_from_prob_and
 /// * `generator` - Random number generator
 pub fn dry_run(
     input: &mut Input,
-    frac_families: &mut FractureFamilyOption,
+    frac_families: &mut FractureFamilyCollection,
     generator: Rc<RefCell<Mt64>>,
 ) {
     info!("Estimating number of fractures per family for defined fracture intensities (P32)...");

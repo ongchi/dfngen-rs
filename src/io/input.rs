@@ -3,7 +3,7 @@ use tracing::{error, info};
 
 use super::read_input_functions::read_domain_vertices;
 
-use crate::fracture::fracture_family::FractureFamilyOption;
+use crate::fracture::fracture_family::FractureFamilyCollection;
 use crate::io::read_input_functions::InputReader;
 
 #[derive(Default, Debug)]
@@ -209,7 +209,7 @@ pub struct Input {
 /// # Arguments
 ///
 /// * `input` - Path to input file
-pub fn read_input(input_file: &str) -> (Input, FractureFamilyOption) {
+pub fn read_input(input_file: &str) -> (Input, FractureFamilyCollection) {
     let mut input_var = Input::default();
     let mut fracture_families = Vec::new();
 
@@ -430,7 +430,7 @@ pub fn read_input(input_file: &str) -> (Input, FractureFamilyOption) {
 
     (
         input_var,
-        FractureFamilyOption {
+        FractureFamilyCollection {
             families: fracture_families,
             probabilities: fracture_family_probabilities.clone(),
             original_probabilities: fracture_family_probabilities,

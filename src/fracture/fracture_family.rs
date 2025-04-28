@@ -308,7 +308,7 @@ impl<'a> FractureFamilyBuilder<'a> {
     }
 }
 
-pub struct FractureFamilyOption {
+pub struct FractureFamilyCollection {
     pub families: Vec<FractureFamily>,
 
     // Each element is the probability of chosing a fracture from
@@ -320,7 +320,7 @@ pub struct FractureFamilyOption {
     pub original_probabilities: Vec<f64>,
 }
 
-impl FractureFamilyOption {
+impl FractureFamilyCollection {
     /// Generates a list of radii by distribution function of each family.
     pub fn generate_radii(
         &mut self,

@@ -7,7 +7,7 @@ use parry3d_f64::na::{distance, Point3, Vector3};
 use tracing::info;
 
 use crate::distribution::generating_points::discretize_line_of_intersection;
-use crate::fracture::fracture_family::FractureFamilyOption;
+use crate::fracture::fracture_family::FractureFamilyCollection;
 use crate::io::input::Input;
 use crate::math_functions::sorted_index;
 use crate::structures::{IntersectionPoints, Shape, Stats};
@@ -35,7 +35,7 @@ pub fn write_output(
     triple_points: &mut [Point3<f64>],
     pstats: &mut Stats,
     final_fractures: &[usize],
-    frac_families: &FractureFamilyOption,
+    frac_families: &FractureFamilyCollection,
 ) {
     let output = format!("{}/dfnGen_output", output_folder);
     info!("{}", output);
@@ -1111,7 +1111,7 @@ fn write_frac_fams(
     stop_condition: u8,
     layers: &[f64],
     regions: &[f64],
-    frac_families: &FractureFamilyOption,
+    frac_families: &FractureFamilyCollection,
     output: &str,
 ) {
     let rad_to_deg = 180. / std::f64::consts::PI;
@@ -1304,7 +1304,7 @@ fn write_rotation_data(
     domain_size: &Vector3<f64>,
     accepted_poly: &[Poly],
     final_fractures: &[usize],
-    frac_families: &FractureFamilyOption,
+    frac_families: &FractureFamilyCollection,
     output: &str,
 ) {
     let file_output_file = format!("{}/../poly_info.dat", output);
