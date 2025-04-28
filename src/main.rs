@@ -13,7 +13,7 @@ use rand_mt::Mt64;
 use tracing::{error, info, warn};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
-use crate::computational_geometry::{intersection_checking, polygon_boundary, remove_fractures};
+use crate::cg::intersection_checking;
 use crate::error::DfngenError;
 use crate::fracture::cluster_groups::get_cluster;
 use crate::fracture::fracture_estimating::dry_run;
@@ -26,7 +26,7 @@ use crate::math_functions::{
 };
 use crate::structures::{DFNGen, PolyOptions, RadiusFunction, Shape};
 
-mod computational_geometry;
+mod cg;
 mod distribution;
 mod error;
 mod fracture;
@@ -292,11 +292,7 @@ fn main() -> Result<(), DfngenError> {
                 // rejectCode = intersectionChecking(newPoly, acceptedPoly, intPts, pstats, triplePoints);
                 // Find line of intersection and FRAM check
                 reject_code = intersection_checking(
-                    input.h,
-                    input.eps,
-                    input.rFram,
-                    input.disableFram,
-                    input.tripleIntersections,
+                    &poly_opts,
                     &mut new_poly,
                     &mut dfngen.accepted_poly,
                     &mut dfngen.intpts,
@@ -559,7 +555,7 @@ fn main() -> Result<(), DfngenError> {
             input.removeFracturesLessThan
         );
         let size = dfngen.accepted_poly.len();
-        remove_fractures(input.removeFracturesLessThan, &poly_opts, &mut dfngen);
+        dfngen.remove_small_fractures(&poly_opts, input.removeFracturesLessThan);
         info!(
             "Removed {} fractures with radius less than {}",
             size - dfngen.accepted_poly.len(),
@@ -570,11 +566,10 @@ fn main() -> Result<(), DfngenError> {
     if input.polygonBoundaryFlag {
         info!("Extracting fractures from a polygon boundary domain");
         let size = dfngen.accepted_poly.len();
-        polygon_boundary(
+        dfngen.remove_fractures_beyond_domains(
             &poly_opts,
             input.numOfDomainVertices,
             &input.domainVertices,
-            &mut dfngen,
         );
         info!(
             "Removed {} fractures outside subdomain",

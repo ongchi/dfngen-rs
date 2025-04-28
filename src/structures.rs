@@ -5,9 +5,9 @@ use std::{cell::RefCell, fmt::Display};
 use parry3d_f64::na::{Point3, Vector3};
 use rand::Rng;
 use rand_mt::Mt64;
-use tracing::warn;
+use tracing::{error, info, warn};
 
-use crate::computational_geometry::intersection_checking;
+use crate::cg::{intersection_checking, is_in_boundary};
 use crate::distribution::{TruncExp, TruncLogNormal, TruncPowerLaw};
 use crate::error::DfngenError;
 use crate::fracture::insert_shape::print_reject_reason;
@@ -459,11 +459,7 @@ impl DFNGen {
         new_poly.assign_bounding_box();
         // Line of intersection and FRAM
         let reject_code = intersection_checking(
-            opts.h,
-            opts.eps,
-            opts.r_fram,
-            opts.disable_fram,
-            opts.triple_intersections,
+            opts,
             &mut new_poly,
             &mut self.accepted_poly,
             &mut self.intpts,
@@ -493,6 +489,150 @@ impl DFNGen {
 
             print_reject_reason(reject_code, &new_poly);
         }
+    }
+
+    /// Remove Fractures Smaller Than Minimum Size
+    ///
+    /// Function is designed to be used AFTER DFN generation
+    /// Originally created to compare the difference in distributions
+    /// if small fractures were removed after a DFN was generated
+    /// as opposed limiting their insertion during DFN generation.
+    ///
+    /// The minimum size options in the input files will still be used.
+    /// If the user wishes to also removeFractures after DFN generation,
+    /// 'minSize' here must be larger than the minimum size fractures in the
+    /// input file. Fratrues with radii less than 'minSize' will be removed
+    /// after DFN has been created.
+    ///
+    /// NOTE:
+    /// Must be executed before getCluster()
+    /// This funciton rebuilds the DFN. Using getCluster() before this
+    /// funciton executes causes undefined behavior.
+    pub fn remove_small_fractures(&mut self, opts: &PolyOptions, min_size: f64) {
+        let mut final_poly_list = Vec::new();
+        // Clear GroupData
+        self.pstats.group_data.clear();
+        // Clear FractGroup
+        self.pstats.fract_group.clear();
+        // Clear Triple Points
+        self.triple_points.clear();
+        // Clear IntPoints
+        self.intpts.clear();
+        // Re-init nextGroupNum
+        self.pstats.next_group_num = 1;
+
+        for poly in self.accepted_poly.iter_mut() {
+            if poly.xradius < min_size {
+                poly.vertices.clear();
+                continue;
+            }
+
+            let mut new_poly = poly.clone();
+            new_poly.group_num = 0; // Reset cluster group number
+            new_poly.intersection_index.clear(); // Remove ref to old intersections
+                                                 // Find line of intersection and FRAM check
+            let reject_code = intersection_checking(
+                opts,
+                &mut new_poly,
+                &mut final_poly_list,
+                &mut self.intpts,
+                &mut self.pstats,
+                &mut self.triple_points,
+            );
+
+            // IF POLY ACCEPTED:
+            if reject_code == 0 {
+                // Intersections are ok
+                // SAVING POLYGON (intersection and triple points saved witchin intersectionChecking())
+                final_poly_list.push(new_poly); // SAVE newPoly to accepted polys list
+            } else {
+                // Poly rejected
+                warn!("Error rebuilding dfn, previously accepted fracture was rejected during DFN rebuild.");
+            }
+        }
+
+        info!("Rebuilding DFN complete.");
+        self.accepted_poly.clear();
+        self.accepted_poly.extend(final_poly_list);
+    }
+
+    /// Remove Fractures Outside 2D polygon domain
+    ///
+    /// Function is designed to be used AFTER DFN generation
+    /// Originally created to compare the difference in distributions
+    /// if small fractures were removed after a DFN was generated
+    /// as opposed limiting their insertion during DFN generation.
+    ///
+    /// The minimum size options in the input files will still be used.
+    /// If the user wishes to also removeFractures after DFN generation,
+    /// 'minSize' here must be larger than the minimum size fractures in the
+    /// input file. Fratrues with radii less than 'minSize' will be removed
+    /// after DFN has been created.
+    ///
+    /// # Arguments
+    ///
+    /// * `num_of_domain_vertices` - Number of vertices in the domain polygon
+    /// * `domain_vertices` -
+    pub fn remove_fractures_beyond_domains(
+        &mut self,
+        opts: &PolyOptions,
+        num_of_domain_vertices: usize,
+        domain_vertices: &[Point3<f64>],
+    ) {
+        let mut final_poly_list: Vec<Poly> = Vec::new();
+
+        // Clear GroupData
+        self.pstats.group_data.clear();
+        // Clear FractGroup
+        self.pstats.fract_group.clear();
+        // Clear Triple Points
+        self.triple_points.clear();
+        // Clear IntPoints
+        self.intpts.clear();
+        // Re-init nextGroupNum
+        self.pstats.next_group_num = 1;
+
+        for i in 0..self.accepted_poly.len() {
+            let x = self.accepted_poly[i].translation[0];
+            let y = self.accepted_poly[i].translation[1];
+
+            // cout << "fracture " << i + 1 << " center " << x << "," << y << endl;
+            if !is_in_boundary(num_of_domain_vertices, domain_vertices, x, y) {
+                self.accepted_poly.clear();
+                continue;
+            }
+
+            let new_poly = &mut self.accepted_poly[i];
+            new_poly.group_num = 0; // Reset cluster group number
+            new_poly.intersection_index.clear(); // Remove ref to old intersections
+                                                 // Find line of intersection and FRAM check
+            let reject_code = if opts.disable_fram {
+                0
+            } else {
+                intersection_checking(
+                    opts,
+                    new_poly,
+                    &mut final_poly_list,
+                    &mut self.intpts,
+                    &mut self.pstats,
+                    &mut self.triple_points,
+                )
+            };
+
+            // IF POLY ACCEPTED:
+            if reject_code == 0 {
+                // Intersections are ok
+                // SAVING POLYGON (intersection and triple points saved witchin intersectionChecking())
+                final_poly_list.push(new_poly.clone()); // SAVE newPoly to accepted polys list
+            } else {
+                // Poly rejected
+                error!("Error rebuilding dfn, previously accepted fracture was rejected during DFN rebuild.");
+            }
+        }
+
+        info!("Rebuilding DFN complete.");
+        self.accepted_poly.clear();
+        self.accepted_poly.extend(final_poly_list);
     }
 }
 

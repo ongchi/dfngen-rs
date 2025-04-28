@@ -3,7 +3,7 @@ mod domain_truncation;
 use parry3d_f64::na::Vector3;
 
 use crate::{
-    computational_geometry::{is_parallel, rotation_matrix},
+    cg::{is_parallel, rotation_matrix},
     distribution::generating_points::generate_theta,
 };
 

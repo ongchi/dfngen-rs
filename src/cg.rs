@@ -7,14 +7,8 @@ use crate::{
         poly::Poly,
     },
     math_functions::{max_elmt_idx, sorted_index, sum_dev_ary3},
-    structures::{IntersectionPoints, Stats, TriplePtTempData},
+    structures::{IntersectionPoints, PolyOptions, Stats, TriplePtTempData},
 };
-
-mod polygon_boundary;
-mod remove_fractures;
-
-pub use polygon_boundary::polygon_boundary;
-pub use remove_fractures::remove_fractures;
 
 // Check if two vectors are parallel
 pub fn is_parallel(v1: &Vector3<f64>, v2: &Vector3<f64>, eps: f64) -> bool {
@@ -437,7 +431,6 @@ fn fram(
     h: f64,
     eps: f64,
     r_fram: bool,
-    disable_fram: bool,
     triple_intersections: bool,
     int_pts: &mut IntersectionPoints,
     count: usize,
@@ -449,77 +442,76 @@ fn fram(
     triple_points: &[Point3<f64>],
     temp_int_pts: &[IntersectionPoints],
 ) -> i32 {
-    if !disable_fram {
-        /******* Check for intersection of length less than h *******/
-        if (int_pts.p1 - int_pts.p2).magnitude() < h {
-            //std::cout<<"\nrejectCode = -2: Intersection of length <= h.\n";
-            pstats.rejection_reasons.short_intersection += 1;
-            return -2;
+    /******* Check for intersection of length less than h *******/
+    if (int_pts.p1 - int_pts.p2).magnitude() < h {
+        //std::cout<<"\nrejectCode = -2: Intersection of length <= h.\n";
+        pstats.rejection_reasons.short_intersection += 1;
+        return -2;
+    }
+
+    if !r_fram {
+        /******************* distance to edges *****************/
+        // Reject if intersection shirnks < 'shrinkLimit'
+        let shrink_limit = 0.9 * (int_pts.p1 - int_pts.p2).magnitude();
+
+        if check_close_edge(new_poly, int_pts, shrink_limit, pstats, h, eps) {
+            // std::cout<<"\nrejectCode = -6: Fracture too close to another fracture's edge.\n";
+            pstats.rejection_reasons.close_to_edge += 1;
+            return -6;
         }
 
-        if !r_fram {
-            /******************* distance to edges *****************/
-            // Reject if intersection shirnks < 'shrinkLimit'
-            let shrink_limit = 0.9 * (int_pts.p1 - int_pts.p2).magnitude();
-
-            if check_close_edge(new_poly, int_pts, shrink_limit, pstats, h, eps) {
-                // std::cout<<"\nrejectCode = -6: Fracture too close to another fracture's edge.\n";
-                pstats.rejection_reasons.close_to_edge += 1;
-                return -6;
-            }
-
-            if check_close_edge(poly2, int_pts, shrink_limit, pstats, h, eps) {
-                // std::cout<<"\nrejectCode = -6: Fracture too close to another fracture's edge.\n";
-                pstats.rejection_reasons.close_to_edge += 1;
-                return -6;
-            }
-
-            /******* Intersection to Intersection Distance Checks ********/
-            // Check distance from new intersection to other intersections on
-            // poly2 (fracture newPoly is intersecting with)
-
-            if check_dist_to_old_intersections(int_pts_list, int_pts, poly2, h, eps) {
-                pstats.rejection_reasons.inter_close_to_inter += 1;
-                return -5;
-            }
-
-            // Check distance from new intersection to intersections already
-            // existing on newPoly
-            // Also checks for undetected triple points
-            if check_dist_to_new_intersections(temp_int_pts, int_pts, temp_data, h, eps) {
-                pstats.rejection_reasons.inter_close_to_inter += 1;
-                return -5;
-            }
+        if check_close_edge(poly2, int_pts, shrink_limit, pstats, h, eps) {
+            // std::cout<<"\nrejectCode = -6: Fracture too close to another fracture's edge.\n";
+            pstats.rejection_reasons.close_to_edge += 1;
+            return -6;
         }
 
-        /*************** Triple Intersection Checks *************/
-        // NOTE: for debugging, there are several rejection codes for triple intersections
-        // -14 <= rejCode <= -10 are for triple intersection rejections
-        let rej_code = check_for_triple_intersections(
-            h,
-            eps,
-            triple_intersections,
-            int_pts,
-            count,
-            int_pts_list,
-            poly2,
-            temp_data,
-            triple_points,
-        );
+        /******* Intersection to Intersection Distance Checks ********/
+        // Check distance from new intersection to other intersections on
+        // poly2 (fracture newPoly is intersecting with)
 
-        if rej_code != 0 && !r_fram {
-            pstats.rejection_reasons.triple += 1;
-            return rej_code;
+        if check_dist_to_old_intersections(int_pts_list, int_pts, poly2, h, eps) {
+            pstats.rejection_reasons.inter_close_to_inter += 1;
+            return -5;
         }
 
-        // Check if polys intersect on same plane
-        if ((new_poly.normal[0] - poly2.normal[0]).abs()) < eps // If the normals are the same
+        // Check distance from new intersection to intersections already
+        // existing on newPoly
+        // Also checks for undetected triple points
+        if check_dist_to_new_intersections(temp_int_pts, int_pts, temp_data, h, eps) {
+            pstats.rejection_reasons.inter_close_to_inter += 1;
+            return -5;
+        }
+    }
+
+    /*************** Triple Intersection Checks *************/
+    // NOTE: for debugging, there are several rejection codes for triple intersections
+    // -14 <= rejCode <= -10 are for triple intersection rejections
+    let rej_code = check_for_triple_intersections(
+        h,
+        eps,
+        triple_intersections,
+        int_pts,
+        count,
+        int_pts_list,
+        poly2,
+        temp_data,
+        triple_points,
+    );
+
+    if rej_code != 0 && !r_fram {
+        pstats.rejection_reasons.triple += 1;
+        return rej_code;
+    }
+
+    // Check if polys intersect on same plane
+    if ((new_poly.normal[0] - poly2.normal[0]).abs()) < eps // If the normals are the same
                 && (new_poly.normal[1] - poly2.normal[1]).abs() < eps
                 && (new_poly.normal[2] - poly2.normal[2]).abs() < eps
-        {
-            return -7; // The intersection has already been found so we know that if the
-                       // normals are the same they must be on the same plane
-        }
+    {
+        // The intersection has already been found so we know that if the
+        // normals are the same they must be on the same plane
+        return -7;
     }
 
     0
@@ -744,11 +736,6 @@ fn shrink_intersection(
 ///
 /// # Arguments
 ///
-/// * `h` - Minimum feature size
-/// * `eps` - Epsilon value for floating point comparisons
-/// * `r_fram` - Uses a relaxed version of the FRAM algorithm. The mesh may not be perfectly conforming
-/// * `disable_fram` - If true, FRAM is disabled
-/// * `triple_intersections` - If true, triple intersections are accepted
 /// * `new_poly` - Polygon being tested (newest poly to come into the DFN)
 /// * `accepted_poly` - Array of all accepted polygons
 /// * `int_pts_list` - Array of all accepted intersections
@@ -760,13 +747,8 @@ fn shrink_intersection(
 /// * `i32`
 ///     0 - Fracture had no intersections or features violating the minimum feature size h (Passed all FRAM tests)
 ///     1 - Otherwise
-#[allow(clippy::too_many_arguments)]
 pub fn intersection_checking(
-    h: f64,
-    eps: f64,
-    r_fram: bool,
-    disable_fram: bool,
-    triple_intersections: bool,
+    opts: &PolyOptions,
     new_poly: &mut Poly,
     accepted_poly: &mut [Poly],
     int_pts_list: &mut Vec<IntersectionPoints>,
@@ -796,7 +778,7 @@ pub fn intersection_checking(
         // NOTE: findIntersections() searches bounding boxes
         // Bounding box search
         if check_bounding_box(new_poly, poly) {
-            intersection = find_intersections(&mut flag, new_poly, poly, eps);
+            intersection = find_intersections(&mut flag, new_poly, poly, opts.eps);
 
             if flag != 0 {
                 // If flag != 0, intersection exists
@@ -805,22 +787,25 @@ pub fn intersection_checking(
                 temp_original_intersection.push(intersection.clone());
                 // FRAM returns 0 if no intersection problems.
                 // 'count' is number of already accepted intersections on new poly
-                let reject_code = fram(
-                    h,
-                    eps,
-                    r_fram,
-                    disable_fram,
-                    triple_intersections,
-                    &mut intersection,
-                    count,
-                    int_pts_list,
-                    new_poly,
-                    poly,
-                    pstats,
-                    &mut temp_data,
-                    triple_points,
-                    &temp_int_pts,
-                );
+                let reject_code = if opts.disable_fram {
+                    0
+                } else {
+                    fram(
+                        opts.h,
+                        opts.eps,
+                        opts.r_fram,
+                        opts.triple_intersections,
+                        &mut intersection,
+                        count,
+                        int_pts_list,
+                        new_poly,
+                        poly,
+                        pstats,
+                        &mut temp_data,
+                        triple_points,
+                        &temp_int_pts,
+                    )
+                };
 
                 // If intersection is NOT rejected
                 if reject_code == 0 {
@@ -880,7 +865,7 @@ pub fn intersection_checking(
         // triple intersection points will be found 3 times (3 fractures make up one triple int point)
         // We need only to save the point to the permanent triplePoints array once, and then give each intersection a
         // reference to it.
-        if triple_intersections {
+        if opts.triple_intersections {
             let trip_index = triple_points.len();
 
             for (j, tri_pt_tmp) in temp_data.iter().enumerate() {
@@ -1395,4 +1380,66 @@ fn check_for_triple_intersections(
     }
 
     0
+}
+
+pub fn is_in_boundary(
+    num_of_domain_vertices: usize,
+    domain_vertices: &[Point3<f64>],
+    x: f64,
+    y: f64,
+) -> bool {
+    // Checks if a point is within the polygon domain using a ray casting algorithm.
+    // 1) create a parametric equation for a ray coming from the new Points
+    // * r(x) = newPoint.x + t * 1
+    // * r(y) = newPoint.y + t * 1
+    // * * This ray just goes along the x axis
+    // * 2) loop through initial vertices of the polygon.
+    // * Create a parametric equation for each edge
+    // * l(x) = x + u * mx
+    // * l(y) = y + u * my
+    // * 3) find point of intersection between the two rays
+    // * 4) determine if the point is on the boundary of the polygon.
+    // * 5) count the number of times the ray emitting from the point crosses the boundary of the polygon
+    // * if the count is zero or even, the point is outside the domain,
+    // * if the count is odd, the point is inside the domain
+    //
+    // Ray Casting adapted from
+    //
+    // https://wrf.ecse.rpi.edu/Research/Short_Notes/pnpoly.html#The%20Inequality%20Tests%20are%20Tricky
+    //
+    // License to Use
+    //
+    // Copyright (c) 1970-2003, Wm. Randolph Franklin
+    //
+    // Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+    //
+    // Redistributions of source code must retain the above copyright notice, this list of conditions and the following disclaimers.
+    // Redistributions in binary form must reproduce the above copyright notice in the documentation and/or other materials provided with the distribution.
+    // The name of W. Randolph Franklin may not be used to endorse or promote products derived from this Software without specific prior written permission.
+    //
+    // THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+    //
+
+    let mut c = false;
+    let mut i = 0;
+    let mut j = num_of_domain_vertices - 1;
+    while i < num_of_domain_vertices {
+        if ((domain_vertices[i].y > y) != (domain_vertices[j].y > y))
+            && (x
+                < (domain_vertices[j].x - domain_vertices[i].x) * (y - domain_vertices[i].y)
+                    / (domain_vertices[j].y - domain_vertices[i].y)
+                    + domain_vertices[i].x)
+        {
+            // flips back and forth between 0 and 1
+            // will be 0 for no crossings or an even number of them
+            // will be 1 for odd number of crossings
+            c = !c;
+        }
+        j = i;
+        i += 1;
+    }
+
+    // If the number crossing is odd, then the point is inside of the domain.
+    // if the number crossing is zero or even, then the point is outside of the domain.
+    c
 }

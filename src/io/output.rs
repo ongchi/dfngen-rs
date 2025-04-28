@@ -11,7 +11,7 @@ use crate::fracture::fracture_family::FractureFamilyCollection;
 use crate::io::input::Input;
 use crate::math_functions::sorted_index;
 use crate::structures::{IntersectionPoints, Shape, Stats};
-use crate::{computational_geometry::poly_and_intersection_rotation_to_xy, fracture::poly::Poly};
+use crate::{cg::poly_and_intersection_rotation_to_xy, fracture::poly::Poly};
 
 /// Writes all output
 ///
