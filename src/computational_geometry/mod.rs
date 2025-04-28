@@ -2,72 +2,27 @@ use parry3d_f64::na::{distance, Point3, Translation3, Vector3};
 
 use crate::{
     error,
-    fracture::cluster_groups::{assign_group, update_groups},
+    fracture::{
+        cluster_groups::{assign_group, update_groups},
+        poly::Poly,
+    },
     math_functions::{max_elmt_idx, sorted_index, sum_dev_ary3},
-    structures::{IntersectionPoints, Poly, Stats, TriplePtTempData},
+    structures::{IntersectionPoints, Stats, TriplePtTempData},
 };
 
-mod domain_truncation;
 mod polygon_boundary;
 mod remove_fractures;
 
-pub use domain_truncation::domain_truncation;
 pub use polygon_boundary::polygon_boundary;
 pub use remove_fractures::remove_fractures;
 
 // Check if two vectors are parallel
-fn is_parallel(v1: &Vector3<f64>, v2: &Vector3<f64>, eps: f64) -> bool {
+pub fn is_parallel(v1: &Vector3<f64>, v2: &Vector3<f64>, eps: f64) -> bool {
     let dot_prod = v1.dot(v2);
     1. - eps < dot_prod && dot_prod < 1. + eps
 }
 
-/// 2D rotation matrix
-///
-/// Rotates poly around its normal vecotor on x-y plane
-/// Assumes poly is on x-y plane
-/// Assumes poly.numberOfNodes is set
-/// Angle must be in radians
-///
-/// # Arguments
-///
-/// * `new_poly` - Poly to be rotated
-/// * `angle` - Angle to rotate to
-pub fn apply_rotation2_d(new_poly: &mut Poly, angle: f64) {
-    let sin_calc = angle.sin();
-    let cos_calc = angle.cos();
-
-    // Rotates polygon on x-y plane counter-clockwise
-    for i in 0..new_poly.number_of_nodes {
-        let idx = (i * 3) as usize;
-        let x = new_poly.vertices[idx];
-        let y = new_poly.vertices[idx + 1];
-        new_poly.vertices[idx] = (x * cos_calc) + (y * sin_calc); // x
-        new_poly.vertices[idx + 1] = (x * -sin_calc) + (y * cos_calc); // y
-        new_poly.vertices[idx + 2] = 0.; // z
-    }
-}
-
-/// Translate
-///
-/// Translates 'newPoly' to 'translation'
-/// Assumes newPoly.numberOfNodes is initialized
-///
-/// # Arguments
-///
-/// * `new_poly` - Polygon to translate
-/// * `translation` - Translation (new x,y,z  position) double[3] array
-pub fn translate(new_poly: &mut Poly, translation: Vector3<f64>) {
-    new_poly.translation = translation;
-
-    for i in 0..new_poly.number_of_nodes {
-        let idx = (i * 3) as usize;
-        new_poly.vertices[idx] += translation.x;
-        new_poly.vertices[idx + 1] += translation.y;
-        new_poly.vertices[idx + 2] += translation.z;
-    }
-}
-
-fn rotation_matrix(normal_a: &Vector3<f64>, normal_b: &Vector3<f64>, eps: f64) -> [f64; 9] {
+pub fn rotation_matrix(normal_a: &Vector3<f64>, normal_b: &Vector3<f64>, eps: f64) -> [f64; 9] {
     //***************************************************
     // Note: Normals must be normalized by this point!!!!!!
     // Since vectors are normalized, sin = magnitude(AxB) and cos = A dot B
@@ -109,48 +64,6 @@ fn rotation_matrix(normal_a: &Vector3<f64>, normal_b: &Vector3<f64>, eps: f64) -
     } else {
         // normalA and normalB are parallel, return identity matrix
         [1., 0., 0., 0., 1., 0., 0., 0., 1.]
-    }
-}
-
-/// Applies a Rotation Matrix to poly vertices
-///
-/// RotMatrix = I + V + V^2((1-cos)/sin^2)) rotate to new normal
-///
-/// Rotates 'newPoly' from newPoly's current normal
-/// so that newPoly's new normal will be 'normalB'
-/// Assumes poly.numberOfPoints and newPoly.normal are initialized and normalized
-///
-/// # Arguments
-///
-/// * `new_poly` - Poly to be rotated
-/// * `normal_b` - Normal vector to rotate to
-/// * `eps` - Epsilon value for floating point comparisons
-pub fn apply_rotation3_d(new_poly: &mut Poly, normal_b: &Vector3<f64>, eps: f64) {
-    // Normals should already be normalized by this point!!!
-    let normal_a = new_poly.normal;
-
-    if !is_parallel(&normal_a, normal_b, eps) {
-        // NOTE: rotationMatrix() requires normals to be normalized
-        let r = rotation_matrix(&normal_a, normal_b, eps);
-
-        // Apply rotation to all vertices
-        for i in 0..new_poly.number_of_nodes {
-            let idx = (i * 3) as usize;
-
-            let x = new_poly.vertices[idx] * r[0]
-                + new_poly.vertices[idx + 1] * r[1]
-                + new_poly.vertices[idx + 2] * r[2];
-            let y = new_poly.vertices[idx] * r[3]
-                + new_poly.vertices[idx + 1] * r[4]
-                + new_poly.vertices[idx + 2] * r[5];
-            let z = new_poly.vertices[idx] * r[6]
-                + new_poly.vertices[idx + 1] * r[7]
-                + new_poly.vertices[idx + 2] * r[8];
-
-            new_poly.vertices[idx] = x;
-            new_poly.vertices[idx + 1] = y;
-            new_poly.vertices[idx + 2] = z;
-        }
     }
 }
 
@@ -264,36 +177,6 @@ pub fn poly_and_intersection_rotation_to_xy(
 
     new_poly.xyplane = true; // Mark poly being rotated to xy plane
     temp_intpts
-}
-
-/// Create Bounding box
-///
-/// Creates bounding box for polygon/fracture
-/// Sets bounding box in poly struct
-///
-/// # Arguments
-///
-/// * `new_poly` - Poly to create and set bounding box for
-pub fn create_bounding_box(new_poly: &mut Poly) {
-    // Initialize mins and maxs
-    let mut min_x = new_poly.vertices[0]; // x1
-    let mut max_x = min_x;
-    let mut min_y = new_poly.vertices[1]; // y1
-    let mut max_y = min_y;
-    let mut min_z = new_poly.vertices[2]; // z1
-    let mut max_z = min_z;
-
-    for i in 1..new_poly.number_of_nodes {
-        let idx = (i * 3) as usize;
-        max_x = f64::max(max_x, new_poly.vertices[idx]);
-        min_x = f64::min(min_x, new_poly.vertices[idx]);
-        max_y = f64::max(max_y, new_poly.vertices[idx + 1]);
-        min_y = f64::min(min_y, new_poly.vertices[idx + 1]);
-        max_z = f64::max(max_z, new_poly.vertices[idx + 2]);
-        min_z = f64::min(min_z, new_poly.vertices[idx + 2]);
-    }
-
-    new_poly.bounding_box = [min_x, max_x, min_y, max_y, min_z, max_z];
 }
 
 /// Check Bounding Box***************************

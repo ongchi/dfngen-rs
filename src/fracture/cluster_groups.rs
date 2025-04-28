@@ -3,8 +3,10 @@ use tracing::info;
 use crate::{
     error,
     math_functions::or,
-    structures::{FractureGroups, GroupData, Poly, Stats},
+    structures::{FractureGroups, GroupData, Stats},
 };
+
+use super::poly::Poly;
 
 //     This code goes through all the polygons accepted into the domain and returns the indexes to those polygons
 //     which match the users boundary faces option.

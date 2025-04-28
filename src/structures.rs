@@ -7,94 +7,11 @@ use rand::Rng;
 use rand_mt::Mt64;
 use tracing::warn;
 
-use crate::computational_geometry::{
-    create_bounding_box, domain_truncation, intersection_checking,
-};
+use crate::computational_geometry::intersection_checking;
 use crate::distribution::{TruncExp, TruncLogNormal, TruncPowerLaw};
 use crate::error::DfngenError;
 use crate::fracture::insert_shape::print_reject_reason;
-use crate::math_functions::get_area;
-
-#[derive(Clone, Default)]
-/// The Poly structre is used to create and store fracrures/polygons.
-pub struct Poly {
-    /// Number of nodes/vertices in the polygon.
-    pub number_of_nodes: isize,
-
-    /// Contains the index of the 'shapeFamilies' array in main() from which the fracture was
-    /// created from. If the polygon was created from user defined input, it will be marked
-    /// (-2 for user-rect, and -1 for user ell.
-    /// The stochastic shape family numbers start at 0 for the first family, and increase by
-    /// 1 for each addition family. Families are in the same order which they are defined in the
-    /// 'famProb' variable in the input file, starting with ellipse families, then rectangular families.
-    pub family_num: isize,
-
-    /// Fracture cluster number which the fracture belongs to. This variable is used to keep
-    /// track of fracture connectivity. When a fracture first intersects another fracture,
-    /// it inherits its cluster group number (groupNum). If a fracture does not intersect
-    /// any other fractures, it is given a new and unique cluster group number. When a
-    /// fracture bridges two different clusters, all clusters are merged to be have the
-    /// cluster group number of the first intersecting fracture.
-    pub group_num: usize,
-
-    /// Polygon area (Not calculated until after DFN generation has completed).
-    pub area: f64,
-
-    /// X-radius before fracture-domain truncation. In the case of rectangles, radius is
-    /// 1/2 the width of the polygon.
-    /// X-radius is equal to the value generated from randum distributions or given by the user
-    /// in the case of constant distributions and user-defined fractures.
-    pub xradius: f64,
-
-    /// Y-radius before fracture-domain truncation. In the case of rectangles, radius is 1/2
-    /// the width of the polygon.
-    /// Y-radius is equal to x-radius * aspect ratio (yradius = aspectRatio * xradius).
-    pub yradius: f64,
-
-    /// Aspect ratio of polygon before fracture-domain truncation. Must be value greater than zero.
-    pub aspect_ratio: f64,
-
-    /// Translation of polygon. This variable is set while building the polygon.
-    pub translation: Vector3<f64>,
-
-    /// Polygon normal. This variable is set while building the polygon.
-    pub normal: Vector3<f64>,
-
-    /// The bounding box of the polygon. Set with createBoundingBox().
-    /// Index Key:
-    /// [0]: x minimum, [1]: x maximum
-    /// [2]: y minimum, [3]: y maximum
-    /// [4]: z minimum, [5]: z maximum
-    pub bounding_box: [f64; 6],
-
-    /// Double array for which hold the polygon's vertices. Vertices are stored in a 1-D array.
-    /// e.g For n number of vertices, array will be: {x1, y1, z1, x2, y2, z2, ... , xn, yn, zn}
-    pub vertices: Vec<f64>,
-
-    /// The faces array contains flags (true/false) which denote which sides, if any, the polygon is touching.
-    /// True (not zero) - Polygon is touching a domain boundary.
-    /// False (0) - Polygon is not touching a domain boundary.
-    /// Index Key:
-    /// [0]: -x face, [1]: +x face
-    /// [2]: -y face, [3]: +y face
-    /// [4]: -z face, [5]: +z face
-    /// Touching boundary faces of the fractures group, not neccesarily the faces of the fracture
-    pub faces: [bool; 6],
-
-    /// When writing intersection points and poly vertices to output, we need them to be entirely on the x-y plane.
-    /// XYPlane is used for error checking. During intersection rotations, the polygon is rotated to
-    /// the x-y plane and it's vertices are changed within the Poly structure. Errors will occur if
-    /// the same polygon was to be rotated again because although the vertices are now on the x-y plane, the
-    /// normal is still the normal of the polygon in its 3D space. This variable prevents this from happening. */
-    pub xyplane: bool,
-
-    /// True if the polygon has been truncated, false otherwise. This variable is used for re-translating polygons.
-    /// If the polygon has been truncated, it must be re-built. Otherwise, it can simply be given a new translation. */
-    pub truncated: bool,
-
-    /// List of indices to the permanent intersection array ('intPts' in main()) which belong to this polygon.
-    pub intersection_index: Vec<usize>,
-}
+use crate::fracture::poly::Poly;
 
 pub struct RejectedUserFracture {
     pub id: usize,
@@ -525,7 +442,7 @@ impl DFNGen {
     pub fn insert_poly(&mut self, poly: Poly, poly_id: usize, family_id: i32, opts: &PolyOptions) {
         let mut new_poly = poly;
 
-        if domain_truncation(opts.h, opts.eps, &mut new_poly, &opts.domain_size) {
+        if new_poly.domain_truncation(opts.h, opts.eps, &opts.domain_size) {
             // Poly completely outside domain
             self.pstats.rejection_reasons.outside += 1;
             self.pstats.rejected_poly_count += 1;
@@ -539,7 +456,7 @@ impl DFNGen {
             return;
         }
 
-        create_bounding_box(&mut new_poly);
+        new_poly.assign_bounding_box();
         // Line of intersection and FRAM
         let reject_code = intersection_checking(
             opts.h,
@@ -563,7 +480,7 @@ impl DFNGen {
             // Incriment counter of accepted polys
             self.pstats.accepted_poly_count += 1;
             // Calculate poly's area
-            new_poly.area = get_area(&new_poly);
+            new_poly.assign_area();
             // Add new rejectsPerAttempt counter
             self.pstats.rejects_per_attempt.push(0);
             self.accepted_poly.push(new_poly); // Save newPoly to accepted polys list

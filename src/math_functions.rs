@@ -1,7 +1,4 @@
-use parry3d_f64::na::Vector3;
 use tracing::{error, warn};
-
-use crate::structures::Poly;
 
 /// Used for ORing arrays of bool for boundary face codes
 /// Expectes array size is 6.
@@ -90,79 +87,6 @@ pub fn sorted_index(vec: &[f64]) -> Vec<usize> {
     let mut v = vec.iter().enumerate().collect::<Vec<(usize, &f64)>>();
     v.sort_by(|a, b| (a.1).partial_cmp(b.1).unwrap());
     v.into_iter().map(|(i, _)| i).collect()
-}
-
-/// Get Poly's Area
-///
-/// Calculate exact area of polygon (after truncation)
-///
-/// Summary of algorithm:
-/// 1: Creates a point on the inside of the polygon (insidePt)
-/// 2: Uses 'insidePt' to create vectors to all outside vertices, breaking the polygon into triangles
-/// 3: Uses .5 * (magnitude of cross product) for each triangle for area calculation
-/// 4: Sums the areas for each trianlge for total area of polygon
-pub fn get_area(poly: &Poly) -> f64 {
-    if poly.number_of_nodes == 3 {
-        //area = 1/2 mag of xProd
-        let v1 = Vector3::new(
-            poly.vertices[3] - poly.vertices[0],
-            poly.vertices[4] - poly.vertices[1],
-            poly.vertices[5] - poly.vertices[2],
-        );
-        let v2 = Vector3::new(
-            poly.vertices[6] - poly.vertices[0],
-            poly.vertices[7] - poly.vertices[1],
-            poly.vertices[8] - poly.vertices[2],
-        );
-        let x_prod = v1.cross(&v2);
-
-        0.5 * x_prod.magnitude()
-    } else {
-        // More than 3 vertices
-        let mut poly_area = 0.; // For summing area over trianlges of polygon
-                                // Get coordinate within polygon
-        let idx_across = (poly.number_of_nodes / 2 * 3) as usize;
-        let inside_pt = [
-            poly.vertices[0] + (0.5 * (poly.vertices[idx_across] - poly.vertices[0])),
-            poly.vertices[1] + (0.5 * (poly.vertices[idx_across + 1] - poly.vertices[1])),
-            poly.vertices[2] + (0.5 * (poly.vertices[idx_across + 2] - poly.vertices[2])),
-        ];
-
-        for i in 0..poly.number_of_nodes - 1 {
-            let idx = (i * 3) as usize;
-            let v1 = Vector3::new(
-                poly.vertices[idx] - inside_pt[0],
-                poly.vertices[idx + 1] - inside_pt[1],
-                poly.vertices[idx + 2] - inside_pt[2],
-            );
-            let v2 = Vector3::new(
-                poly.vertices[idx + 3] - inside_pt[0],
-                poly.vertices[idx + 4] - inside_pt[1],
-                poly.vertices[idx + 5] - inside_pt[2],
-            );
-            let x_prod = v1.cross(&v2);
-            let area = 0.5 * x_prod.magnitude();
-            poly_area += area; // Accumulate area
-        }
-
-        // Last portion of polygon, insidePt to first vertice and insidePt to last vertice
-        let last = (3 * (poly.number_of_nodes - 1)) as usize;
-        let v1 = Vector3::new(
-            poly.vertices[0] - inside_pt[0],
-            poly.vertices[1] - inside_pt[1],
-            poly.vertices[2] - inside_pt[2],
-        );
-        let v2 = Vector3::new(
-            poly.vertices[last] - inside_pt[0],
-            poly.vertices[last + 1] - inside_pt[1],
-            poly.vertices[last + 2] - inside_pt[2],
-        );
-        let x_prod = v1.cross(&v2);
-        let area = 0.5 * x_prod.magnitude();
-        poly_area += area; // Accumulate area
-
-        poly_area
-    }
 }
 
 /// Index from Probability

@@ -6,69 +6,11 @@ use rand::Rng;
 use rand_mt::Mt64;
 use tracing::warn;
 
-use crate::computational_geometry::{apply_rotation2_d, apply_rotation3_d, translate};
-use crate::distribution::generating_points::{generate_theta, random_position};
+use crate::distribution::generating_points::random_position;
 use crate::fracture::fracture_family::FractureFamily;
-use crate::structures::{Poly, Shape};
+use crate::structures::Shape;
 
-/// Initialize Rectangular Vertices
-///
-/// Initializes vertices for rectangular poly using radius (1/2 x length)
-/// and aspcet ratio. (xradius = radius, yradius = radius * aspectRatio)
-/// Poly will be on x-y plane
-///
-/// # Arguments
-///
-/// * `new_poly` - Polygon to initialize vertices
-/// * `radius` - Radius (1/2 x dimension length)
-/// * `aspect_ratio` - Aspect ratio
-pub fn initialize_rect_vertices(new_poly: &mut Poly, radius: f64, aspect_ratio: f64) {
-    let x = radius;
-    let y = radius * aspect_ratio;
-    new_poly.xradius = x;
-    new_poly.yradius = y;
-    new_poly.aspect_ratio = aspect_ratio;
-    // Initialize vertices
-    new_poly.vertices.push(x);
-    new_poly.vertices.push(y);
-    new_poly.vertices.push(0.);
-    new_poly.vertices.push(-x);
-    new_poly.vertices.push(y);
-    new_poly.vertices.push(0.);
-    new_poly.vertices.push(-x);
-    new_poly.vertices.push(-y);
-    new_poly.vertices.push(0.);
-    new_poly.vertices.push(x);
-    new_poly.vertices.push(-y);
-    new_poly.vertices.push(0.);
-}
-
-/// Initialize Ellipse Vertices
-///
-/// Initializes ellipse vertices on x-y plane
-///
-/// # Arguments
-///
-/// * `new_poly` - Polygon to initialize
-/// * `radius` - Radius (xradius = radius. yradius = radius * aspectRatio)
-/// * `aspect_ratio` - Aspect ratio
-pub fn initialize_ell_vertices(
-    new_poly: &mut Poly,
-    radius: f64,
-    aspect_ratio: f64,
-    theta_list: &[f64],
-    num_points: usize,
-) {
-    new_poly.xradius = radius;
-    new_poly.yradius = radius * aspect_ratio;
-    new_poly.aspect_ratio = aspect_ratio;
-
-    for (_, theta) in theta_list.iter().enumerate().take(num_points) {
-        new_poly.vertices.push(radius * theta.cos());
-        new_poly.vertices.push(radius * aspect_ratio * theta.sin());
-        new_poly.vertices.push(0.);
-    }
-}
+use super::poly::Poly;
 
 /// Retranslate Polygon
 ///
@@ -80,14 +22,9 @@ pub fn initialize_ell_vertices(
 /// # Arguments
 ///
 /// * `eps` - Epsilon value for floating point comparisons
-/// * `domain_size` - Size of the domain
-/// * `domain_size_increase` - Increase in domain size
-/// * `layers` - Layers in the domain
-/// * `regions` - Regions in the domain
 /// * `new_poly` - Polygon
 /// * `frac_fam` - Fracture family structure which Polygon belongs to
 /// * `generator` - Random Generator
-#[allow(clippy::too_many_arguments)]
 pub fn re_translate_poly(
     eps: f64,
     new_poly: &mut Poly,
@@ -110,12 +47,10 @@ pub fn re_translate_poly(
 
         // Translate to new position
         let t = random_position(frac_fam.boundary, generator.clone());
-
-        // Translate - will also set translation vector in poly structure
-        translate(new_poly, t);
+        new_poly.translate(t);
     } else {
         // Poly was truncated, need to rebuild the polygon
-        new_poly.vertices = Vec::with_capacity(frac_fam.shape.number_of_nodes() as usize * 3);
+
         // Reset boundary faces (0 means poly is no longer touching a boundary)
         new_poly.faces[0] = false;
         new_poly.faces[1] = false;
@@ -128,45 +63,16 @@ pub fn re_translate_poly(
         new_poly.intersection_index.clear(); // Clear any saved intersections
         new_poly.number_of_nodes = frac_fam.shape.number_of_nodes() as isize;
 
-        match frac_fam.shape {
-            Shape::Ellipse(n) => {
-                let theta_list = generate_theta(
-                    frac_fam.aspect_ratio,
-                    match frac_fam.shape {
-                        Shape::Ellipse(n) => n as usize,
-                        Shape::Rectangle => 4,
-                    },
-                );
-                initialize_ell_vertices(
-                    new_poly,
-                    new_poly.xradius,
-                    frac_fam.aspect_ratio,
-                    &theta_list,
-                    n as usize,
-                );
-            }
-            Shape::Rectangle => {
-                // Rebuild poly at origin using previous size
-                new_poly.vertices.push(new_poly.xradius);
-                new_poly.vertices.push(new_poly.yradius);
-                new_poly.vertices.push(0.);
-                new_poly.vertices.push(-new_poly.xradius);
-                new_poly.vertices.push(new_poly.yradius);
-                new_poly.vertices.push(0.);
-                new_poly.vertices.push(-new_poly.xradius);
-                new_poly.vertices.push(-new_poly.yradius);
-                new_poly.vertices.push(0.);
-                new_poly.vertices.push(new_poly.xradius);
-                new_poly.vertices.push(-new_poly.yradius);
-                new_poly.vertices.push(0.);
-            }
-        }
+        new_poly.vertices.clear();
+        let tmp = match frac_fam.shape {
+            Shape::Ellipse(n) => Poly::new_ell(n as usize, new_poly.xradius, frac_fam.aspect_ratio),
+            Shape::Rectangle => Poly::new_rect(new_poly.xradius, new_poly.aspect_ratio),
+        };
+        new_poly.vertices.extend(tmp.vertices);
 
         // Save newPoly's previous normal vector and then reset poly normal to {0,0,1} for applyRotation3D function
         let normal_b = new_poly.normal;
-        new_poly.normal.x = 0.;
-        new_poly.normal.y = 0.;
-        new_poly.normal.z = 1.;
+        new_poly.normal = tmp.normal;
 
         // Initialize beta based on distrubution type: 0 = unifrom on [0,2PI], 1 = constant
         let beta = if !frac_fam.beta_distribution {
@@ -181,15 +87,15 @@ pub fn re_translate_poly(
         // Apply 2d rotation matrix, twist around origin
         // Assumes polygon on x-y plane
         // Angle must be in rad
-        apply_rotation2_d(new_poly, beta);
+        new_poly.rotation_2d(beta);
         // Rotates poly from {0,0,1} to normalB, NEED to save normalB to newPoly.normal afterwards
-        apply_rotation3_d(new_poly, &normal_b, eps);
+        new_poly.rotation_3d(&normal_b, eps);
         new_poly.normal = normal_b;
         // Translate to new position
         // Translate() will also set translation vector in poly structure
         let t = random_position(frac_fam.boundary, generator.clone());
 
-        translate(new_poly, t);
+        new_poly.translate(t);
     }
 }
 

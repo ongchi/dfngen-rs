@@ -4,7 +4,8 @@ use tracing::info;
 use crate::{
     computational_geometry::intersection_checking,
     error,
-    structures::{DFNGen, Poly, PolyOptions},
+    fracture::poly::Poly,
+    structures::{DFNGen, PolyOptions},
 };
 
 fn in_polygon_boundary(

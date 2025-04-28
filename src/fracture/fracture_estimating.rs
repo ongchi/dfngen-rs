@@ -4,13 +4,10 @@ use rand::{distr::Uniform, Rng};
 use rand_mt::Mt64;
 use tracing::info;
 
-use crate::computational_geometry::domain_truncation;
 use crate::fracture::fracture_family::{FractureFamilyOption, RadiusOption};
 use crate::fracture::insert_shape::re_translate_poly;
 use crate::io::input::Input;
-use crate::math_functions::{
-    adjust_cdf_and_fam_prob, cumsum, get_area, index_from_prob_and_p32_status,
-};
+use crate::math_functions::{adjust_cdf_and_fam_prob, cumsum, index_from_prob_and_p32_status};
 
 /// Estimate Number of Fractures When P32 Option is Used
 ///
@@ -96,7 +93,7 @@ pub fn dry_run(
         // Vector for storing intersection boundaries
         let mut reject = false;
 
-        while domain_truncation(input.h, input.eps, &mut new_poly, &input.domainSize) {
+        while new_poly.domain_truncation(input.h, input.eps, &input.domainSize) {
             // Poly is completely outside domain, or was truncated to
             // less than 3 vertices due to vertices being too close together
             reject_counter += 1; // Counter for re-trying a new translation
@@ -123,7 +120,7 @@ pub fn dry_run(
         }
 
         // Calculate poly's area
-        new_poly.area = get_area(&new_poly);
+        new_poly.assign_area();
 
         // Update P32
         if frac_families.families[family_index].layer_id == 0

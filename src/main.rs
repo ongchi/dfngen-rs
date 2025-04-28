@@ -13,10 +13,7 @@ use rand_mt::Mt64;
 use tracing::{error, info, warn};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
-use crate::computational_geometry::{
-    create_bounding_box, domain_truncation, intersection_checking, polygon_boundary,
-    remove_fractures,
-};
+use crate::computational_geometry::{intersection_checking, polygon_boundary, remove_fractures};
 use crate::error::DfngenError;
 use crate::fracture::cluster_groups::get_cluster;
 use crate::fracture::fracture_estimating::dry_run;
@@ -25,7 +22,7 @@ use crate::fracture::insert_user_defined_fractures;
 use crate::io::input::read_input;
 use crate::io::output::write_output;
 use crate::math_functions::{
-    adjust_cdf_and_fam_prob, cumsum, get_area, index_from_prob, index_from_prob_and_p32_status,
+    adjust_cdf_and_fam_prob, cumsum, index_from_prob, index_from_prob_and_p32_status,
 };
 use crate::structures::{DFNGen, PolyOptions, RadiusFunction, Shape};
 
@@ -266,7 +263,7 @@ fn main() -> Result<(), DfngenError> {
             while reject_code != 0 {
                 // Truncate poly if needed
                 // 1 if poly is outside of domain or has less than 3 vertices
-                if domain_truncation(input.h, input.eps, &mut new_poly, &input.domainSize) {
+                if new_poly.domain_truncation(input.h, input.eps, &input.domainSize) {
                     // Poly was completely outside domain, or was truncated to less than
                     // 3 vertices due to vertices being too close together
                     dfngen.pstats.rejection_reasons.outside += 1;
@@ -291,7 +288,7 @@ fn main() -> Result<(), DfngenError> {
                 }
 
                 // Create/assign bounding box
-                create_bounding_box(&mut new_poly);
+                new_poly.assign_bounding_box();
                 // Find line of intersection and FRAM check
                 // rejectCode = intersectionChecking(newPoly, acceptedPoly, intPts, pstats, triplePoints);
                 // Find line of intersection and FRAM check
@@ -322,7 +319,7 @@ fn main() -> Result<(), DfngenError> {
                     }
 
                     // Calculate poly's area
-                    new_poly.area = get_area(&new_poly);
+                    new_poly.assign_area();
 
                     // Update P32
                     if frac_fam_opt.families[family_index].layer_id == 0
@@ -638,7 +635,7 @@ fn main() -> Result<(), DfngenError> {
         dfngen.accepted_poly.len() - final_fractures.len()
     );
     info!(
-        "Fractures before isolated fractures removed:: {}",
+        "Fractures before isolated fractures removed: {}",
         dfngen.accepted_poly.len()
     );
     // Reset totalArea to 0

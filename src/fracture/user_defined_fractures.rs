@@ -4,15 +4,14 @@ use itertools::zip_eq;
 use parry3d_f64::na::{distance, Point3, Vector3};
 use text_io::read;
 
-use crate::computational_geometry::{apply_rotation2_d, apply_rotation3_d, translate};
-use crate::distribution::generating_points::generate_theta;
 use crate::error::DfngenError;
-use crate::fracture::insert_shape::{initialize_ell_vertices, initialize_rect_vertices};
 use crate::io::{
     input::ExternalFractureFiles,
     read_input_functions::{search_var, ReadFromTextFile, UserFractureReader},
 };
-use crate::structures::{DFNGen, Poly, PolyOptions};
+use crate::structures::{DFNGen, PolyOptions};
+
+use super::poly::Poly;
 
 pub fn insert_user_defined_fractures(
     rect_first: bool,
@@ -407,53 +406,34 @@ impl FractureDef {
 
 impl TryInto<Poly> for FractureDef {
     type Error = DfngenError;
+
     fn try_into(self) -> Result<Poly, Self::Error> {
         let is_rect = self.num_nodes == 0;
 
-        let number_of_nodes = if is_rect { 4 } else { self.num_nodes as isize };
         let family_num = if is_rect { -2 } else { -1 };
         let normal = Vector3::from_row_slice(&self.normal);
 
-        let mut new_poly = Poly {
-            // Set number of nodes. Needed for rotations.
-            family_num,
-            number_of_nodes,
-            // Initialize normal to {0,0,1}. need initialized for 3D rotation
-            normal: Vector3::new(0., 0., 1.),
-            translation: Vector3::from_row_slice(&self.translation),
-            vertices: Vec::with_capacity(number_of_nodes as usize * 3),
-            ..Default::default()
-        };
-
-        if is_rect {
-            // initialize_rect_vertices() sets newpoly.xradius, newpoly.yradius, newpoly.aperture
-            initialize_rect_vertices(&mut new_poly, self.radius, self.aspect_ratio);
+        let mut new_poly = if is_rect {
+            Poly::new_rect(self.radius, self.aspect_ratio)
         } else {
-            // Generate theta array used to place vertices
-            let theta_ary = generate_theta(self.aspect_ratio, self.num_nodes);
-            // Initialize vertices on x-y plane
-            initialize_ell_vertices(
-                &mut new_poly,
-                self.radius,
-                self.aspect_ratio,
-                &theta_ary,
-                self.num_nodes,
-            );
-        }
+            Poly::new_ell(self.num_nodes, self.radius, self.aspect_ratio)
+        };
+        new_poly.family_num = family_num;
+        new_poly.translation = Vector3::from_row_slice(&self.translation);
 
         // Apply 2d rotation matrix, twist around origin
         // Assumes polygon on x-y plane
         // Angle must be in rad
-        apply_rotation2_d(&mut new_poly, self.beta);
+        new_poly.rotation_2d(self.beta);
 
         // Rotate vertices to uenormal[index] (new normal)
-        apply_rotation3_d(&mut new_poly, &normal, self.eps);
+        new_poly.rotation_3d(&normal, self.eps);
 
         // Save newPoly's new normal vector
         new_poly.normal = normal;
 
         // Translate newPoly to uetranslation
-        translate(&mut new_poly, Vector3::from_row_slice(&self.translation));
+        new_poly.translate(Vector3::from_row_slice(&self.translation));
 
         Ok(new_poly)
     }

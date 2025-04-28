@@ -6,13 +6,13 @@ use rand::Rng;
 use rand_distr::Uniform;
 use rand_mt::Mt64;
 
-use crate::computational_geometry::{apply_rotation2_d, apply_rotation3_d, translate};
 use crate::distribution::generating_points::random_position;
-use crate::distribution::{generating_points::generate_theta, Fisher};
+use crate::distribution::Fisher;
 use crate::error::DfngenError;
-use crate::structures::{Poly, RadiusDistribution, Shape};
+use crate::structures::{RadiusDistribution, Shape};
 
-use super::insert_shape::{get_family_number, initialize_ell_vertices, initialize_rect_vertices};
+use super::insert_shape::get_family_number;
+use super::poly::Poly;
 
 /// FractureFamily is used to hold varibales for all types of stochastic shapes. During getInput(),
 /// all stochastic families for both recaangles and ellipses are parsed from the user input
@@ -103,34 +103,11 @@ impl FractureFamily {
         };
 
         // New polygon to build
-        let mut new_poly = Poly::default();
-        // Initialize normal to {0,0,1}. ( All polys start on x-y plane )
-        new_poly.normal = Vector3::new(0., 0., 1.);
-        new_poly.number_of_nodes = self.shape.number_of_nodes() as isize;
-        new_poly.vertices = Vec::with_capacity((3 * new_poly.number_of_nodes) as usize); //numPoints*{x,y,z}
+        let mut new_poly = match self.shape {
+            Shape::Ellipse(n) => Poly::new_ell(n as usize, radius, self.aspect_ratio),
+            Shape::Rectangle => Poly::new_rect(radius, self.aspect_ratio),
+        };
         new_poly.family_num = fam_idx as isize;
-
-        match self.shape {
-            Shape::Ellipse(n) => {
-                let theta_list = generate_theta(
-                    self.aspect_ratio,
-                    match self.shape {
-                        Shape::Ellipse(n) => n as usize,
-                        Shape::Rectangle => 4,
-                    },
-                );
-                initialize_ell_vertices(
-                    &mut new_poly,
-                    radius,
-                    self.aspect_ratio,
-                    &theta_list,
-                    n as usize,
-                );
-            }
-            Shape::Rectangle => {
-                initialize_rect_vertices(&mut new_poly, radius, self.aspect_ratio);
-            }
-        }
 
         // Initialize beta based on distrubution type: 0 = unifrom on [0,2PI], 1 = constant
         let beta = if !self.beta_distribution {
@@ -143,18 +120,18 @@ impl FractureFamily {
         // Apply 2d rotation matrix, twist around origin
         // assumes polygon on x-y plane
         // Angle must be in rad
-        apply_rotation2_d(&mut new_poly, beta);
+        new_poly.rotation_2d(beta);
 
         // Rotate vertices to norm (new normal)
         let norm = self.normal_vector(generator.clone()).normalize();
-        apply_rotation3_d(&mut new_poly, &norm, eps);
+        new_poly.rotation_3d(&norm, eps);
 
         // Save newPoly's new normal vector
         new_poly.normal = norm;
 
         // Translate - will also set translation vector in poly structure
         let position = random_position(self.boundary, generator.clone());
-        translate(&mut new_poly, position);
+        new_poly.translate(position);
 
         new_poly
     }
