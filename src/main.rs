@@ -17,7 +17,7 @@ use crate::computational_geometry::{intersection_checking, polygon_boundary, rem
 use crate::error::DfngenError;
 use crate::fracture::cluster_groups::get_cluster;
 use crate::fracture::fracture_estimating::dry_run;
-use crate::fracture::insert_shape::{get_family_number, print_reject_reason, re_translate_poly};
+use crate::fracture::insert_shape::{print_reject_reason, re_translate_poly};
 use crate::fracture::insert_user_defined_fractures;
 use crate::io::input::read_input;
 use crate::io::output::write_output;
@@ -236,7 +236,6 @@ fn main() -> Result<(), DfngenError> {
 
             let mut new_poly = frac_fam_opt.families[family_index].create_poly(
                 input.eps,
-                input.nFamEll,
                 family_index,
                 RadiusOption::FromCacheOrRng,
                 generator.clone(),
@@ -379,21 +378,16 @@ fn main() -> Result<(), DfngenError> {
                         );
                         info!("Current p32 values per family:");
 
-                        for (i, shape) in frac_fam_opt.families.iter().enumerate() {
+                        for shape in &frac_fam_opt.families {
                             if input.stopCondition == 0 {
                                 info!(
                                     "{} family {} Current P32 = {:.8}",
-                                    shape.shape,
-                                    get_family_number(input.nFamEll, i as isize, shape.shape),
-                                    shape.current_p32
+                                    shape.shape, shape.id, shape.current_p32
                                 );
                             } else {
                                 info!(
                                     "{} family {} target P32 = {:.8}, Current P32 = {}",
-                                    shape.shape,
-                                    get_family_number(input.nFamEll, i as isize, shape.shape),
-                                    shape.p32_target,
-                                    shape.current_p32
+                                    shape.shape, shape.id, shape.p32_target, shape.current_p32
                                 );
                             }
 
@@ -824,18 +818,12 @@ fn main() -> Result<(), DfngenError> {
         for (i, shape) in frac_fam_opt.families.iter().enumerate() {
             match shape.radius.function {
                 RadiusFunction::Constant(_) => {
-                    info!(
-                        "{} Family {} Using constant size",
-                        shape.shape,
-                        get_family_number(input.nFamEll, i as isize, shape.shape)
-                    );
+                    info!("{} Family {} Using constant size", shape.shape, shape.id);
                 }
                 _ => {
                     info!(
                         "{} Family {} Estimated: {}",
-                        shape.shape,
-                        get_family_number(input.nFamEll, i as isize, shape.shape),
-                        dfngen.pstats.expected_from_fam[i]
+                        shape.shape, shape.id, dfngen.pstats.expected_from_fam[i]
                     );
 
                     info!(

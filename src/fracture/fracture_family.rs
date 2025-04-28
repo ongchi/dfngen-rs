@@ -5,19 +5,21 @@ use parry3d_f64::na::Vector3;
 use rand::Rng;
 use rand_distr::Uniform;
 use rand_mt::Mt64;
+use tracing::error;
 
 use crate::distribution::generating_points::random_position;
 use crate::distribution::Fisher;
 use crate::error::DfngenError;
 use crate::structures::{RadiusDistribution, Shape};
 
-use super::insert_shape::get_family_number;
 use super::poly::Poly;
 
 /// FractureFamily is used to hold varibales for all types of stochastic shapes. During getInput(),
 /// all stochastic families for both recaangles and ellipses are parsed from the user input
 /// and are placed in a Shape structure array.
 pub struct FractureFamily {
+    pub id: usize,
+
     pub shape: Shape,
 
     pub radius: RadiusDistribution,
@@ -71,11 +73,9 @@ impl FractureFamily {
         rng.borrow_mut().sample(&self.orientation)
     }
 
-    #[allow(clippy::too_many_arguments)]
     pub fn create_poly(
         &mut self,
         eps: f64,
-        n_fam_ell: usize,
         fam_idx: usize,
         radius_opt: RadiusOption,
         generator: Rc<RefCell<Mt64>>,
@@ -86,11 +86,15 @@ impl FractureFamily {
                     // If out of radii from list, insert random radius
                     match self.radius.sample(generator.clone()) {
                         Ok(radius) => radius,
-                        Err(_) => panic!(
+                        Err(e) => {
+                            error!("");
+                            error!("{}", e);
+                            panic!(
                                 "distribution for {} family {} has been unable to generate a fracture with radius within set parameters after 1000 consecutive tries.",
                                 &self.shape,
-                                get_family_number(n_fam_ell, fam_idx as isize, self.shape),
-                            )
+                                self.id
+                            );
+                        }
                     }
                 } else {
                     // Insert radius from list
@@ -139,6 +143,7 @@ impl FractureFamily {
 
 #[derive(Default)]
 pub struct FractureFamilyBuilder<'a> {
+    id: Option<usize>,
     number_of_nodes: Option<u8>,
     radius: Option<RadiusDistribution>,
     orientation: Option<Fisher>,
@@ -158,6 +163,11 @@ impl<'a> FractureFamilyBuilder<'a> {
         Self {
             ..Default::default()
         }
+    }
+
+    pub fn id(&mut self, id: usize) -> &mut Self {
+        self.id = Some(id);
+        self
     }
 
     pub fn number_of_nodes(&mut self, number_of_nodes: u8) -> &mut Self {
@@ -275,6 +285,7 @@ impl<'a> FractureFamilyBuilder<'a> {
         let boundary = Aabb::new(mins.into(), maxs.into());
 
         Ok(FractureFamily {
+            id: self.id.take().ok_or("id is required".to_string())?,
             shape,
             radius: self.radius.take().ok_or("radius is required".to_string())?,
             radii_idx: 0,
@@ -340,14 +351,17 @@ impl FractureFamilyOption {
             for _ in 0..((self.probabilities[i] * n_poly as f64).ceil() as usize) {
                 match frac_fam.radius.sample(generator.clone()) {
                     Ok(radius) => frac_fam.radii_list.push(radius),
-                    Err(_) => {
-                        return Err(DfngenError::TooManySmallFractures {
-                            shape: frac_fam.shape,
-                            id: match frac_fam.shape {
+                    Err(e) => {
+                        error!(
+                            "Attempt to populate fracture radii: {} Family {}",
+                            frac_fam.shape,
+                            match frac_fam.shape {
                                 Shape::Ellipse(_) => ell_id,
                                 Shape::Rectangle => rect_id,
-                            },
-                        });
+                            }
+                        );
+                        error!("{}", e);
+                        return Err(e);
                     }
                 }
             }

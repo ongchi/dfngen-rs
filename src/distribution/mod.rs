@@ -8,9 +8,3 @@ pub use exp::TruncExp;
 pub use fisher::Fisher;
 pub use log_norm::TruncLogNormal;
 pub use power_law::TruncPowerLaw;
-
-#[derive(Debug, thiserror::Error)]
-pub enum SamplingError {
-    #[error("Sampling Error: bad parameters")]
-    BadParameters,
-}

@@ -7,7 +7,7 @@ use parry3d_f64::na::{distance, Point3, Vector3};
 use tracing::info;
 
 use crate::distribution::generating_points::discretize_line_of_intersection;
-use crate::fracture::{fracture_family::FractureFamilyOption, insert_shape::get_family_number};
+use crate::fracture::fracture_family::FractureFamilyOption;
 use crate::io::input::Input;
 use crate::math_functions::sorted_index;
 use crate::structures::{IntersectionPoints, Shape, Stats};
@@ -102,7 +102,6 @@ pub fn write_output(
         input.ext_fracture_files.user_rect_file.is_some(),
         input.ext_fracture_files.user_poly_by_coord_file.is_some(),
         input.stopCondition,
-        input.nFamEll,
         &input.layers,
         &input.regions,
         frac_families,
@@ -1110,7 +1109,6 @@ fn write_frac_fams(
     user_rectangles_on_off: bool,
     user_polygon_by_coord: bool,
     stop_condition: u8,
-    n_fam_ell: usize,
     layers: &[f64],
     regions: &[f64],
     frac_families: &FractureFamilyOption,
@@ -1140,15 +1138,8 @@ fn write_frac_fams(
 
     for (i, shape) in frac_families.families.iter().enumerate() {
         //name(rect or ell) and number of family
-        file.write_all(
-            format!(
-                "{} Family: {}\n",
-                shape.shape,
-                get_family_number(n_fam_ell, i as isize, shape.shape)
-            )
-            .as_bytes(),
-        )
-        .unwrap();
+        file.write_all(format!("{} Family: {}\n", shape.shape, shape.id).as_bytes())
+            .unwrap();
         file.write_all(format!("Global Family: {}\n", i + 1).as_bytes())
             .unwrap();
 

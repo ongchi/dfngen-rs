@@ -61,7 +61,6 @@ pub fn dry_run(
 
             frac_families.families[family_index].create_poly(
                 input.eps,
-                input.nFamEll,
                 family_index,
                 RadiusOption::MaxRadius,
                 generator.clone(),
@@ -81,7 +80,6 @@ pub fn dry_run(
 
             frac_families.families[family_index].create_poly(
                 input.eps,
-                input.nFamEll,
                 family_index,
                 RadiusOption::FromRng,
                 generator.clone(),

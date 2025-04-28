@@ -2,7 +2,7 @@ use rand::distr::Distribution;
 use rand_distr::LogNormal;
 use rand_distr::NormalError;
 
-use super::SamplingError;
+use crate::error::DfngenError;
 
 pub struct TruncLogNormal {
     min: f64,
@@ -21,8 +21,8 @@ impl TruncLogNormal {
     }
 }
 
-impl Distribution<Result<f64, SamplingError>> for TruncLogNormal {
-    fn sample<R: rand::Rng + ?Sized>(&self, rng: &mut R) -> Result<f64, SamplingError> {
+impl Distribution<Result<f64, DfngenError>> for TruncLogNormal {
+    fn sample<R: rand::Rng + ?Sized>(&self, rng: &mut R) -> Result<f64, DfngenError> {
         let mut value;
         let mut count = 1;
 
@@ -34,7 +34,7 @@ impl Distribution<Result<f64, SamplingError>> for TruncLogNormal {
             }
 
             if count == 1000 {
-                return Err(SamplingError::BadParameters);
+                return Err(DfngenError::InefficientSampling);
             }
 
             count += 1;

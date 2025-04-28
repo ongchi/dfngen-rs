@@ -158,24 +158,3 @@ pub fn print_reject_reason(reject_code: i32, new_poly: &Poly) {
         }
     }
 }
-
-/// Get Family Number
-///
-/// Turns the global family number into a number the user can more
-/// easily understand. The FractureFamily array contains both rectangle
-/// and ellipse families.
-/// For example: If FractureFamilies array has 3 families of ellipse
-/// families and 3 families of rectangle families: {ell, ell, ell, rect, rect, rect}
-/// If we want the local family number for index 3, it will return family 1, meaning
-/// the first rectangular family. This function is used in conjuntion with shapeType().
-///
-/// # Arguments
-///
-/// * `n_fam_ell` - Number of ellipse families
-/// * `family_index` - Family index which family belings to in main()'s 'shapeFamilies' array
-pub fn get_family_number(n_fam_ell: usize, family_index: isize, family_shape: Shape) -> isize {
-    match family_shape {
-        Shape::Ellipse(_) => family_index + 1,
-        Shape::Rectangle => family_index - n_fam_ell as isize + 1,
-    }
-}

@@ -1,7 +1,7 @@
 use rand::distr::{Distribution, Uniform};
 use std::sync::OnceLock;
 
-use super::SamplingError;
+use crate::error::DfngenError;
 
 static MAX_VALUE: OnceLock<f64> = OnceLock::new();
 
@@ -53,8 +53,8 @@ impl TruncExp {
     }
 }
 
-impl Distribution<Result<f64, SamplingError>> for TruncExp {
-    fn sample<R: rand::prelude::Rng + ?Sized>(&self, rng: &mut R) -> Result<f64, SamplingError> {
+impl Distribution<Result<f64, DfngenError>> for TruncExp {
+    fn sample<R: rand::prelude::Rng + ?Sized>(&self, rng: &mut R) -> Result<f64, DfngenError> {
         let mut value;
         let mut count = 1;
 
@@ -71,7 +71,7 @@ impl Distribution<Result<f64, SamplingError>> for TruncExp {
             }
 
             if count == 1000 {
-                return Err(SamplingError::BadParameters);
+                return Err(DfngenError::InefficientSampling);
             }
 
             count += 1;

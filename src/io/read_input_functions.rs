@@ -535,6 +535,7 @@ impl InputReader {
                 }
 
                 fracfam_builder
+                    .id(i + 1)
                     .radius(radius)
                     .aspect_ratio(aspect_ratio[i])
                     .orientation(orien)
