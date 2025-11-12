@@ -7,6 +7,7 @@ use crate::{
         poly::Poly,
     },
     math_functions::{max_elmt_idx, sorted_index, sum_dev_ary3},
+    spatial_index::{Octree, AABB},
     structures::{IntersectionPoints, PolyOptions, Stats, TriplePtTempData},
 };
 
@@ -1442,4 +1443,179 @@ pub fn is_in_boundary(
     // If the number crossing is odd, then the point is inside of the domain.
     // if the number crossing is zero or even, then the point is outside of the domain.
     c
+}
+
+/// Optimized intersection checking using spatial indexing (octree)
+///
+/// This function is identical to intersection_checking but uses a spatial index
+/// to quickly find candidate fractures instead of checking against all existing fractures.
+/// This provides significant speedup when the number of fractures is large.
+///
+/// # Arguments
+/// * `opts` - Polygon options (h, eps, domain_size, etc.)
+/// * `new_poly` - The new fracture polygon being tested
+/// * `accepted_poly` - Mutable slice of all accepted fractures
+/// * `int_pts_list` - Mutable list of intersection points
+/// * `pstats` - Mutable statistics structure
+/// * `triple_points` - Mutable list of triple intersection points
+/// * `spatial_index` - The octree spatial index for fast candidate queries
+///
+/// # Returns
+/// Returns 0 if the fracture is accepted, non-zero rejection code otherwise
+pub fn intersection_checking_with_spatial_index(
+    opts: &PolyOptions,
+    new_poly: &mut Poly,
+    accepted_poly: &mut [Poly],
+    int_pts_list: &mut Vec<IntersectionPoints>,
+    pstats: &mut Stats,
+    triple_points: &mut Vec<Point3<f64>>,
+    spatial_index: &Octree,
+) -> i32 {
+    // Get candidate fractures from spatial index instead of checking all
+    let new_poly_aabb = AABB::from_poly_bbox(&new_poly.bounding_box);
+    let candidate_indices = spatial_index.query_overlapping(&new_poly_aabb);
+
+    // List of fractures which new fracture intersected.
+    // Used to update fractures intersections and intersection count if newPoly is accepted
+    let mut temp_intersect_list = Vec::new();
+    let mut temp_int_pts = Vec::new();
+    let mut temp_original_intersection = Vec::new();
+    // Index to newPoly's position if accepted
+    let new_poly_index = accepted_poly.len();
+    // Index to intpts if newPoly intersections
+    let int_pts_index = int_pts_list.len();
+    let mut encountered_groups = Vec::new();
+    // Counts number of accepted intersections on newPoly.
+    let mut count = 0;
+    let mut temp_data = Vec::new();
+
+    // Only iterate over candidates from spatial index
+    for ii in candidate_indices {
+        if ii >= accepted_poly.len() {
+            continue;
+        }
+
+        let mut flag = 0;
+        let mut intersection;
+
+        let poly = &accepted_poly[ii];
+
+        // NOTE: findIntersections() searches bounding boxes
+        // Bounding box search - still do this for extra safety/accuracy
+        if check_bounding_box(new_poly, poly) {
+            intersection = find_intersections(&mut flag, new_poly, poly, opts.eps);
+
+            if flag != 0 {
+                // If flag != 0, intersection exists
+                // Holds origintal intersection, used to update stats on how much intersections were shortened
+                temp_original_intersection.push(intersection.clone());
+                // FRAM returns 0 if no intersection problems.
+                // 'count' is number of already accepted intersections on new poly
+                let reject_code = if opts.disable_fram {
+                    0
+                } else {
+                    fram(
+                        opts.h,
+                        opts.eps,
+                        opts.r_fram,
+                        opts.triple_intersections,
+                        &mut intersection,
+                        count,
+                        int_pts_list,
+                        new_poly,
+                        poly,
+                        pstats,
+                        &mut temp_data,
+                        triple_points,
+                        &temp_int_pts,
+                    )
+                };
+
+                // If intersection is NOT rejected
+                if reject_code == 0 {
+                    // If FRAM returned 0, everything is OK
+                    // Update group numbers, intersection indexes
+                    intersection.fract1 = ii as isize; // ii is the intersecting fracture
+                    intersection.fract2 = new_poly_index as isize;
+                    temp_intersect_list.push(ii); // Save fracture index
+                    new_poly.intersection_index.push(int_pts_index + count);
+                    count += 1;
+                    temp_int_pts.push(intersection);
+
+                    // If newPoly has not been assigned to a group, assign the group of the other intersecting fracture
+                    if new_poly.group_num == 0 {
+                        new_poly.group_num = poly.group_num;
+                    } else if new_poly.group_num != poly.group_num {
+                        // Poly bridged two different groups
+                        encountered_groups.push(poly.group_num);
+                    }
+                } else {
+                    // newPoly rejected
+                    return reject_code;
+                }
+            }
+        }
+    }
+
+    // Done searching intersections. All FRAM tests have passed. Polygon is accepted.
+    // After searching for intersections, if newPoly still has no intersection or group:
+    if new_poly.group_num == 0 {
+        // newPoly had no intersections. Assign it to its own/new group number
+        assign_group(new_poly, pstats, new_poly_index);
+    } else {
+        // Intersections exist and were accepted, newPoly already has group number
+        // Save temp. intersections to intPts (permanent array),
+        // Update all intersected polygons intersection-points index lists and intersection count
+        // Append temp intersection points array to permanent one
+        int_pts_list.extend(temp_int_pts.clone());
+
+        // Update poly's indexes to intersections list (intpts)
+        for i in 0..temp_intersect_list.len() {
+            // Update each intersected poly's intersection index
+            accepted_poly[temp_intersect_list[i]]
+                .intersection_index
+                .push(int_pts_index + i);
+        }
+
+        // Update intersection structures with triple intersection points
+        if opts.triple_intersections {
+            let trip_index = triple_points.len();
+
+            for (j, tri_pt_tmp) in temp_data.iter().enumerate() {
+                triple_points.push(tri_pt_tmp.triple_point);
+
+                // Update index pointers to the triple intersection points
+                for ii in 0..tri_pt_tmp.int_index.len() {
+                    let idx = tri_pt_tmp.int_index[ii];
+                    int_pts_list[idx].triple_points_idx.push(trip_index + j);
+                }
+            }
+        }
+
+        // Update group numbers
+        update_groups(
+            new_poly,
+            accepted_poly,
+            &encountered_groups,
+            pstats,
+            new_poly_index,
+        );
+    }
+
+    // Keep track of how much intersection length we're losing from shrinkIntersection()
+    // Calculate and store total original intersection length (all intersections)
+    // and actual intersection length, after intersection has been shortened.
+    for i in 0..temp_int_pts.len() {
+        let length =
+            (temp_original_intersection[i].p1 - temp_original_intersection[i].p2).magnitude();
+        pstats.original_length += length;
+
+        if temp_int_pts[i].intersection_shortened {
+            pstats.intersections_shortened += 1;
+            let new_length = (temp_int_pts[i].p1 - temp_int_pts[i].p2).magnitude();
+            pstats.discarded_length += length - new_length;
+        }
+    }
+
+    0 // Return 0 for acceptance
 }

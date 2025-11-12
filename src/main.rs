@@ -13,7 +13,7 @@ use rand_mt::Mt64;
 use tracing::{error, info, warn};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
-use crate::cg::intersection_checking;
+use crate::cg::intersection_checking_with_spatial_index;
 use crate::error::DfngenError;
 use crate::fracture::cluster_groups::get_cluster;
 use crate::fracture::fracture_estimating::dry_run;
@@ -24,6 +24,7 @@ use crate::io::output::write_output;
 use crate::math_functions::{
     adjust_cdf_and_fam_prob, cumsum, index_from_prob, index_from_prob_and_p32_status,
 };
+use crate::spatial_index::{Octree, AABB};
 use crate::structures::{DFNGen, PolyOptions, RadiusFunction, Shape};
 
 mod cg;
@@ -32,6 +33,7 @@ mod error;
 mod fracture;
 mod io;
 mod math_functions;
+mod spatial_index;
 mod structures;
 
 #[derive(Parser)]
@@ -210,6 +212,9 @@ fn main() -> Result<(), DfngenError> {
         // P32 requirement
         let mut p32_status = vec![false; total_families];
 
+        // Create spatial index (octree) for efficient intersection checking
+        let mut spatial_index = Octree::new(&input.domainSize);
+
         // ********* Begin stochastic fracture insertion ***********
         while (input.stopCondition == 0 && dfngen.pstats.accepted_poly_count < input.nPoly)
             || (input.stopCondition == 1 && p32_status.iter().any(|p| !p))
@@ -288,16 +293,15 @@ fn main() -> Result<(), DfngenError> {
 
                 // Create/assign bounding box
                 new_poly.assign_bounding_box();
-                // Find line of intersection and FRAM check
-                // rejectCode = intersectionChecking(newPoly, acceptedPoly, intPts, pstats, triplePoints);
-                // Find line of intersection and FRAM check
-                reject_code = intersection_checking(
+                // Find line of intersection and FRAM check using spatial indexing for efficiency
+                reject_code = intersection_checking_with_spatial_index(
                     &poly_opts,
                     &mut new_poly,
                     &mut dfngen.accepted_poly,
                     &mut dfngen.intpts,
                     &mut dfngen.pstats,
                     &mut dfngen.triple_points,
+                    &spatial_index,
                 );
 
                 // IF POLY ACCEPTED:
@@ -395,6 +399,10 @@ fn main() -> Result<(), DfngenError> {
 
                     // SAVING POLYGON (intersection and triple points saved witchin intersectionChecking())
                     dfngen.accepted_poly.push(new_poly.clone()); // SAVE newPoly to accepted polys list
+
+                    // Add the new fracture to the spatial index for faster future intersection checks
+                    let poly_aabb = AABB::from_poly_bbox(&new_poly.bounding_box);
+                    spatial_index.insert(dfngen.accepted_poly.len() - 1, &poly_aabb);
                 } else {
                     // Poly rejected
                     // Inc reject counter for current poly
