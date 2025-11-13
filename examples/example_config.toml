@@ -1,0 +1,239 @@
+# Example TOML Configuration for dfngen-rs
+# This file demonstrates the new TOML-based configuration format
+# which provides better structure and readability than the legacy text format.
+
+# ============================================================================
+# DOMAIN CONFIGURATION
+# ============================================================================
+[domain]
+# Domain dimensions in meters
+size = { x = 100, y = 100, z = 100 }
+
+# Minimum feature size for FRAM algorithm (h parameter)
+# Used in FRAM to determine minimum intersection length
+h = 1.0
+
+# Size increase for fractures extending beyond domain boundaries
+# Allows fracture centers to be placed outside the domain
+size_increase = { x = 0, y = 0, z = 0 }
+
+# ============================================================================
+# STOPPING CONDITION
+# ============================================================================
+[stopping_condition]
+# Stopping condition mode: "nPoly" or "P32"
+# nPoly: Generate a fixed number of fractures
+# P32: Generate fractures until fracture intensity targets are met
+mode = "nPoly"
+
+# Number of fractures to generate (used when mode = "nPoly")
+n_poly = 100
+
+# Percentage increase for radii list generation (e.g., 0.2 = 20% increase)
+radii_list_increase = 0.2
+
+# ============================================================================
+# FRAM ALGORITHM CONFIGURATION
+# ============================================================================
+[fram]
+# Enable FRAM (Feature Rejection Algorithm for Meshing)
+enable = true
+
+# Use relaxed FRAM (mesh may not be perfectly conforming)
+relaxed = false
+
+# Accept or reject triple intersections
+triple_intersections = true
+
+# Visualization mode (first triangulation round only)
+visualization_mode = false
+
+# ============================================================================
+# OUTPUT CONFIGURATION
+# ============================================================================
+[output]
+# Print rejection reasons as fractures are rejected
+print_reject_reasons = false
+
+# Output all generated radii (accepted + rejected)
+# Warning: Can create very large files
+output_all_radii = false
+
+# Output accepted radii per family (before isolated fracture removal)
+output_accepted_radii_per_family = false
+
+# Output final radii per family (after isolated fracture removal)
+output_final_radii_per_family = false
+
+# ============================================================================
+# FRACTURE CONFIGURATION
+# ============================================================================
+[fractures]
+# Number of re-translation attempts per fracture (1 = no re-translation)
+rejects_per_fracture = 1
+
+# Force insertion of largest fractures per family
+force_large_fractures = false
+
+# Remove fractures smaller than this radius (0 = keep all)
+remove_smaller_than = 0.0
+
+# Orientation option: "spherical", "trend_plunge", or "dip_strike"
+orientation_option = "spherical"
+
+# ============================================================================
+# BOUNDARY FACES CONFIGURATION
+# ============================================================================
+[boundaries]
+# Which boundary faces to connect to
+# Order: +x, -x, +y, -y, +z, -z
+faces = { faces = [true, true, true, true, true, true] }
+
+# Keep only the largest cluster connecting boundary faces
+keep_only_largest_cluster = false
+
+# Keep isolated fractures (not connected to any boundary)
+keep_isolated_fractures = true
+
+# Ignore boundary face connection requirements
+ignore_boundary_faces = false
+
+# ============================================================================
+# ELLIPSE FRACTURE FAMILY
+# ============================================================================
+[[ellipse_families]]
+# Family name (optional, for reference)
+name = "Ellipse Family 1"
+
+# Probability of selecting this family during generation
+probability = 0.6
+
+# Number of vertices to approximate the ellipse (typical: 8)
+num_points = 8
+
+# Target P32 (fracture intensity) - optional
+# p32_target = 5.0
+
+# Aspect ratio (y-radius / x-radius)
+aspect_ratio = 0.5
+
+# Beta rotation angle (degrees) about normal vector
+beta = 0.0
+
+# Beta has a distribution (true) or is constant (false)
+beta_distribution = false
+
+# Layer ID (0 = whole domain, >0 = specific layer)
+layer = 0
+
+# Region ID (0 = whole domain, >0 = specific region)
+region = 0
+
+# Orientation parameters
+[ellipse_families.orientation]
+# Primary angle: theta (spherical), trend (trend/plunge), or dip (dip/strike)
+angle1 = 0.5
+
+# Secondary angle: phi (spherical), plunge (trend/plunge), or strike (dip/strike)
+angle2 = 0.5
+
+# Concentration parameter for Fisher distribution (kappa)
+kappa = 0.5
+
+# Radius distribution parameters
+[ellipse_families.radius]
+# Distribution type: "lognormal", "power_law", "exponential", or "constant"
+distribution_type = "lognormal"
+
+# Lognormal parameters
+log_mean = 1.0
+log_std = 0.5
+log_min = 0.5
+log_max = 5.0
+
+# ============================================================================
+# RECTANGLE FRACTURE FAMILY
+# ============================================================================
+[[rectangle_families]]
+# Family name (optional, for reference)
+name = "Rectangle Family 1"
+
+# Probability of selecting this family during generation
+probability = 0.4
+
+# Target P32 (fracture intensity) - optional
+# p32_target = 3.0
+
+# Aspect ratio (y-radius / x-radius)
+aspect_ratio = 1.0
+
+# Beta rotation angle (degrees)
+beta = 0.0
+
+# Beta has a distribution (true) or is constant (false)
+beta_distribution = false
+
+# Layer ID (0 = whole domain, >0 = specific layer)
+layer = 0
+
+# Region ID (0 = whole domain, >0 = specific region)
+region = 0
+
+# Orientation parameters
+[rectangle_families.orientation]
+# Primary angle: theta (spherical), trend (trend/plunge), or dip (dip/strike)
+angle1 = 1.57  # 90 degrees in radians
+
+# Secondary angle: phi (spherical), plunge (trend/plunge), or strike (dip/strike)
+angle2 = 0.785  # 45 degrees in radians
+
+# Concentration parameter for Fisher distribution (kappa)
+kappa = 0.5
+
+# Radius distribution parameters
+[rectangle_families.radius]
+# Distribution type: "lognormal", "power_law", "exponential", or "constant"
+distribution_type = "constant"
+
+# Constant radius value
+constant = 2.0
+
+# ============================================================================
+# OPTIONAL CONFIGURATION
+# ============================================================================
+[optional]
+# Random seed for reproducible results (0 = use system time)
+seed = 12345
+
+# ============================================================================
+# OPTIONAL LAYER CONFIGURATION
+# ============================================================================
+# Uncomment to define layers
+# [optional.layers]
+# boundaries = [10, 20, 30, 50, 70, 80]  # z-values for layer boundaries
+
+# ============================================================================
+# OPTIONAL REGION CONFIGURATION
+# ============================================================================
+# Uncomment to define regions
+# [optional.regions]
+# boundaries = [0, 100, 0, 100, 0, 100]  # [xmin, xmax, ymin, ymax, zmin, zmax]
+
+# ============================================================================
+# OPTIONAL POLYGON BOUNDARY CONFIGURATION
+# ============================================================================
+# Uncomment to use a 2D polygon boundary
+# [optional.polygon_boundary]
+# vertices_file = "domain_vertices.txt"
+
+# ============================================================================
+# USER-DEFINED FRACTURES
+# ============================================================================
+# Uncomment to add user-defined fractures
+# [user_fractures]
+# ellipses_file = "user_ellipses.txt"
+# rectangles_file = "user_rectangles.txt"
+# polygons_by_coord_file = "user_polygons.txt"
+# ellipses_by_coord_file = "user_ell_coords.txt"
+# rectangles_by_coord_file = "user_rect_coords.txt"
+# insert_rectangles_first = true

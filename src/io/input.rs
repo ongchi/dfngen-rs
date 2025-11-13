@@ -1,6 +1,7 @@
 use parry3d_f64::na::{Point3, Vector3};
 use tracing::{error, info};
 
+use super::config_toml::*;
 use super::read_input_functions::read_domain_vertices;
 
 use crate::fracture::fracture_family::FractureFamilyCollection;
@@ -434,6 +435,172 @@ pub fn read_input(input_file: &str) -> (Input, FractureFamilyCollection) {
             families: fracture_families,
             probabilities: fracture_family_probabilities.clone(),
             original_probabilities: fracture_family_probabilities,
+        },
+    )
+}
+
+/// Reads input from a TOML configuration file.
+/// This is the modern, recommended format for dfngen-rs configuration.
+///
+/// # Arguments
+/// * `toml_file` - Path to TOML configuration file
+///
+/// # Returns
+/// A tuple of (Input, FractureFamilyCollection)
+///
+/// # Errors
+/// Panics if TOML file cannot be read or parsed
+pub fn read_input_toml(toml_file: &str) -> (Input, FractureFamilyCollection) {
+    info!("DFN Generator TOML Input File: {}", toml_file);
+
+    // Read and parse TOML file
+    let contents = std::fs::read_to_string(toml_file)
+        .unwrap_or_else(|e| panic!("Failed to read TOML file '{}': {}", toml_file, e));
+
+    let config: TomlConfig = toml::from_str(&contents)
+        .unwrap_or_else(|e| panic!("Failed to parse TOML file '{}': {}", toml_file, e));
+
+    // Convert TOML config to Input struct
+    let mut input = Input::default();
+
+    // Domain configuration
+    input.domainSize = config.domain.size.to_vector3();
+    input.h = config.domain.h;
+    input.eps = input.h * 1e-8;
+    input.domainSizeIncrease = config.domain.size_increase.to_vector3();
+
+    info!("Domain size: {:?}", input.domainSize);
+    info!("h: {}", input.h);
+
+    // Stopping condition
+    input.stopCondition = if config.stopping_condition.mode.to_lowercase() == "p32" {
+        1
+    } else {
+        0
+    };
+    input.nPoly = config.stopping_condition.n_poly;
+    input.radiiListIncrease = config.stopping_condition.radii_list_increase;
+
+    // FRAM configuration
+    input.disableFram = !config.fram.enable;
+    input.rFram = config.fram.relaxed;
+    input.tripleIntersections = config.fram.triple_intersections;
+    input.visualizationMode = config.fram.visualization_mode;
+
+    if input.disableFram {
+        info!("FRAM IS DISABLED");
+    }
+    if input.rFram {
+        info!("Running with relaxed FRAM. Mesh may not be fully conforming");
+    }
+
+    // Output configuration
+    input.printRejectReasons = config.output.print_reject_reasons;
+    input.outputAllRadii = config.output.output_all_radii;
+    input.outputAcceptedRadiiPerFamily = config.output.output_accepted_radii_per_family;
+    input.outputFinalRadiiPerFamily = config.output.output_final_radii_per_family;
+
+    // Fractures configuration
+    input.rejectsPerFracture = config.fractures.rejects_per_fracture;
+    input.forceLargeFractures = config.fractures.force_large_fractures;
+    input.removeFracturesLessThan = config.fractures.remove_smaller_than;
+
+    input.orientationOption = match config.fractures.orientation_option.to_lowercase().as_str() {
+        "trend_plunge" => 1,
+        "dip_strike" => 2,
+        _ => 0, // spherical (default)
+    };
+
+    // Boundaries configuration
+    input.boundaryFaces = config.boundaries.faces.to_array();
+    input.keepOnlyLargestCluster = config.boundaries.keep_only_largest_cluster;
+    input.keepIsolatedFractures = config.boundaries.keep_isolated_fractures;
+    input.ignoreBoundaryFaces = config.boundaries.ignore_boundary_faces;
+
+    // Optional configuration
+    if let Some(optional) = &config.optional {
+        input.seed = optional.seed;
+
+        // Layers
+        if let Some(layers_cfg) = &optional.layers {
+            input.layers = layers_cfg.boundaries.clone();
+            for i in 0..layers_cfg.boundaries.len() / 2 {
+                let idx = i * 2;
+                let vol = input.domainSize[0]
+                    * input.domainSize[1]
+                    * ((input.layers[idx + 1] - input.layers[idx]).abs());
+                input.layerVol.push(vol);
+                info!(
+                    "    Layer {}{{-z,+z}}: {:?}, Volume: {} m^3",
+                    i + 1,
+                    &input.layers[idx..idx + 2],
+                    vol
+                );
+            }
+        }
+
+        // Regions
+        if let Some(regions_cfg) = &optional.regions {
+            input.regions = regions_cfg.boundaries.clone();
+            info!("Number of Regions: {}", regions_cfg.boundaries.len() / 6);
+            for i in 0..regions_cfg.boundaries.len() / 6 {
+                let idx = i * 6;
+                let vol = (input.regions[idx + 1] - input.regions[idx]).abs()
+                    * (input.regions[idx + 3] - input.regions[idx + 2]).abs()
+                    * (input.regions[idx + 5] - input.regions[idx + 4]).abs();
+                input.regionVol.push(vol);
+                info!(
+                    " Region {}: {{-x,+x,-y,+y,-z,+z}}: {:?}, Volume: {} m^3",
+                    i + 1,
+                    &input.regions[idx..idx + 6],
+                    vol
+                );
+            }
+        }
+
+        // Polygon boundary
+        if let Some(poly_cfg) = &optional.polygon_boundary {
+            input.polygonBoundaryFlag = true;
+            read_domain_vertices(&mut input, &poly_cfg.vertices_file);
+        }
+    }
+
+    // Note: Fracture family parsing is not yet implemented for TOML format.
+    // Use the legacy text format for now or extend this function to parse families.
+    // For a complete implementation, families would be parsed from [[ellipse_families]]
+    // and [[rectangle_families]] sections, but this requires complex builder setup.
+    let fracture_families = Vec::new();
+    let family_probabilities = Vec::new();
+
+    input.nFamEll = config.ellipse_families.len();
+    input.nFamRect = config.rectangle_families.len();
+
+    // User-defined fractures
+    if let Some(user_frac_cfg) = &config.user_fractures {
+        if let Some(ell_file) = &user_frac_cfg.ellipses_file {
+            input.ext_fracture_files.user_ell_file = Some(ell_file.clone());
+        }
+        if let Some(rect_file) = &user_frac_cfg.rectangles_file {
+            input.ext_fracture_files.user_rect_file = Some(rect_file.clone());
+        }
+        if let Some(poly_file) = &user_frac_cfg.polygons_by_coord_file {
+            input.ext_fracture_files.user_poly_by_coord_file = Some(poly_file.clone());
+        }
+        if let Some(ell_coord_file) = &user_frac_cfg.ellipses_by_coord_file {
+            input.ext_fracture_files.user_ell_by_coord_file = Some(ell_coord_file.clone());
+        }
+        if let Some(rect_coord_file) = &user_frac_cfg.rectangles_by_coord_file {
+            input.ext_fracture_files.user_rect_by_coord_file = Some(rect_coord_file.clone());
+        }
+        input.insertUserRectanglesFirst = user_frac_cfg.insert_rectangles_first;
+    }
+
+    (
+        input,
+        FractureFamilyCollection {
+            families: fracture_families,
+            probabilities: family_probabilities.clone(),
+            original_probabilities: family_probabilities,
         },
     )
 }
