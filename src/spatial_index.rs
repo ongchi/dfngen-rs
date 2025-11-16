@@ -5,54 +5,20 @@
 /// we use an octree to quickly find candidate fractures that might intersect,
 /// reducing average case complexity to O(n log n).
 
-use parry3d_f64::na::Vector3;
+use parry3d_f64::bounding_volume::{Aabb, BoundingVolume};
+use parry3d_f64::na::{Point3, Vector3};
 
-/// Axis-Aligned Bounding Box (AABB)
-///
-/// Represents a box in 3D space defined by minimum and maximum corners.
-/// Compatible with the bounding_box format used in Poly: [xmin, xmax, ymin, ymax, zmin, zmax]
-#[derive(Clone, Copy, Debug)]
-pub struct AABB {
-    pub min: Vector3<f64>,
-    pub max: Vector3<f64>,
+/// Helper trait to extend parry3d's Aabb with utility methods
+pub trait AabbExt {
+    /// Create Aabb from the Poly bounding_box format: [xmin, xmax, ymin, ymax, zmin, zmax]
+    fn from_poly_bbox(bbox: &[f64; 6]) -> Self;
 }
 
-#[allow(dead_code)]
-impl AABB {
-    /// Create a new AABB from min and max points
-    pub fn new(min: Vector3<f64>, max: Vector3<f64>) -> Self {
-        Self { min, max }
-    }
-
-    /// Create AABB from the Poly bounding_box format: [xmin, xmax, ymin, ymax, zmin, zmax]
-    pub fn from_poly_bbox(bbox: &[f64; 6]) -> Self {
-        Self {
-            min: Vector3::new(bbox[0], bbox[2], bbox[4]),
-            max: Vector3::new(bbox[1], bbox[3], bbox[5]),
-        }
-    }
-
-    /// Check if this AABB overlaps with another AABB
-    #[inline]
-    pub fn overlaps(&self, other: &AABB) -> bool {
-        self.min.x <= other.max.x
-            && self.max.x >= other.min.x
-            && self.min.y <= other.max.y
-            && self.max.y >= other.min.y
-            && self.min.z <= other.max.z
-            && self.max.z >= other.min.z
-    }
-
-    /// Get the center of this AABB
-    #[inline]
-    pub fn center(&self) -> Vector3<f64> {
-        (self.min + self.max) / 2.0
-    }
-
-    /// Get the size (half-extent) of this AABB
-    #[inline]
-    pub fn half_size(&self) -> Vector3<f64> {
-        (self.max - self.min) / 2.0
+impl AabbExt for Aabb {
+    fn from_poly_bbox(bbox: &[f64; 6]) -> Self {
+        let min = Point3::new(bbox[0], bbox[2], bbox[4]);
+        let max = Point3::new(bbox[1], bbox[3], bbox[5]);
+        Aabb::new(min, max)
     }
 }
 
@@ -63,7 +29,7 @@ impl AABB {
 #[derive(Clone)]
 struct OctreeNode {
     /// Bounding box of this node
-    bounds: AABB,
+    bounds: Aabb,
     /// Indices of fractures stored at this node (if leaf)
     fracture_indices: Vec<usize>,
     /// Child nodes (8 octants: x-/x+, y-/y+, z-/z+)
@@ -74,7 +40,7 @@ struct OctreeNode {
 
 impl OctreeNode {
     /// Create a new leaf node
-    fn new_leaf(bounds: AABB) -> Self {
+    fn new_leaf(bounds: Aabb) -> Self {
         Self {
             bounds,
             fracture_indices: Vec::new(),
@@ -90,48 +56,48 @@ impl OctreeNode {
         }
 
         let center = self.bounds.center();
-        let _half_size = self.bounds.half_size();
+        let _half_size = self.bounds.half_extents();
 
         let mut children: Vec<OctreeNode> = Vec::with_capacity(8);
 
         // Create 8 child nodes for each octant
         for i in 0..8 {
             let min_x = if (i & 1) == 0 {
-                self.bounds.min.x
+                self.bounds.mins.x
             } else {
                 center.x
             };
             let max_x = if (i & 1) == 0 {
                 center.x
             } else {
-                self.bounds.max.x
+                self.bounds.maxs.x
             };
 
             let min_y = if (i & 2) == 0 {
-                self.bounds.min.y
+                self.bounds.mins.y
             } else {
                 center.y
             };
             let max_y = if (i & 2) == 0 {
                 center.y
             } else {
-                self.bounds.max.y
+                self.bounds.maxs.y
             };
 
             let min_z = if (i & 4) == 0 {
-                self.bounds.min.z
+                self.bounds.mins.z
             } else {
                 center.z
             };
             let max_z = if (i & 4) == 0 {
                 center.z
             } else {
-                self.bounds.max.z
+                self.bounds.maxs.z
             };
 
-            let child_bounds = AABB::new(
-                Vector3::new(min_x, min_y, min_z),
-                Vector3::new(max_x, max_y, max_z),
+            let child_bounds = Aabb::new(
+                Point3::new(min_x, min_y, min_z),
+                Point3::new(max_x, max_y, max_z),
             );
 
             let mut child = OctreeNode::new_leaf(child_bounds);
@@ -170,9 +136,9 @@ impl OctreeNode {
     }
 
     /// Insert a fracture index into this node, subdividing if necessary
-    fn insert(&mut self, fracture_idx: usize, bbox: &AABB) {
-        // If AABB doesn't overlap this node, don't insert
-        if !self.bounds.overlaps(bbox) {
+    fn insert(&mut self, fracture_idx: usize, bbox: &Aabb) {
+        // If Aabb doesn't overlap this node, don't insert
+        if !self.bounds.intersects(bbox) {
             return;
         }
 
@@ -197,17 +163,17 @@ impl OctreeNode {
         } else if let Some(children) = &mut self.children {
             // If internal node, insert into all overlapping children
             for child in children.iter_mut() {
-                if child.bounds.overlaps(bbox) {
+                if child.bounds.intersects(bbox) {
                     child.insert(fracture_idx, bbox);
                 }
             }
         }
     }
 
-    /// Query all fractures that might overlap with the given AABB
-    fn query(&self, bbox: &AABB, results: &mut Vec<usize>) {
+    /// Query all fractures that might overlap with the given Aabb
+    fn query(&self, bbox: &Aabb, results: &mut Vec<usize>) {
         // If this node doesn't overlap the query bbox, skip
-        if !self.bounds.overlaps(bbox) {
+        if !self.bounds.intersects(bbox) {
             return;
         }
 
@@ -241,22 +207,22 @@ pub struct Octree {
 impl Octree {
     /// Create a new octree covering the entire domain
     pub fn new(domain_size: &Vector3<f64>) -> Self {
-        let bounds = AABB::new(Vector3::zeros(), *domain_size);
+        let bounds = Aabb::new(Point3::origin(), Point3::new(domain_size.x, domain_size.y, domain_size.z));
         Self {
             root: OctreeNode::new_leaf(bounds),
         }
     }
 
     /// Insert a fracture at the given index with its bounding box
-    pub fn insert(&mut self, fracture_idx: usize, bbox: &AABB) {
+    pub fn insert(&mut self, fracture_idx: usize, bbox: &Aabb) {
         self.root.insert(fracture_idx, bbox);
     }
 
-    /// Query all candidate fractures that might overlap with the given AABB
+    /// Query all candidate fractures that might overlap with the given Aabb
     ///
-    /// This returns indices of fractures whose bounding boxes overlap the query AABB.
+    /// This returns indices of fractures whose bounding boxes overlap the query Aabb.
     /// Further geometric tests are still needed to confirm actual intersections.
-    pub fn query_overlapping(&self, bbox: &AABB) -> Vec<usize> {
+    pub fn query_overlapping(&self, bbox: &Aabb) -> Vec<usize> {
         let mut results = Vec::new();
         self.root.query(bbox, &mut results);
         results
@@ -264,7 +230,7 @@ impl Octree {
 
     /// Query candidates using the Poly bounding_box format: [xmin, xmax, ymin, ymax, zmin, zmax]
     pub fn query_overlapping_poly_bbox(&self, bbox: &[f64; 6]) -> Vec<usize> {
-        self.query_overlapping(&AABB::from_poly_bbox(bbox))
+        self.query_overlapping(&Aabb::from_poly_bbox(bbox))
     }
 
     /// Get statistics about the octree (for debugging/optimization)
@@ -315,13 +281,13 @@ mod tests {
 
     #[test]
     fn test_aabb_overlap() {
-        let aabb1 = AABB::new(Vector3::new(0.0, 0.0, 0.0), Vector3::new(10.0, 10.0, 10.0));
-        let aabb2 = AABB::new(Vector3::new(5.0, 5.0, 5.0), Vector3::new(15.0, 15.0, 15.0));
-        let aabb3 = AABB::new(Vector3::new(20.0, 20.0, 20.0), Vector3::new(30.0, 30.0, 30.0));
+        let aabb1 = Aabb::new(Point3::new(0.0, 0.0, 0.0), Point3::new(10.0, 10.0, 10.0));
+        let aabb2 = Aabb::new(Point3::new(5.0, 5.0, 5.0), Point3::new(15.0, 15.0, 15.0));
+        let aabb3 = Aabb::new(Point3::new(20.0, 20.0, 20.0), Point3::new(30.0, 30.0, 30.0));
 
-        assert!(aabb1.overlaps(&aabb2));
-        assert!(aabb2.overlaps(&aabb1));
-        assert!(!aabb1.overlaps(&aabb3));
+        assert!(aabb1.intersects(&aabb2));
+        assert!(aabb2.intersects(&aabb1));
+        assert!(!aabb1.intersects(&aabb3));
     }
 
     #[test]
@@ -329,18 +295,18 @@ mod tests {
         let mut octree = Octree::new(&Vector3::new(100.0, 100.0, 100.0));
 
         // Insert some fractures
-        let bbox1 = AABB::new(Vector3::new(0.0, 0.0, 0.0), Vector3::new(10.0, 10.0, 10.0));
-        let bbox2 = AABB::new(Vector3::new(50.0, 50.0, 50.0), Vector3::new(60.0, 60.0, 60.0));
-        let bbox3 = AABB::new(Vector3::new(5.0, 5.0, 5.0), Vector3::new(15.0, 15.0, 15.0));
+        let bbox1 = Aabb::new(Point3::new(0.0, 0.0, 0.0), Point3::new(10.0, 10.0, 10.0));
+        let bbox2 = Aabb::new(Point3::new(50.0, 50.0, 50.0), Point3::new(60.0, 60.0, 60.0));
+        let bbox3 = Aabb::new(Point3::new(5.0, 5.0, 5.0), Point3::new(15.0, 15.0, 15.0));
 
         octree.insert(0, &bbox1);
         octree.insert(1, &bbox2);
         octree.insert(2, &bbox3);
 
         // Query should return candidates that overlap
-        let candidates = octree.query_overlapping(&AABB::new(
-            Vector3::new(0.0, 0.0, 0.0),
-            Vector3::new(12.0, 12.0, 12.0),
+        let candidates = octree.query_overlapping(&Aabb::new(
+            Point3::new(0.0, 0.0, 0.0),
+            Point3::new(12.0, 12.0, 12.0),
         ));
 
         assert!(candidates.contains(&0), "Should find fracture 0");

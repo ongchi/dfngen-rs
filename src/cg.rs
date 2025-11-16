@@ -1,4 +1,5 @@
 use parry3d_f64::na::{distance, Point3, Translation3, Vector3};
+use parry3d_f64::bounding_volume::Aabb;
 
 use crate::{
     error,
@@ -7,7 +8,7 @@ use crate::{
         poly::Poly,
     },
     math_functions::{max_elmt_idx, sorted_index, sum_dev_ary3},
-    spatial_index::{Octree, AABB},
+    spatial_index::{Octree, AabbExt},
     structures::{IntersectionPoints, PolyOptions, Stats, TriplePtTempData},
 };
 
@@ -1472,7 +1473,7 @@ pub fn intersection_checking_with_spatial_index(
     spatial_index: &Octree,
 ) -> i32 {
     // Get candidate fractures from spatial index instead of checking all
-    let new_poly_aabb = AABB::from_poly_bbox(&new_poly.bounding_box);
+    let new_poly_aabb = Aabb::from_poly_bbox(&new_poly.bounding_box);
     let candidate_indices = spatial_index.query_overlapping(&new_poly_aabb);
 
     // List of fractures which new fracture intersected.

@@ -24,8 +24,9 @@ use crate::io::output::write_output;
 use crate::math_functions::{
     adjust_cdf_and_fam_prob, cumsum, index_from_prob, index_from_prob_and_p32_status,
 };
-use crate::spatial_index::{Octree, AABB};
+use crate::spatial_index::{Octree, AabbExt};
 use crate::structures::{DFNGen, PolyOptions, RadiusFunction, Shape};
+use parry3d_f64::bounding_volume::Aabb;
 
 mod cg;
 mod distribution;
@@ -401,7 +402,7 @@ fn main() -> Result<(), DfngenError> {
                     dfngen.accepted_poly.push(new_poly.clone()); // SAVE newPoly to accepted polys list
 
                     // Add the new fracture to the spatial index for faster future intersection checks
-                    let poly_aabb = AABB::from_poly_bbox(&new_poly.bounding_box);
+                    let poly_aabb = Aabb::from_poly_bbox(&new_poly.bounding_box);
                     spatial_index.insert(dfngen.accepted_poly.len() - 1, &poly_aabb);
                 } else {
                     // Poly rejected
