@@ -23,7 +23,7 @@ use crate::structures::RadiusDistribution;
 pub fn search_var(file: &mut File, search: &str) {
     file.seek(SeekFrom::Start(0)).unwrap();
 
-    let mut bytes = file.bytes().map(|ch| ch.unwrap());
+    let mut bytes = BufReader::new(file.by_ref()).bytes().map(|ch| ch.unwrap());
 
     loop {
         let word: String = read!("{}", &mut bytes);
@@ -83,7 +83,7 @@ impl NotBool for f64 {}
 
 impl ReadFromTextFile for String {
     fn read_from_text(&mut self, file: &mut File) {
-        let mut bytes = file.bytes().map(|ch| ch.unwrap());
+        let mut bytes = BufReader::new(file.by_ref()).bytes().map(|ch| ch.unwrap());
         *self = read!("{}", bytes);
     }
 }
@@ -94,7 +94,7 @@ where
     <T as FromStr>::Err: std::fmt::Debug,
 {
     fn read_from_text(&mut self, file: &mut File) {
-        let mut bytes = file.bytes().map(|ch| ch.unwrap());
+        let mut bytes = BufReader::new(file.by_ref()).bytes().map(|ch| ch.unwrap());
         let tmp: String = read!("{}", bytes);
         *self = tmp.parse::<T>().unwrap()
     }
@@ -114,7 +114,7 @@ fn read_quoted(file: &mut File, quote: char) -> Result<Vec<String>, String> {
         '{' => ('{', '}'),
         _ => return Err("Invalid quote character".to_string()),
     };
-    let mut bytes = file.bytes().map(|c| c.unwrap());
+    let mut bytes = BufReader::new(file.by_ref()).bytes().map(|c| c.unwrap());
     let mut buf = String::new();
 
     loop {

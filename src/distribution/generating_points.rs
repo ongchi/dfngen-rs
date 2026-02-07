@@ -12,7 +12,7 @@ use rand_mt::Mt64;
 ///
 /// * `h` - Minimum feature size
 /// * `visualization_mode` - If false, creates a fine mesh, according to h parameter.
-///     If true, produce only first round of triangulations. In this case no modeling of flow and transport is possible.
+///   If true, produce only first round of triangulations. In this case no modeling of flow and transport is possible.
 /// * `pt1` - End point 1
 /// * `pt2` - End point 2
 ///

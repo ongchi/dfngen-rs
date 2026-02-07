@@ -116,9 +116,7 @@ impl Distribution<Vector3<f64>> for Fisher {
         let x_prod = u.cross(&self.orientation);
 
         // Get rotation matrix if normal vectors are not the same (if xProd is not zero vector)
-        let r = if !(x_prod[0].abs() <= self.eps
-            && x_prod[1].abs() <= self.eps
-            && x_prod[2].abs() <= self.eps)
+        let r = if x_prod.magnitude() > self.eps
         {
             // Since vectors are normalized, sin = magnitude(AxB) and cos = A . B
             let sin =

@@ -52,12 +52,7 @@ pub fn re_translate_poly(
         // Poly was truncated, need to rebuild the polygon
 
         // Reset boundary faces (0 means poly is no longer touching a boundary)
-        new_poly.faces[0] = false;
-        new_poly.faces[1] = false;
-        new_poly.faces[2] = false;
-        new_poly.faces[3] = false;
-        new_poly.faces[4] = false;
-        new_poly.faces[5] = false;
+        new_poly.faces = [false; 6];
         new_poly.truncated = false; // Set to 0 to mean not truncated
         new_poly.group_num = 0; // Clear cluster group information
         new_poly.intersection_index.clear(); // Clear any saved intersections

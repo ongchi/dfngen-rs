@@ -71,7 +71,7 @@ pub fn dry_run(
             // Choose a family based on probabiliyis AND their target p32 completion status
             // if a family has already met is fracture intinisty reqirement (p32) dont choose that family anymore
             family_index = index_from_prob_and_p32_status(
-                &mut p32_status,
+                &p32_status,
                 &cdf,
                 generator.clone().borrow_mut().sample(uniform_dist),
                 total_families,

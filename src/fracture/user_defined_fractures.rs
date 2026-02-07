@@ -1,3 +1,4 @@
+use std::io::BufReader;
 use std::{fs::File, io::Read};
 
 use itertools::zip_eq;
@@ -124,7 +125,7 @@ impl FractureNodesDef {
         num_points.read_from_text(&mut file);
 
         search_var(&mut file, "Coordinates:");
-        let mut bytes = file.bytes().map(|ch| ch.unwrap());
+        let mut bytes = BufReader::new(file).bytes().map(|ch| ch.unwrap());
 
         let mut fractures = Vec::new();
 
@@ -153,7 +154,7 @@ impl FractureNodesDef {
 
         search_var(&mut file, "Coordinates:");
 
-        let mut bytes = file.bytes().map(|ch| ch.unwrap());
+        let mut bytes = BufReader::new(file).bytes().map(|ch| ch.unwrap());
 
         let mut fractures = Vec::new();
 

@@ -66,7 +66,7 @@ impl Distribution<Result<f64, DfngenError>> for TruncExp {
             };
             value = -(1. - rand_val).ln() * self.lambda_inverse;
 
-            if value >= self.min || value <= self.max {
+            if value >= self.min && value <= self.max {
                 return Ok(value);
             }
 

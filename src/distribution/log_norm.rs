@@ -29,7 +29,7 @@ impl Distribution<Result<f64, DfngenError>> for TruncLogNormal {
         loop {
             value = rng.sample(self.log_normal);
 
-            if value >= self.min || value <= self.max {
+            if value >= self.min && value <= self.max {
                 return Ok(value);
             }
 

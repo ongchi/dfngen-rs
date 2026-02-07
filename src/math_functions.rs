@@ -21,8 +21,8 @@ pub fn or(dest: &mut [bool; 6], src: &[bool; 6]) {
 /// the square root and division by N elements.
 /// Return: The sum-deviation of array 'vec'
 fn sum_deviation(vec: &[f64]) -> f64 {
-    let mean = vec.iter().cloned().sum::<f64>() / (vec.len() as f64);
-    vec.iter().cloned().map(|v| v - mean).map(|v| v * v).sum()
+    let mean = vec.iter().sum::<f64>() / (vec.len() as f64);
+    vec.iter().map(|&v| (v - mean).powi(2)).sum()
 }
 
 /// Sum deviaiton array X 3
@@ -130,7 +130,7 @@ pub fn index_from_prob(cdf: &[f64], roll: f64) -> usize {
 /// Index of chosen family based on its family probability, and p32Status
 /// (avoids inserting a fracture from a family which has already met it's fracture intensity requrement)
 pub fn index_from_prob_and_p32_status(
-    p32_status: &mut [bool],
+    p32_status: &[bool],
     cdf: &[f64],
     roll: f64,
     fam_size: usize,
@@ -146,10 +146,6 @@ pub fn index_from_prob_and_p32_status(
     // we need to find the families with p32Status still 0, and choose the thrid one
     // this family will be used to create the next polygon
     let mut count = 0; // Count of families encountered with p32Status = 0
-
-    for p32 in p32_status.iter_mut() {
-        *p32 = false;
-    }
 
     for (i, p32) in p32_status.iter().enumerate() {
         if cdf_idx == &count {
@@ -176,8 +172,8 @@ pub fn cumsum(fam_prob: &[f64]) -> Vec<f64> {
 
     if let Some(last) = cdf.last() {
         if !(0.999..=1.001).contains(last) {
-            warn!("Familiy probabilities (famProb in input file) do not sum to 1");
-            warn!("sum = {:.17}", cdf.last().unwrap());
+            warn!("Family probabilities (famProb in input file) do not sum to 1");
+            warn!("sum = {:.17}", last);
             warn!("Please check input file.");
         }
     };
@@ -209,15 +205,12 @@ pub fn adjust_cdf_and_fam_prob(
     // Take probability of the familiy being removed, and divide it equally among remaining probabilities
     let add_to_remaining_elmts = fam_probability[idx2remove] / (*cdf_size as f64); // Distribute removed probability among leftore famillies probabilities
                                                                                    // cdfIdx is index to that families cdf index AND familily probability index
-    let mut idx = 0;
-
     for (i, prob) in fam_probability.iter().enumerate().take(*cdf_size + 1) {
         // cdfSize+1 becuase of cdfSize-- at the beginning of function. This
         // makes the loop cover the all probabilities in the ary before one is removed
         // and distributed to the rest
         if i != idx2remove {
-            new_probs[idx] = prob + add_to_remaining_elmts;
-            idx += 1;
+            new_probs.push(prob + add_to_remaining_elmts);
         }
     }
 

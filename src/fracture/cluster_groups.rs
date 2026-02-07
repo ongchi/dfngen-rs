@@ -100,22 +100,17 @@ pub fn get_cluster(
 
         // Gather the final polygon numbers/indecies.
         for gid in matching_groups {
-            for k in 0..pstats.fract_group.len() {
-                if gid == pstats.fract_group[k].group_num {
-                    // If the groupNumbers match
-                    // copy all poly indecies of matching group
-                    for j in 0..pstats.fract_group[k].poly_list.len() {
-                        final_poly_list.push(pstats.fract_group[k].poly_list[j]);
-                    }
-                }
-            }
+            final_poly_list.extend(
+                pstats
+                    .fract_group
+                    .iter()
+                    .filter(|fg| fg.group_num == gid)
+                    .flat_map(|fg| &fg.poly_list),
+            );
         }
     } else {
         info!("Number of fractures: {}", pstats.accepted_poly_count);
-
-        for i in 0..pstats.accepted_poly_count {
-            final_poly_list.push(i);
-        }
+        final_poly_list.extend(0..pstats.accepted_poly_count);
     }
 
     final_poly_list
@@ -129,13 +124,13 @@ pub fn get_cluster(
 ///
 /// * `faces_option` - Boundary faces user input option array ('boundaryFaces' in input file)
 /// * `faces` - Fracture cluter's boundary faces array.
-///     Similar to 'boundaryFaces' input option, but denotes which faces the fracture cluster connects to.
+///   Similar to 'boundaryFaces' input option, but denotes which faces the fracture cluster connects to.
 ///
 /// # Returns
 ///
 /// * `bool`
-///     false - If faces meet user's facesOption requirements
-///     true - If faces do not meet requirements
+///   false - If faces meet user's facesOption requirements
+///   true - If faces do not meet requirements
 fn faces_match(faces_option: &[bool; 6], faces: &[bool; 6]) -> bool {
     for i in 0..6 {
         // If the user specified the face, check if faces match

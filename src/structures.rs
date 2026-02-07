@@ -18,15 +18,6 @@ pub struct RejectedUserFracture {
     pub user_fracture_type: i32,
 }
 
-impl RejectedUserFracture {
-    pub fn new(id: usize, user_fracture_type: i32) -> Self {
-        Self {
-            id,
-            user_fracture_type,
-        }
-    }
-}
-
 /// Intersections structure.
 /// This structure contains all data pertaining to
 /// one intersection. This includes the IDs for both
@@ -187,13 +178,6 @@ pub struct Stats {
     /// DFN generation has completed.
     pub area_after_removal: f64,
 
-    // Total volume of fractures before isolated fracture removal. Variable is set in
-    // main() after DFN generation has completed.
-    // vol_before_removal: f64,
-
-    // Total volume of fractures after isolated fracture removal. Variable is set in
-    // main() after DFN generation has completed.
-    // vol_after_removal: f64,
     /// Used to assign group/cluster numbers. 'nextGroupNum initializes to 1, and is used to
     /// assign a fracture a group number, and is then incremented.
     pub next_group_num: usize,
@@ -448,7 +432,10 @@ impl DFNGen {
             self.pstats.rejected_poly_count += 1;
             self.pstats
                 .rejected_user_fracture
-                .push(RejectedUserFracture::new(poly_id, family_id));
+                .push(RejectedUserFracture {
+                    id: poly_id,
+                    user_fracture_type: family_id,
+                });
             warn!(
                 "({}, {}): rejected for being outside the defined domain.",
                 family_id, poly_id
@@ -485,10 +472,23 @@ impl DFNGen {
             self.pstats.rejected_poly_count += 1;
             self.pstats
                 .rejected_user_fracture
-                .push(RejectedUserFracture::new(poly_id, family_id));
+                .push(RejectedUserFracture {
+                    id: poly_id,
+                    user_fracture_type: family_id,
+                });
 
             print_reject_reason(reject_code, &new_poly);
         }
+    }
+
+    /// Resets intersection, triple point, and cluster group state.
+    /// Used before rebuilding the DFN (e.g. after removing fractures).
+    fn reset_state(&mut self) {
+        self.pstats.group_data.clear();
+        self.pstats.fract_group.clear();
+        self.triple_points.clear();
+        self.intpts.clear();
+        self.pstats.next_group_num = 1;
     }
 
     /// Remove Fractures Smaller Than Minimum Size
@@ -510,16 +510,7 @@ impl DFNGen {
     /// funciton executes causes undefined behavior.
     pub fn remove_small_fractures(&mut self, opts: &PolyOptions, min_size: f64) {
         let mut final_poly_list = Vec::new();
-        // Clear GroupData
-        self.pstats.group_data.clear();
-        // Clear FractGroup
-        self.pstats.fract_group.clear();
-        // Clear Triple Points
-        self.triple_points.clear();
-        // Clear IntPoints
-        self.intpts.clear();
-        // Re-init nextGroupNum
-        self.pstats.next_group_num = 1;
+        self.reset_state();
 
         for poly in self.accepted_poly.iter_mut() {
             if poly.xradius < min_size {
@@ -580,17 +571,7 @@ impl DFNGen {
         domain_vertices: &[Point3<f64>],
     ) {
         let mut final_poly_list: Vec<Poly> = Vec::new();
-
-        // Clear GroupData
-        self.pstats.group_data.clear();
-        // Clear FractGroup
-        self.pstats.fract_group.clear();
-        // Clear Triple Points
-        self.triple_points.clear();
-        // Clear IntPoints
-        self.intpts.clear();
-        // Re-init nextGroupNum
-        self.pstats.next_group_num = 1;
+        self.reset_state();
 
         for i in 0..self.accepted_poly.len() {
             let x = self.accepted_poly[i].translation[0];

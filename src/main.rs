@@ -226,7 +226,7 @@ fn main() -> Result<(), DfngenError> {
                 // Choose a family based on probabiliyis AND their target p32 completion status.
                 // If a family has already met is fracture intinisty req. (p32) don't choose that family anymore
                 index_from_prob_and_p32_status(
-                    &mut p32_status,
+                    &p32_status,
                     &cdf,
                     generator.clone().borrow_mut().sample(uniform_dist),
                     total_families,
@@ -365,7 +365,7 @@ fn main() -> Result<(), DfngenError> {
                     }
 
                     // Output to user: print running program status to user
-                    if dfngen.pstats.accepted_poly_count % 200 == 0 {
+                    if dfngen.pstats.accepted_poly_count.is_multiple_of(200) {
                         info!("Accepted {} fractures", dfngen.pstats.accepted_poly_count);
                         info!("Rejected {} fractures", dfngen.pstats.rejected_poly_count);
                         info!(
@@ -466,12 +466,6 @@ fn main() -> Result<(), DfngenError> {
                 i + 1,
                 shape.p32_target,
                 shape.current_p32
-            );
-            info!(
-                "Family {} target P32 = {}, Final P32 = {}",
-                i + 1,
-                shape.p32_target,
-                shape.current_p32,
             );
         }
     }
@@ -631,9 +625,7 @@ fn main() -> Result<(), DfngenError> {
     user_defined_shapes_area = 0.;
 
     //zero out array.
-    for area in family_area.iter_mut() {
-        *area = 0.;
-    }
+    family_area.fill(0.);
 
     // Calculate total fracture area, and area per family
     for i in 0..final_fractures.len() {

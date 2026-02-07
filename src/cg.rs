@@ -220,10 +220,10 @@ fn check_bounding_box(poly1: &Poly, poly2: &Poly) -> bool {
 /// # Arguments
 ///
 /// * `flag` - The only flag which is currently used is '0'
-///     0 - no intersection,
-///     1 - intersection is completely inside poly 1,
-///     2 - intersection is completely inside poly 2,
-///     3 - intersection on both polys edges
+///   0 - no intersection,
+///   1 - intersection is completely inside poly 1,
+///   2 - intersection is completely inside poly 2,
+///   3 - intersection on both polys edges
 /// * `poly1` - Poly 1
 /// * `poly2` - Poly 2
 ///
@@ -421,7 +421,7 @@ fn find_intersections(flag: &mut i32, poly1: &Poly, poly2: &Poly, eps: f64) -> I
 /// * `temp_data` - Temp triple point data. Must keep intersections and triple points as temp data untill newPoly has been accepted
 /// * `triple_points` - Triple points for entire DFN
 /// * `temp_int_pts` - Temp intersection points. Must keep intersections and triple points as temp
-///         data untill newPoly has been accepted
+///   data untill newPoly has been accepted
 ///
 /// # Returns
 ///
@@ -534,8 +534,8 @@ fn fram(
 /// # Returns
 ///
 /// * `bool`
-///     False - if not all distances are larger than minDistance or minDistance = 0 with triple intersection point
-///     True - otherwise
+///   False - if not all distances are larger than minDistance or minDistance = 0 with triple intersection point
+///   True - otherwise
 fn check_dist_to_old_intersections(
     int_pts_list: &[IntersectionPoints],
     int_pts: &IntersectionPoints,
@@ -578,8 +578,8 @@ fn check_dist_to_old_intersections(
 /// # Returns
 ///
 /// * `bool`
-///    False - if not all distances are larger than minDistance or minDistance = 0 with triple intersection point
-///    True - otherwise
+///   False - if not all distances are larger than minDistance or minDistance = 0 with triple intersection point
+///   True - otherwise
 ///
 /// NOTE: If the distance between two intersections is 0, this function will verify the that
 ///       the triple interersection exists in 'tempTriPts'. If not found, fracture will be rejected
@@ -647,8 +647,8 @@ fn check_dist_to_new_intersections(
 /// # Returns
 ///
 /// * `bool`
-///    False - If intersection successfully shortened and minDist <= dist to edge && shrinkLimit <= intersection length
-///    True - If intersection length shrinks to less than shrinkLimit
+///   False - If intersection successfully shortened and minDist <= dist to edge && shrinkLimit <= intersection length
+///   True - If intersection length shrinks to less than shrinkLimit
 fn shrink_intersection(
     int_pts: &mut IntersectionPoints,
     edge: &[Point3<f64>; 2],
@@ -745,8 +745,8 @@ fn shrink_intersection(
 /// # Returns
 ///
 /// * `i32`
-///     0 - Fracture had no intersections or features violating the minimum feature size h (Passed all FRAM tests)
-///     1 - Otherwise
+///   0 - Fracture had no intersections or features violating the minimum feature size h (Passed all FRAM tests)
+///   1 - Otherwise
 pub fn intersection_checking(
     opts: &PolyOptions,
     new_poly: &mut Poly,
@@ -925,8 +925,8 @@ pub fn intersection_checking(
 /// # Returns
 ///
 /// * `bool`
-///    False - Distance from intersection to vertices are all > min_dist
-///    True - No distance less than minDist was found
+///   False - Distance from intersection to vertices are all > min_dist
+///   True - No distance less than minDist was found
 fn check_distance_from_nodes(
     poly: &Poly,
     int_pts: &IntersectionPoints,
@@ -1031,9 +1031,9 @@ fn point_on_line_seg(pt: &Point3<f64>, line: &[Point3<f64>; 2], eps: f64) -> boo
 /// * `int_pts` - Intersection points to be tested
 /// * `shrink_limit` - Minimum length the intersection is allowed to shrink to
 /// * `pstats` - Program statistics structure, used to report stats on how much
-///     intersection length is being reduced by from shrinkIntersection()
+///   intersection length is being reduced by from shrinkIntersection()
 /// * `min_dist` - Minimum distance allowed from an end point to the edge of a polygon
-///     if the intersection does not land accross a poly's edge
+///   if the intersection does not land accross a poly's edge
 /// * `eps` - Epsilon value for floating point comparisons
 fn check_close_edge(
     poly1: &Poly,
@@ -1135,7 +1135,7 @@ fn check_close_edge(
     }
 
     #[cfg(feature = "disable_shortening_int")]
-    if int_pts.intersectionShortened == true {
+    if int_pts.intersection_shortened {
         return true;
     }
 

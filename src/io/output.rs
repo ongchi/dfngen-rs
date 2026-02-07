@@ -24,7 +24,7 @@ use crate::{cg::poly_and_intersection_rotation_to_xy, fracture::poly::Poly};
 /// * `triple_points` - Vector of all accepted triple intersection points
 /// * `pstats` - Stats structure, running program statistics
 /// * `final_fractures` - indices into the Poly array of accepted polgons
-///     which remain after isolated fractures (polys) were removed
+///   which remain after isolated fractures (polys) were removed
 /// * `frac_families` - Family structure array of all stocastic families defined by user input
 #[allow(clippy::too_many_arguments)]
 pub fn write_output(
@@ -198,11 +198,11 @@ pub fn write_output(
 /// * `output` - Output file stream object (file we are writing to)
 /// * `points` - Vector of Point3<f64> array (discretized points)
 /// * `start` - Index to point to start output to file.
-///     When discretizing points, the program can discretize from an end
-///     point to a triple intersection point, and then from the triple intersection point to
-///     another end point. This means you have two arrays of points. The last point in the first
-///     array will be the same as the first point in the second array. In this situation, you
-///     would set start = 1 while writing the second array to avoid duplicate points in the output
+///   When discretizing points, the program can discretize from an end
+///   point to a triple intersection point, and then from the triple intersection point to
+///   another end point. This means you have two arrays of points. The last point in the first
+///   array will be the same as the first point in the second array. In this situation, you
+///   would set start = 1 while writing the second array to avoid duplicate points in the output
 /// * `count` - Counter of poitns written. Used to rember at which node a new intersection starts
 fn write_points(output: &mut File, points: &[Point3<f64>], start: usize, count: &mut usize) {
     let n = points.len();
@@ -231,7 +231,7 @@ fn write_points(output: &mut File, points: &[Point3<f64>], start: usize, count: 
 /// * `num_points` - Number of intersection points on fracture
 /// * `num_intersections` - Number of intersections on fracture
 /// * `int_start` - Vector array of node numbers which start an intersection.
-///     Used to generate "line" connections in intersection inp files
+///   Used to generate "line" connections in intersection inp files
 /// * `intersecting_fractures` - Vector array of fracture id's (indices) who intersect fract1
 fn finish_writing_int_file(
     fract_int_file: &mut File,
@@ -333,7 +333,7 @@ fn adjust_int_fract_ids(
 /// * `eps` - Epsilon value for floating point comparison
 /// * `keep_isolated_fractures` - Flag to keep isolated fractures
 /// * `visualization_mode` - If false, creates a fine mesh, according to h parameter.
-///     If true, produce only first round of triangulations. In this case no modeling of flow and transport is possible.
+///   If true, produce only first round of triangulations. In this case no modeling of flow and transport is possible.
 /// * `final_fractures` - Vector array of indices of fractures left after isolated fracture removal
 /// * `accepted_poly` - Vector array of all accetped fractures (before isolated fracture removal)
 /// * `int_pts` - Vector array of all intersections
@@ -655,7 +655,7 @@ fn write_polys_inp(final_fractures: &[usize], accepted_poly: &[Poly], output: &s
 //
 /// * `h` - Minimum feature size
 /// * `visualization_mode` - If false, creates a fine mesh, according to h parameter.
-///     If true, produce only first round of triangulations. In this case no modeling of flow and transport is possible.
+///   If true, produce only first round of triangulations. In this case no modeling of flow and transport is possible.
 /// * `domain_size` - Vector3<f64> of domain size
 /// * `final_fractures` - Vector array of indices of fractures left after isolated fracture removal
 /// * `pstats` - Stats structure, running program statistics
@@ -845,12 +845,12 @@ fn write_final_poly_area(final_fractures: &[usize], accepted_poly: &[Poly], outp
 /// # Arguments
 ///
 /// * `family_num` - Family number for which radii file will be written for
-///     -2 - User Rectangles, -1 - User Ellipses, Family# >= 0 - Family in order of 'FamProb' in input file
+///   -2 - User Rectangles, -1 - User Ellipses, Family# >= 0 - Family in order of 'FamProb' in input file
 /// * `accepted_poly` - Vector array of all accetped fractures
 /// * `output` - Path to output folder
 fn write_all_accepted_radii_of_family(family_num: isize, accepted_poly: &[Poly], output: &str) {
     let file_name = format!("{}/radii_AllAccepted_Fam_{}.dat", output, family_num + 1);
-    let mut file = File::open(file_name).unwrap();
+    let mut file = File::create(file_name).unwrap();
     file.write_all(
         format!(
             "Fracture Radii List Before Isolated Fracture and Cluster Removal (Family {})\n",
@@ -885,7 +885,7 @@ fn write_all_accepted_radii_of_family(family_num: isize, accepted_poly: &[Poly],
 ///
 /// * `final_fractures` - Vector array of indices of fractures left after isolated fracture removal
 /// * `family_num` - Family number for which radii file will be written for
-///    -2 - User Rectangles, -1 - User Ellipses, Family# >= 0 - Family in order of 'FamProb' in input file
+///   -2 - User Rectangles, -1 - User Ellipses, Family# >= 0 - Family in order of 'FamProb' in input file
 /// * `accepted_poly` - Vector array of all accetped fractures
 /// * `output` - Path to output folder
 fn write_final_radii_of_family(
@@ -895,7 +895,7 @@ fn write_final_radii_of_family(
     output: &str,
 ) {
     let file_name = format!("{}/radii_Final_Fam_{}.dat", output, family_num + 1);
-    let mut file = File::open(file_name).unwrap();
+    let mut file = File::create(file_name).unwrap();
     file.write_all(
         format!(
             "Fracture Radii List After Isolated Fracture and Cluster Removal (Family {})\n",
