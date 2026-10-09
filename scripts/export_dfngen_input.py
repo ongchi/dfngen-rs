@@ -19,6 +19,10 @@ Requires pydfnworks, for example in a virtual environment:
     .venv/bin/python scripts/export_dfngen_input.py <dfnWorks>/examples/TPL /tmp/TPL
 
 The exported file contains absolute paths to the user-defined fracture files.
+
+dfngen-rs reads TOML. Convert the exported file with:
+
+    python3 scripts/convert_dat_to_toml.py <work_dir>/..._clean.dat <name>.toml
 """
 
 from __future__ import annotations
