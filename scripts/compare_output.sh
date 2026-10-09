@@ -40,7 +40,7 @@ for input_file in *.toml; do
     mv "$output_dir/$case_name.log" "$output_dir/$case_name/console.log"
 
     if [ "$mode" = check ]; then
-        if diff -r -q"$baseline_dir/$case_name" "$output_dir/$case_name" >/dev/null; then
+        if diff -r -q "$baseline_dir/$case_name" "$output_dir/$case_name" >/dev/null; then
             echo "ok   $case_name (identical)"
         elif [ -n "$tolerance" ] && python3 "$repo_root/scripts/compare_output.py" \
             "$baseline_dir/$case_name" "$output_dir/$case_name" "$tolerance"; then
