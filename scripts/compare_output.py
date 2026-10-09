@@ -4,7 +4,7 @@
 Usage: compare_output.py <baseline_dir> <output_dir> <tolerance>
 
 The folders must contain the same files with the same number of lines and the
-same number of values on each line. Integers and text must be identical.
+same number of values on each line. Integers (counts, ids) and text must be identical.
 Decimal numbers must agree within the tolerance (relative, or absolute for
 values smaller than 1).
 
@@ -30,10 +30,11 @@ def list_files(root: Path) -> set[Path]:
     }
 
 
-def parse_decimal(token: str) -> float | None:
-    """Return the value of a decimal number, or None for integers and text."""
-    if token.lstrip("+-").isdigit():
-        return None
+def is_integer(token: str) -> bool:
+    return token.lstrip("+-").isdigit()
+
+
+def parse_number(token: str) -> float | None:
     try:
         return float(token)
     except ValueError:
@@ -45,8 +46,13 @@ def compare_tokens(expected: str, actual: str, tolerance: float) -> float | None
     if expected == actual:
         return 0.0
 
-    expected_value = parse_decimal(expected)
-    actual_value = parse_decimal(actual)
+    # Counts and ids must be identical. A decimal value can be printed without
+    # a fraction (36 and 35.99999999999999), so one integer token is permitted.
+    if is_integer(expected) and is_integer(actual):
+        return None
+
+    expected_value = parse_number(expected)
+    actual_value = parse_number(actual)
     if expected_value is None or actual_value is None:
         return None
 
