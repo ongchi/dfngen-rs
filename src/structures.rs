@@ -307,7 +307,7 @@ impl RadiusDistribution {
     pub fn sample(&self, generator: Rc<RefCell<Mt64>>) -> Result<f64, DfngenError> {
         let radius = match self.function {
             RadiusFunction::LogNormal { mu, sigma } => {
-                let distr = TruncLogNormal::new(self.min, f64::INFINITY, mu, sigma)?;
+                let distr = TruncLogNormal::new(self.min, self.max, mu, sigma)?;
                 generator.borrow_mut().sample(&distr)?
             }
             RadiusFunction::TruncatedPowerLaw { alpha } => {
@@ -315,7 +315,7 @@ impl RadiusDistribution {
                 generator.borrow_mut().sample(&distr)
             }
             RadiusFunction::Exponential { lambda } => {
-                let distr = TruncExp::new(self.min, f64::INFINITY, lambda)?;
+                let distr = TruncExp::new(self.min, self.max, lambda)?;
                 generator.borrow_mut().sample(&distr)?
             }
             RadiusFunction::Constant(c) => c,
@@ -578,4 +578,38 @@ pub struct PolyOptions {
     pub r_fram: bool,
     pub disable_fram: bool,
     pub triple_intersections: bool,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn assert_samples_are_within_limits(distribution: RadiusDistribution) {
+        let generator = Rc::new(RefCell::new(Mt64::new(1)));
+
+        for _ in 0..10_000 {
+            let radius = distribution.sample(generator.clone()).unwrap();
+            assert!(
+                (distribution.min..=distribution.max).contains(&radius),
+                "radius {radius} is not in [{}, {}]",
+                distribution.min,
+                distribution.max
+            );
+        }
+    }
+
+    #[test]
+    fn test_log_normal_radius_is_within_min_and_max() {
+        assert_samples_are_within_limits(RadiusDistribution::new_log_normal(1., 1., 1., 4.));
+    }
+
+    #[test]
+    fn test_exponential_radius_is_within_min_and_max() {
+        assert_samples_are_within_limits(RadiusDistribution::new_exponential(0.4, 1., 4.));
+    }
+
+    #[test]
+    fn test_truncated_power_law_radius_is_within_min_and_max() {
+        assert_samples_are_within_limits(RadiusDistribution::new_truncated_power_law(2.5, 1., 4.));
+    }
 }
