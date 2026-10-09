@@ -8,7 +8,9 @@ use tracing::info;
 
 use crate::fracture::poly::{DomainBoundaryMode, Poly};
 use crate::io::input::Input;
-use crate::io::vtk::{write_fractures_vtk, write_rejected_fractures_vtk};
+use crate::io::vtk::{
+    write_fractures_vtk, write_rejected_fractures_vtk, write_removed_fractures_vtk,
+};
 use crate::structures::{IntersectionPoints, RejectedFracture, Stats};
 
 fn create_file(path: String) -> io::Result<BufWriter<File>> {
@@ -62,6 +64,21 @@ pub fn write_output(
         &mut vtk_file,
     )?;
     vtk_file.flush()?;
+
+    let removed_fractures: Vec<usize> = (0..accepted_poly.len())
+        .filter(|i| final_fractures.binary_search(i).is_err())
+        .collect();
+
+    if !removed_fractures.is_empty() {
+        let mut removed_file = create_file(format!("{}/fractures_removed.vtp", output))?;
+        write_removed_fractures_vtk(
+            &removed_fractures,
+            accepted_poly,
+            &boundary_face_counts,
+            &mut removed_file,
+        )?;
+        removed_file.flush()?;
+    }
 
     if input.output_rejected_fractures {
         let mut rejected_file = create_file(format!("{}/rejected_fractures.vtp", output))?;

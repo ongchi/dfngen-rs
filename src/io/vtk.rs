@@ -6,23 +6,12 @@ use parry3d_f64::na::Vector3;
 use crate::fracture::poly::Poly;
 use crate::structures::RejectedFracture;
 
-/// Writes all accepted fractures as polygons in VTK XML PolyData format (`.vtp`, ASCII)
+/// Writes the final fractures as polygons in VTK XML PolyData format (`.vtp`, ASCII)
 ///
-/// One polygon cell is written for each accepted fracture, with the cell data:
-/// * `fracture_id` - Number of the fracture in the other output files (starts at 1),
-///   0 for a fracture which was removed
-/// * `accepted_id` - Number of the fracture in the order of acceptance (starts at 1)
-/// * `removed` - 1 if the fracture was removed as isolated, or does not connect
-///   the boundary faces, else 0
-/// * `family` - Family number: 0 user-defined fracture, > 0 stochastic family
-/// * `cluster` - Number of the connected group of fractures
-/// * `truncated` - 1 if the fracture was cut by the domain, else 0
-/// * `intersection_count` - Number of intersections with other accepted fractures
-/// * `boundary_face_count` - Number of domain boundary faces which the fracture meets
-/// * `x_radius`, `y_radius`, `aspect_ratio` - Size before truncation
-/// * `area` - Area after truncation
-/// * `normal` - Unit normal vector
-/// * `translation` - Translation of the fracture center from the origin
+/// One polygon cell is written for each final fracture, in the order of the
+/// fracture numbers, with the cell data:
+/// * `fracture_id` - Number of the fracture in the other output files (starts at 1)
+/// * the cell data of `write_accepted_cell_data`
 ///
 /// # Arguments
 ///
@@ -36,73 +25,128 @@ pub fn write_fractures_vtk(
     boundary_face_counts: &[usize],
     output: &mut impl Write,
 ) -> io::Result<()> {
-    let polys: Vec<&Poly> = accepted_poly.iter().collect();
+    let polys: Vec<&Poly> = final_fractures.iter().map(|&i| &accepted_poly[i]).collect();
     write_geometry(output, &polys)?;
 
-    // Number of each fracture in the other output files, 0 if it was removed
-    let fracture_ids: Vec<usize> = (0..accepted_poly.len())
-        .map(|i| match final_fractures.binary_search(&i) {
-            Ok(final_index) => final_index + 1,
-            Err(_) => 0,
-        })
+    writeln!(output, r#"<CellData Normals="normal">"#)?;
+    write_data_array(output, "fracture_id", "Int32", 1, 1..=final_fractures.len())?;
+    write_accepted_cell_data(output, final_fractures, accepted_poly, boundary_face_counts)?;
+    writeln!(output, "</CellData>")?;
+
+    write_file_end(output)
+}
+
+/// Writes the removed fractures as polygons in VTK XML PolyData format (`.vtp`, ASCII)
+///
+/// A removed fracture is an accepted fracture which is isolated, or does not
+/// connect the boundary faces. One polygon cell is written for each of them, with
+/// the cell data of `write_accepted_cell_data`.
+///
+/// # Arguments
+///
+/// * `removed_fractures` - Sorted indices of the accepted fractures which were removed
+/// * `accepted_poly` - All accepted fractures
+/// * `boundary_face_counts` - `boundary_face_count` of each accepted fracture
+/// * `output` - File to write to
+pub fn write_removed_fractures_vtk(
+    removed_fractures: &[usize],
+    accepted_poly: &[Poly],
+    boundary_face_counts: &[usize],
+    output: &mut impl Write,
+) -> io::Result<()> {
+    let polys: Vec<&Poly> = removed_fractures
+        .iter()
+        .map(|&i| &accepted_poly[i])
         .collect();
+    write_geometry(output, &polys)?;
 
     writeln!(output, r#"<CellData Normals="normal">"#)?;
-    write_data_array(output, "fracture_id", "Int32", 1, fracture_ids.iter())?;
-    write_data_array(output, "accepted_id", "Int32", 1, 1..=accepted_poly.len())?;
+    write_accepted_cell_data(
+        output,
+        removed_fractures,
+        accepted_poly,
+        boundary_face_counts,
+    )?;
+    writeln!(output, "</CellData>")?;
+
+    write_file_end(output)
+}
+
+/// Writes the cell data which the final and the removed fractures have in common
+///
+/// * `accepted_id` - Number of the fracture in the order of acceptance (starts at 1)
+/// * `family` - Family number: 0 user-defined fracture, > 0 stochastic family
+/// * `cluster` - Number of the connected group of fractures
+/// * `truncated` - 1 if the fracture was cut by the domain, else 0
+/// * `intersection_count` - Number of intersections with other accepted fractures
+/// * `boundary_face_count` - Number of domain boundary faces which the fracture meets
+/// * `x_radius`, `y_radius`, `aspect_ratio` - Size before truncation
+/// * `area` - Area after truncation
+/// * `normal` - Unit normal vector
+/// * `translation` - Translation of the fracture center from the origin
+///
+/// # Arguments
+///
+/// * `output` - File to write to
+/// * `fractures` - Indices of the accepted fractures to write
+/// * `accepted_poly` - All accepted fractures
+/// * `boundary_face_counts` - `boundary_face_count` of each accepted fracture
+fn write_accepted_cell_data(
+    output: &mut impl Write,
+    fractures: &[usize],
+    accepted_poly: &[Poly],
+    boundary_face_counts: &[usize],
+) -> io::Result<()> {
+    let polys: Vec<&Poly> = fractures.iter().map(|&i| &accepted_poly[i]).collect();
+
     write_data_array(
         output,
-        "removed",
+        "accepted_id",
         "Int32",
         1,
-        fracture_ids.iter().map(|&id| (id == 0) as u8),
+        fractures.iter().map(|&i| i + 1),
     )?;
     write_data_array(
         output,
         "family",
         "Int32",
         1,
-        accepted_poly.iter().map(|poly| poly.family_num + 1),
+        polys.iter().map(|poly| poly.family_num + 1),
     )?;
     write_data_array(
         output,
         "cluster",
         "Int32",
         1,
-        accepted_poly.iter().map(|poly| poly.group_num),
+        polys.iter().map(|poly| poly.group_num),
     )?;
     write_data_array(
         output,
         "truncated",
         "Int32",
         1,
-        accepted_poly.iter().map(|poly| poly.truncated as u8),
+        polys.iter().map(|poly| poly.truncated as u8),
     )?;
     write_data_array(
         output,
         "intersection_count",
         "Int32",
         1,
-        accepted_poly
-            .iter()
-            .map(|poly| poly.intersection_index.len()),
+        polys.iter().map(|poly| poly.intersection_index.len()),
     )?;
     write_data_array(
         output,
         "boundary_face_count",
         "Int32",
         1,
-        boundary_face_counts.iter(),
+        fractures.iter().map(|&i| boundary_face_counts[i]),
     )?;
     write_real_array(output, "x_radius", &polys, |poly| poly.xradius)?;
     write_real_array(output, "y_radius", &polys, |poly| poly.yradius)?;
     write_real_array(output, "aspect_ratio", &polys, |poly| poly.aspect_ratio)?;
     write_real_array(output, "area", &polys, |poly| poly.area)?;
     write_vector_array(output, "normal", &polys, |poly| poly.normal)?;
-    write_vector_array(output, "translation", &polys, |poly| poly.translation)?;
-    writeln!(output, "</CellData>")?;
-
-    write_file_end(output)
+    write_vector_array(output, "translation", &polys, |poly| poly.translation)
 }
 
 /// Writes the rejected fractures as polygons in VTK XML PolyData format (`.vtp`, ASCII)
@@ -277,17 +321,35 @@ mod tests {
     use super::*;
     use crate::fracture::user_defined_fractures::USER_FRACTURE_FAMILY;
 
-    /// Writes a rectangle and an ellipse with 6 nodes. Only the ellipse is a final fracture.
-    fn write_two_fractures() -> String {
+    /// A rectangle, an ellipse with 6 nodes and an ellipse with 8 nodes, with their
+    /// boundary face counts. The rectangle was removed; the ellipses are final fractures.
+    fn three_accepted_fractures() -> (Vec<Poly>, [usize; 3]) {
         let mut rectangle = Poly::new(4, 1., 2.);
         rectangle.family_num = USER_FRACTURE_FAMILY;
-        let mut ellipse = Poly::new(6, 3., 1.);
-        ellipse.family_num = 0;
-        ellipse.area = 20.;
-        ellipse.translation = Vector3::new(1., 2., 3.);
+        let mut small_ellipse = Poly::new(6, 3., 1.);
+        small_ellipse.family_num = 0;
+        small_ellipse.area = 20.;
+        small_ellipse.translation = Vector3::new(1., 2., 3.);
+        let mut large_ellipse = Poly::new(8, 5., 1.);
+        large_ellipse.family_num = 1;
+
+        (vec![rectangle, small_ellipse, large_ellipse], [0, 2, 1])
+    }
+
+    fn write_final_fractures() -> String {
+        let (accepted_poly, boundary_face_counts) = three_accepted_fractures();
 
         let mut output = Vec::new();
-        write_fractures_vtk(&[1], &[rectangle, ellipse], &[0, 2], &mut output).unwrap();
+        write_fractures_vtk(&[1, 2], &accepted_poly, &boundary_face_counts, &mut output).unwrap();
+        String::from_utf8(output).unwrap()
+    }
+
+    fn write_removed_fractures() -> String {
+        let (accepted_poly, boundary_face_counts) = three_accepted_fractures();
+
+        let mut output = Vec::new();
+        write_removed_fractures_vtk(&[0], &accepted_poly, &boundary_face_counts, &mut output)
+            .unwrap();
         String::from_utf8(output).unwrap()
     }
 
@@ -315,21 +377,21 @@ mod tests {
     }
 
     #[test]
-    fn test_each_accepted_fracture_is_one_polygon_cell() {
-        let file = write_two_fractures();
+    fn test_each_final_fracture_is_one_polygon_cell() {
+        let file = write_final_fractures();
 
-        assert!(file.contains(r#"NumberOfPoints="10""#));
+        assert!(file.contains(r#"NumberOfPoints="14""#));
         assert!(file.contains(r#"NumberOfPolys="2""#));
-        assert_eq!(data_array(&file, "points").len(), 10);
-        assert_eq!(data_array(&file, "offsets"), ["4", "10"]);
-        assert_eq!(data_array(&file, "connectivity").last(), Some(&"9"));
+        assert_eq!(data_array(&file, "points").len(), 14);
+        assert_eq!(data_array(&file, "offsets"), ["6", "14"]);
+        assert_eq!(data_array(&file, "connectivity").last(), Some(&"13"));
     }
 
     #[test]
     fn test_points_are_the_polygon_vertices() {
-        let file = write_two_fractures();
+        let file = write_final_fractures();
 
-        let first_vertex = Poly::new(4, 1., 2.).vertices[0];
+        let first_vertex = Poly::new(6, 3., 1.).vertices[0];
         assert_eq!(
             data_array(&file, "points")[0],
             format!("{} {} 0", first_vertex.x, first_vertex.y)
@@ -337,35 +399,70 @@ mod tests {
     }
 
     #[test]
-    fn test_removed_fracture_has_no_fracture_id() {
-        let file = write_two_fractures();
+    fn test_fracture_id_is_the_cell_number() {
+        let file = write_final_fractures();
 
-        assert_eq!(data_array(&file, "fracture_id"), ["0", "1"]);
-        assert_eq!(data_array(&file, "removed"), ["1", "0"]);
+        assert_eq!(data_array(&file, "fracture_id"), ["1", "2"]);
+    }
+
+    #[test]
+    fn test_final_fracture_keeps_its_accepted_id() {
+        let file = write_final_fractures();
+
+        assert_eq!(data_array(&file, "accepted_id"), ["2", "3"]);
+    }
+
+    #[test]
+    fn test_fractures_file_has_no_removed_array() {
+        let file = write_final_fractures();
+
+        assert!(!file.contains(r#"Name="removed""#));
     }
 
     #[test]
     fn test_family_number_is_one_more_than_the_internal_number() {
-        let file = write_two_fractures();
+        let file = write_final_fractures();
 
-        assert_eq!(data_array(&file, "family"), ["0", "1"]);
+        assert_eq!(data_array(&file, "family"), ["1", "2"]);
     }
 
     #[test]
     fn test_properties_are_written_for_each_fracture() {
-        let file = write_two_fractures();
+        let file = write_final_fractures();
 
-        assert_eq!(data_array(&file, "x_radius"), ["1", "3"]);
-        assert_eq!(data_array(&file, "area"), ["0", "20"]);
-        assert_eq!(data_array(&file, "boundary_face_count"), ["0", "2"]);
+        assert_eq!(data_array(&file, "x_radius"), ["3", "5"]);
+        assert_eq!(data_array(&file, "area"), ["20", "0"]);
+        assert_eq!(data_array(&file, "boundary_face_count"), ["2", "1"]);
         assert_eq!(data_array(&file, "normal"), ["0 0 1", "0 0 1"]);
     }
 
     #[test]
     fn test_translation_is_written_for_each_fracture() {
-        let file = write_two_fractures();
+        let file = write_final_fractures();
 
-        assert_eq!(data_array(&file, "translation"), ["0 0 0", "1 2 3"]);
+        assert_eq!(data_array(&file, "translation"), ["1 2 3", "0 0 0"]);
+    }
+
+    #[test]
+    fn test_each_removed_fracture_is_one_polygon_cell() {
+        let file = write_removed_fractures();
+
+        assert!(file.contains(r#"NumberOfPolys="1""#));
+        assert_eq!(data_array(&file, "offsets"), ["4"]);
+    }
+
+    #[test]
+    fn test_removed_fracture_keeps_its_accepted_id() {
+        let file = write_removed_fractures();
+
+        assert_eq!(data_array(&file, "accepted_id"), ["1"]);
+    }
+
+    #[test]
+    fn test_removed_fractures_file_has_no_fracture_id() {
+        let file = write_removed_fractures();
+
+        assert!(!file.contains(r#"Name="fracture_id""#));
     }
 
     #[test]

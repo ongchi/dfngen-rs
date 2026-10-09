@@ -144,7 +144,8 @@ The log of the run goes to the console (stdout), not to a file. The level is
 
 | File | Content |
 |---|---|
-| `fractures.vtp` | All accepted fractures as polygons with their properties (VTK PolyData, for ParaView or PyVista). See below. |
+| `fractures.vtp` | The final fractures as polygons with their properties (VTK PolyData, for ParaView or PyVista). See below. |
+| `fractures_removed.vtp` | The accepted fractures which are not final fractures, as polygons with their properties (VTK PolyData). Written only if a fracture was removed. See below. |
 | `connectivity.dat` | Line N: numbers of the final fractures which intersect final fracture N. |
 | `intersection_list.dat` | One line for each intersection: the two fracture numbers, mid point and length. A negative number is a domain face: -1 top, -2 bottom, -3 left, -4 front, -5 right, -6 back. |
 | `triple_points.dat` | Coordinates of the triple intersection points. Written only if `triple_intersections = true`. |
@@ -155,14 +156,13 @@ The log of the run goes to the console (stdout), not to a file. The level is
 
 ### Cell data of `fractures.vtp`
 
-The file has one polygon cell for each accepted fracture, with its vertices
-in 3D.
+The file has one polygon cell for each final fracture, with its vertices
+in 3D. Cell N is final fracture N.
 
 | Array | Content |
 |---|---|
-| `fracture_id` | Number of the final fracture, 0 if the fracture was removed. |
+| `fracture_id` | Number of the final fracture, starts at 1. |
 | `accepted_id` | Number in the order of acceptance, starts at 1. |
-| `removed` | 1 if the fracture was removed, else 0. |
 | `family` | 0 user-defined fracture, > 0 stochastic family. |
 | `cluster` | Number of the connected group of fractures. |
 | `truncated` | 1 if the domain cut the fracture, else 0. |
@@ -172,6 +172,12 @@ in 3D.
 | `area` | Area after truncation. |
 | `normal` | Unit normal vector. |
 | `translation` | Translation of the fracture center from the origin. |
+
+### Cell data of `fractures_removed.vtp`
+
+The file has one polygon cell for each accepted fracture which is not a final
+fracture (isolated fracture, or not in a kept cluster), in the order of
+acceptance. The arrays are those of `fractures.vtp` without `fracture_id`.
 
 ### Cell data of `rejected_fractures.vtp`
 
@@ -204,7 +210,7 @@ then has no valid polygon.
 | -13 | Triple intersection point too near to an end point of an intersection. |
 | -14 | Triple intersection point too near to another triple intersection point. |
 
-`fractures.vtp` and `rejected_fractures.vtp` together do not have all
-generated fractures. An accepted fracture which is removed later because it
+`fractures.vtp`, `fractures_removed.vtp` and `rejected_fractures.vtp` together
+do not have all generated fractures. An accepted fracture which is removed later because it
 is smaller than `remove_fractures_less_than`, or outside the polygon boundary,
-is in neither file.
+is in none of these files.
