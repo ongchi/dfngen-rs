@@ -1,108 +1,78 @@
-use std::fs::File;
-use std::io::BufReader;
-
-use itertools::zip_eq;
 use parry3d_f64::na::{center, distance, Point3, Vector3};
 
-use crate::cg::{normal_from_dip_strike, normal_from_trend_plunge};
-use crate::error::DfngenError;
-use crate::io::{
-    input::ExternalFractureFiles,
-    read_input_functions::{
-        read_bracketed_point, search_var, ReadFromTextFile, UserFractureReader,
-    },
-};
 use crate::structures::{DFNGen, PolyOptions};
 
 use super::poly::Poly;
 
-pub fn insert_user_defined_fractures(
-    rect_first: bool,
-    files: &ExternalFractureFiles,
-    poly_opts: &PolyOptions,
-    dfngen: &mut DFNGen,
-) -> usize {
-    let mut poly_polys: Vec<Poly> = Vec::new();
-    let mut rect_polys: Vec<Poly> = Vec::new();
-    let mut ell_polys: Vec<Poly> = Vec::new();
+/// Family number of user-defined ellipses.
+pub const USER_ELLIPSE_FAMILY: isize = -1;
+/// Family number of user-defined rectangles.
+pub const USER_RECTANGLE_FAMILY: isize = -2;
+/// Family number of user-defined polygons.
+pub const USER_POLYGON_FAMILY: isize = -3;
 
-    if let Some(ref path) = files.user_poly_by_coord_file {
-        poly_polys.extend(
-            FractureNodesDef::from_poly_file(path)
-                .into_iter()
-                .map(|fracture| fracture.into_poly()),
-        );
-    }
+/// A fracture which the user defines in the input file.
+#[derive(Debug)]
+pub enum UserFracture {
+    ByParameters(FractureDef),
+    ByVertices(FractureNodesDef),
+}
 
-    if let Some(ref path) = files.user_rect_file {
-        rect_polys.extend(
-            FractureDef::from_file(path, poly_opts.eps, false)
-                .into_iter()
-                .map(|fracture| fracture.into_poly()),
-        );
-    }
-
-    if let Some(ref path) = files.user_rect_by_coord_file {
-        rect_polys.extend(
-            FractureNodesDef::from_rect_file(path)
-                .into_iter()
-                .map(|fracture| fracture.into_poly()),
-        );
-    }
-
-    if let Some(ref path) = files.user_ell_file {
-        ell_polys.extend(
-            FractureDef::from_file(path, poly_opts.eps, true)
-                .into_iter()
-                .map(|fracture| fracture.into_poly()),
-        );
-    }
-
-    if let Some(ref path) = files.user_ell_by_coord_file {
-        ell_polys.extend(
-            FractureNodesDef::from_ell_file(path)
-                .into_iter()
-                .map(|fracture| fracture.into_poly()),
-        );
-    }
-
-    let num_user_defined_fractures = poly_polys.len() + rect_polys.len() + ell_polys.len();
-
-    // User Polygons are always inserted first
-    let mut insertion_order = vec![(poly_polys, -3)];
-    if rect_first {
-        insertion_order.extend([(rect_polys, -2), (ell_polys, -1)]);
-    } else {
-        insertion_order.extend([(ell_polys, -1), (rect_polys, -2)]);
-    }
-
-    for (polys, family_id) in insertion_order {
-        for (i, poly) in polys.into_iter().enumerate() {
-            dfngen.insert_poly(poly, i + 1, family_id, poly_opts);
+impl UserFracture {
+    pub fn to_poly(&self) -> Poly {
+        match self {
+            Self::ByParameters(fracture) => fracture.to_poly(),
+            Self::ByVertices(fracture) => fracture.to_poly(),
         }
     }
 
-    num_user_defined_fractures
+    pub fn family_num(&self) -> isize {
+        match self {
+            Self::ByParameters(fracture) => fracture.family_num(),
+            Self::ByVertices(fracture) => fracture.family_num(),
+        }
+    }
+
+    pub fn is_defined_by_parameters(&self) -> bool {
+        matches!(self, Self::ByParameters(_))
+    }
 }
 
-/// Reads the node lists of `n_frac` fractures, `num_points` nodes each, from the
-/// {x, y, z} groups after the "Coordinates:" label.
-fn read_coordinates(
-    mut file: BufReader<File>,
-    n_frac: usize,
-    num_points: usize,
-) -> Vec<Vec<[f64; 3]>> {
-    search_var(&mut file, "Coordinates:");
+/// Inserts the user-defined fractures. Returns the number of them.
+///
+/// Polygons are inserted first, then rectangles and ellipses in the order
+/// that `rect_first` gives. Each group keeps the order of the input file.
+pub fn insert_user_defined_fractures(
+    rect_first: bool,
+    fractures: &[UserFracture],
+    poly_opts: &PolyOptions,
+    dfngen: &mut DFNGen,
+) -> usize {
+    let insertion_order = if rect_first {
+        [
+            USER_POLYGON_FAMILY,
+            USER_RECTANGLE_FAMILY,
+            USER_ELLIPSE_FAMILY,
+        ]
+    } else {
+        [
+            USER_POLYGON_FAMILY,
+            USER_ELLIPSE_FAMILY,
+            USER_RECTANGLE_FAMILY,
+        ]
+    };
 
-    (0..n_frac)
-        .map(|_| read_points(&mut file, num_points))
-        .collect()
-}
+    for family_id in insertion_order {
+        let family_fractures = fractures
+            .iter()
+            .filter(|fracture| fracture.family_num() == family_id);
 
-fn read_points(file: &mut BufReader<File>, num_points: usize) -> Vec<[f64; 3]> {
-    (0..num_points)
-        .map(|_| read_bracketed_point(file))
-        .collect()
+        for (i, fracture) in family_fractures.enumerate() {
+            dfngen.insert_poly(fracture.to_poly(), i + 1, family_id as i32, poly_opts);
+        }
+    }
+
+    fractures.len()
 }
 
 /// User-defined fractures that are defined by a set of nodes.
@@ -114,86 +84,21 @@ pub enum FractureNodesDef {
 }
 
 impl FractureNodesDef {
-    pub fn new_rect(nodes: Vec<[f64; 3]>) -> Result<Self, DfngenError> {
-        if nodes.len() != 4 {
-            Err(DfngenError::ValueError(
-                "User defined rectangle must have 4 nodes".to_string(),
-            ))
-        } else {
-            Ok(Self::Rectangle(nodes))
+    pub fn family_num(&self) -> isize {
+        match self {
+            Self::Ellipse(_) => USER_ELLIPSE_FAMILY,
+            Self::Rectangle(_) => USER_RECTANGLE_FAMILY,
+            Self::Polygon(_) => USER_POLYGON_FAMILY,
         }
     }
 
-    /// Reads a file containing user-defined fractures defined by ellipse vertices.
-    pub fn from_ell_file(path: &str) -> Vec<Self> {
-        let mut file = BufReader::new(File::open(path).unwrap());
-
-        search_var(&mut file, "nEllipses:");
-        let mut n_frac: usize = 0;
-        n_frac.read_from_text(&mut file);
-
-        search_var(&mut file, "nNodes:");
-        let mut num_points: usize = 0;
-        num_points.read_from_text(&mut file);
-
-        read_coordinates(file, n_frac, num_points)
-            .into_iter()
-            .map(FractureNodesDef::Ellipse)
-            .collect()
-    }
-
-    /// Reads a file containing user-defined fractures defined by rectangle vertices.
-    pub fn from_rect_file(path: &str) -> Vec<Self> {
-        let mut file = BufReader::new(File::open(path).unwrap());
-
-        search_var(&mut file, "nRectangles:");
-        let mut n_frac: usize = 0;
-        n_frac.read_from_text(&mut file);
-
-        read_coordinates(file, n_frac, 4)
-            .into_iter()
-            .map(|nodes| FractureNodesDef::new_rect(nodes).unwrap())
-            .collect()
-    }
-
-    /// Reads a file containing user-defined fractures defined by polygon vertices.
-    pub fn from_poly_file(path: &str) -> Vec<Self> {
-        let mut file = BufReader::new(File::open(path).unwrap());
-
-        search_var(&mut file, "nPolygons:");
-        let mut n_frac: usize = 0;
-        n_frac.read_from_text(&mut file);
-
-        // Each polygon is its number of nodes, then one {x, y, z} group for each node
-        (0..n_frac)
-            .map(|_| {
-                let mut num_points: usize = 0;
-                num_points.read_from_text(&mut file);
-
-                FractureNodesDef::Polygon(read_points(&mut file, num_points))
-            })
-            .collect()
-    }
-}
-
-impl FractureNodesDef {
-    pub fn into_poly(self) -> Poly {
-        let mut poly = Poly::default();
-
-        let nodes = match self {
-            Self::Ellipse(ref nodes) => {
-                poly.family_num = -1;
-                nodes
-            }
-            Self::Rectangle(ref nodes) => {
-                poly.family_num = -2;
-                nodes
-            }
-            Self::Polygon(ref nodes) => {
-                poly.family_num = -3;
-                nodes
-            }
+    pub fn to_poly(&self) -> Poly {
+        let mut poly = Poly {
+            family_num: self.family_num(),
+            ..Default::default()
         };
+
+        let (Self::Ellipse(nodes) | Self::Rectangle(nodes) | Self::Polygon(nodes)) = self;
 
         // Get a normal vector
         // Vector from fist node to node accross middle of polygon
@@ -249,111 +154,32 @@ impl FractureNodesDef {
 /// User-defined fractures that are defined by a set of properties.
 #[derive(Debug)]
 pub struct FractureDef {
-    eps: f64, // TODO: Move this parameter into global
-    num_nodes: usize,
-    radius: f64,
-    beta: f64,
-    aspect_ratio: f64,
-    translation: [f64; 3],
-    normal: [f64; 3],
+    pub eps: f64, // TODO: Move this parameter into global
+    /// Number of nodes of an ellipse. 0 for a rectangle.
+    pub num_nodes: usize,
+    pub radius: f64,
+    /// Rotation around the normal vector in radians
+    pub beta: f64,
+    pub aspect_ratio: f64,
+    pub translation: [f64; 3],
+    pub normal: [f64; 3],
 }
 
 impl FractureDef {
-    pub fn from_file(path: &str, eps: f64, is_ell: bool) -> Vec<Self> {
-        let mut frac_reader = if is_ell {
-            UserFractureReader::new(path, "nUserEll:")
-        } else {
-            UserFractureReader::new(path, "nUserRect:")
-        };
-
-        let mut radii: Vec<f64> = Vec::new();
-        let mut beta: Vec<f64> = Vec::new();
-        let mut aspect: Vec<f64> = Vec::new();
-        let mut translation: Vec<[f64; 3]> = Vec::new();
-
-        let mut orientation_option: u8 = 0;
-
-        let mut normal: Vec<[f64; 3]> = Vec::new();
-        let mut trend_plunge: Vec<[f64; 2]> = Vec::new();
-        let mut dip_strike: Vec<[f64; 2]> = Vec::new();
-
-        let mut num_points: Vec<usize> = Vec::new();
-
-        frac_reader.read_vec("Radii:", &mut radii);
-
-        let mut angle_option = String::new();
-        frac_reader.read_value("AngleOption:", &mut angle_option);
-        let angle_convertion_factor = match angle_option.as_str() {
-            "degree" => std::f64::consts::PI / 180.,
-            "radian" => 1.,
-            _ => panic!("Invalid angle option"),
-        };
-
-        frac_reader.read_vec("Beta:", &mut beta);
-        beta.iter_mut().for_each(|v| *v *= angle_convertion_factor);
-
-        frac_reader.read_vec("Aspect_Ratio:", &mut aspect);
-        frac_reader.read_value("Translation:", &mut translation);
-
-        frac_reader.read_value("userOrientationOption:", &mut orientation_option);
-
-        if orientation_option == 0 {
-            frac_reader.read_value("Normal:", &mut normal);
-        } else if orientation_option == 1 {
-            frac_reader.read_value("Trend_Plunge:", &mut trend_plunge);
-
-            // Convert Trend and Plunge into normal vectors
-            for [trend, plunge] in &trend_plunge {
-                let trend = trend * angle_convertion_factor;
-                let plunge = plunge * angle_convertion_factor;
-                normal.push(normal_from_trend_plunge(trend, plunge).into());
-            }
-        } else if orientation_option == 2 {
-            frac_reader.read_value("Dip_Strike:", &mut dip_strike);
-
-            // Convert Dip and Strike into normal vectors
-            for [dip, strike] in &dip_strike {
-                let dip = dip * angle_convertion_factor;
-                let strike = strike * angle_convertion_factor;
-                normal.push(normal_from_dip_strike(dip, strike).into());
-            }
-        }
-
-        if is_ell {
-            frac_reader.read_vec("Number_of_Vertices:", &mut num_points);
-        } else {
-            num_points = vec![0; frac_reader.n_frac];
-        }
-
-        let mut fractures = Vec::new();
-
-        for (((((num_nodes, radius), beta), aspect_ratio), translation), normal) in zip_eq(
-            zip_eq(
-                zip_eq(zip_eq(zip_eq(num_points, radii), beta), aspect),
-                translation,
-            ),
-            normal,
-        ) {
-            fractures.push(FractureDef {
-                eps,
-                num_nodes,
-                radius,
-                beta,
-                aspect_ratio,
-                translation,
-                normal,
-            })
-        }
-
-        fractures
+    fn is_rect(&self) -> bool {
+        self.num_nodes == 0
     }
-}
 
-impl FractureDef {
-    pub fn into_poly(self) -> Poly {
-        let is_rect = self.num_nodes == 0;
+    pub fn family_num(&self) -> isize {
+        if self.is_rect() {
+            USER_RECTANGLE_FAMILY
+        } else {
+            USER_ELLIPSE_FAMILY
+        }
+    }
 
-        let family_num = if is_rect { -2 } else { -1 };
+    pub fn to_poly(&self) -> Poly {
+        let is_rect = self.is_rect();
         let normal = Vector3::from_row_slice(&self.normal);
 
         let mut new_poly = if is_rect {
@@ -361,7 +187,7 @@ impl FractureDef {
         } else {
             Poly::new_ell(self.num_nodes, self.radius, self.aspect_ratio)
         };
-        new_poly.family_num = family_num;
+        new_poly.family_num = self.family_num();
         new_poly.translation = Vector3::from_row_slice(&self.translation);
 
         // Apply 2d rotation matrix, twist around origin

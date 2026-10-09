@@ -14,12 +14,12 @@ disable_shortening_int = []
 
 [dependencies]
 clap = { version = "4.5", features = ["derive"] }
-itertools = "0.14"
 parry3d-f64 = "0.19"
 rand = "0.9"
 rand_distr = "0.5"
 rand_mt = "5.0"
-text_io = "0.1"
+serde = { version = "1.0", features = ["derive"] }
 thiserror = "2.0"
+toml = { version = "1.1", default-features = false, features = ["std", "parse", "serde"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }

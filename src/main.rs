@@ -57,7 +57,8 @@ fn main() -> Result<(), DfngenError> {
 
     let mut dfngen = DFNGen::new();
 
-    let (mut input, mut frac_fam_col) = read_input(&cli.input_file);
+    let (mut input, mut frac_fam_col) =
+        read_input(&cli.input_file).inspect_err(|e| error!("{}", e))?;
     let total_families = frac_fam_col.families.len();
 
     let poly_opts = PolyOptions {
@@ -88,15 +89,15 @@ fn main() -> Result<(), DfngenError> {
 
     let num_user_defined_fractures = insert_user_defined_fractures(
         input.insert_user_rectangles_first,
-        &input.ext_fracture_files,
+        &input.user_fractures,
         &poly_opts,
         &mut dfngen,
     );
 
     if total_families == 0 && input.stop_condition != StopCondition::NPoly {
         // If no stochastic shapes, use nPoly option with npoly = number of user polygons
-        warn!("You have defined stopCondition = 1 (P32 program stopping condition) but have no stochastic shape families defined.");
-        warn!("Automatically setting stopCondition to 0 for use with user defined polygons and nPoly.");
+        warn!("You have defined stop_condition = \"p32\" but have no stochastic fracture families defined.");
+        warn!("Automatically setting stop_condition to \"n_poly\" for use with user defined fractures.");
         input.stop_condition = StopCondition::NPoly;
 
         if num_user_defined_fractures == 0 {
@@ -157,7 +158,7 @@ fn main() -> Result<(), DfngenError> {
         );
     }
 
-    if input.polygon_boundary_flag {
+    if !input.domain_vertices.is_empty() {
         info!("Extracting fractures from a polygon boundary domain");
         let size = dfngen.accepted_poly.len();
         dfngen.remove_fractures_beyond_domains(&poly_opts, &input.domain_vertices);
@@ -219,7 +220,7 @@ fn main() -> Result<(), DfngenError> {
         error!("fracture network does not make a connection between",);
         error!("the user's specified boundary faces.");
         error!("Try increasing the fracture density, shrinking the domain",);
-        error!("or consider using the 'ignoreBoundaryFaces' option.",);
+        error!("or consider using the 'clusters.ignore_boundary_faces' option.",);
         return Err(DfngenError::NoBoundaryConnection);
     }
 
@@ -795,7 +796,7 @@ fn report_rejection_statistics(pstats: &Stats) {
 fn report_estimation_statistics(frac_fam_col: &FractureFamilyCollection, pstats: &Stats) {
     info!("Fracture Estimation statistics:");
     info!("NOTE: If estimation and actual are very different, expected family distributions might not be accurate.");
-    info!("If this is the case, try increasing or decreasing the 'radiiListIncrease' option in the input file.");
+    info!("If this is the case, try increasing or decreasing the 'generation.radii_list_increase' option in the input file.");
 
     for (i, shape) in frac_fam_col.families.iter().enumerate() {
         match shape.radius.function {

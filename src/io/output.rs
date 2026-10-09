@@ -8,6 +8,9 @@ use tracing::info;
 
 use crate::distribution::generating_points::discretize_line_of_intersection;
 use crate::fracture::fracture_family::FractureFamilyCollection;
+use crate::fracture::user_defined_fractures::{
+    USER_ELLIPSE_FAMILY, USER_POLYGON_FAMILY, USER_RECTANGLE_FAMILY,
+};
 use crate::io::input::{Input, StopCondition};
 use crate::io::vtk::write_fractures_vtk;
 use crate::math_functions::sorted_index;
@@ -107,17 +110,16 @@ pub fn write_output(
     write_final_poly_area(final_fractures, accepted_poly, &output)?;
     write_boundary_files(final_fractures, accepted_poly, &output)?;
 
-    let user_files = &input.ext_fracture_files;
     // Fractures are marked -2 for user rects, -1 for user ellipses, -3 for user polygons
     let mut family_nums: Vec<isize> = (0..frac_families.families.len() as isize).collect();
-    if user_files.user_rect_file.is_some() {
-        family_nums.push(-2);
-    }
-    if user_files.user_ell_file.is_some() {
-        family_nums.push(-1);
-    }
-    if user_files.user_poly_by_coord_file.is_some() {
-        family_nums.push(-3);
+    for user_family in [
+        USER_RECTANGLE_FAMILY,
+        USER_ELLIPSE_FAMILY,
+        USER_POLYGON_FAMILY,
+    ] {
+        if has_user_family(input, user_family) {
+            family_nums.push(user_family);
+        }
     }
 
     if input.output_accepted_radii_per_family {
@@ -879,6 +881,17 @@ fn write_user_rejected_fracture_information(pstats: &Stats, output: &str) -> io:
     file.flush()
 }
 
+/// Returns true if the output has a family for this kind of user-defined fracture.
+///
+/// Rectangles and ellipses count only if they are defined by parameters.
+/// Polygons are always defined by vertices.
+fn has_user_family(input: &Input, family_num: isize) -> bool {
+    input.user_fractures.iter().any(|fracture| {
+        fracture.family_num() == family_num
+            && (family_num == USER_POLYGON_FAMILY || fracture.is_defined_by_parameters())
+    })
+}
+
 /// Writes families.dat, Shape families definition file
 ///
 /// # Arguments
@@ -894,19 +907,18 @@ fn write_frac_fams(
     let rad_to_deg = 180. / std::f64::consts::PI;
     info!("Writing Family Definitions File (families.dat)");
     let mut file = create_file(format!("{}/families.dat", output))?;
-    let user_files = &input.ext_fracture_files;
 
     //TODO: add stub code in families.dat for userDefined fractures, IF there are user defined fractures
 
-    if user_files.user_ell_file.is_some() {
+    if has_user_family(input, USER_ELLIPSE_FAMILY) {
         write!(file, "UserDefined Ellipse Family: 0\n\n")?;
     }
 
-    if user_files.user_rect_file.is_some() {
+    if has_user_family(input, USER_RECTANGLE_FAMILY) {
         write!(file, "UserDefined Rectangle Family: -1\n\n")?;
     }
 
-    if user_files.user_poly_by_coord_file.is_some() {
+    if has_user_family(input, USER_POLYGON_FAMILY) {
         write!(file, "UserDefined Polygon Family: -2\n\n")?;
     }
 

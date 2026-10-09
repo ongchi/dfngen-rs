@@ -1,30 +1,18 @@
 use parry3d_f64::na::{Point2, Vector3};
-use tracing::info;
+use serde::Deserialize;
+use tracing::{info, warn};
 
-use super::read_input_functions::read_domain_vertices;
+use crate::cg::{normal_from_dip_strike, normal_from_trend_plunge};
+use crate::distribution::Fisher;
+use crate::error::DfngenError;
+use crate::fracture::fracture_family::{
+    FractureFamily, FractureFamilyBuilder, FractureFamilyCollection,
+};
+use crate::fracture::user_defined_fractures::{FractureDef, FractureNodesDef, UserFracture};
+use crate::structures::RadiusDistribution;
 
-use crate::fracture::fracture_family::FractureFamilyCollection;
-use crate::io::read_input_functions::InputReader;
-
-#[derive(Default, Debug)]
-pub struct ExternalFractureFiles {
-    /// File name of user polygons defined by coordinates
-    pub user_poly_by_coord_file: Option<String>,
-
-    /// File name of user ellipses defined by coordinates
-    pub user_ell_by_coord_file: Option<String>,
-
-    /// File name of user retangles defined by coordinates
-    pub user_rect_by_coord_file: Option<String>,
-
-    /// File name of user ellipses
-    pub user_ell_file: Option<String>,
-
-    /// File name of user rectangles
-    pub user_rect_file: Option<String>,
-}
-
-#[derive(Default, Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Deserialize, Default, Debug, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
 pub enum StopCondition {
     /// Stop at a fixed number of accepted fractures.
     #[default]
@@ -36,10 +24,10 @@ pub enum StopCondition {
 
 #[derive(Default, Debug)]
 pub struct Input {
-    /// DFN generation stop condition. 0 - nPoly option, 1 - P32 option.
+    /// DFN generation stop condition.
     pub stop_condition: StopCondition,
 
-    /// Number of polygons to place in the DFN when uisng nPoly stopCondition option.
+    /// Number of polygons to place in the DFN with the `NPoly` stop condition.
     pub n_poly: usize,
 
     /// Domain size with dimension x*y*z for DFN, centered at the origin.
@@ -133,26 +121,6 @@ pub struct Input {
     /// Seed for random generator.
     pub seed: u64,
 
-    /// Size increase for inserting fracture centers outside the domain.
-    /// Fracture will be truncated based on domainSize above.
-    /// Increases the entire width by this ammount. So, {1,1,1} will increase
-    /// the domain by adding .5 to the +x, and subbtracting .5 to the -x, etc
-    pub domain_size_increase: Vector3<f64>,
-
-    /// Selection of orientation Option
-    /// 0 - spherical coordinates
-    /// 1 - trend / plunge
-    /// 2 - dip / strike
-    pub orientation_option: u8,
-
-    /// Number of rectangular families defined below.
-    /// Having this option = 0 will ignore all rectangular family variables.
-    pub n_fam_rect: usize,
-
-    /// Number of ellipse families defined below.
-    /// Having this option = 0 will ignore all ellipse family variables.
-    pub n_fam_ell: usize,
-
     ///    0 - Ignore this option, keep all fractures.
     ///
     /// (>0) - Size of minimum fracture radius. Fractures smaller than
@@ -193,11 +161,8 @@ pub struct Input {
     /// which regions were listed.
     pub region_volumes: Vec<f64>,
 
-    /// flag if the domain is pruned down to a final domain size
-    /// bool polygonBoundaryFlag = false;
-    pub polygon_boundary_flag: bool,
-
-    /// Vector of points defining the 2D boundary of the domain polygon
+    /// Vector of points defining the 2D boundary of the domain polygon.
+    /// Empty if the domain has no polygon boundary.
     pub domain_vertices: Vec<Point2<f64>>,
 
     /// False - Use boundaryFaces option.
@@ -205,212 +170,904 @@ pub struct Input {
     ///         and remove fractures with no intersections
     pub ignore_boundary_faces: bool,
 
-    pub ext_fracture_files: ExternalFractureFiles,
+    /// User-defined fractures, in the order of the input file.
+    pub user_fractures: Vec<UserFracture>,
 }
 
-/// Reads in all input variables.
-/// Creates Shape structure array from user input if
-/// using stochastic fracture families.
-///
-/// # Arguments
-///
-/// * `input` - Path to input file
-pub fn read_input(input_file: &str) -> (Input, FractureFamilyCollection) {
-    let mut input_var = Input::default();
-    let mut fracture_families = Vec::new();
+#[derive(Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+enum AngleUnit {
+    Radian,
+    Degree,
+}
 
+impl AngleUnit {
+    fn to_radians(self, angle: f64) -> f64 {
+        match self {
+            AngleUnit::Radian => angle,
+            AngleUnit::Degree => angle.to_radians(),
+        }
+    }
+}
+
+#[derive(Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+enum ShapeName {
+    Ellipse,
+    Rectangle,
+    Polygon,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct InputFile {
+    seed: u64,
+    h: f64,
+    angle_unit: AngleUnit,
+    domain: DomainSection,
+    generation: GenerationSection,
+    fram: FramSection,
+    clusters: ClustersSection,
+    output: OutputSection,
+    #[serde(default, rename = "family")]
+    families: Vec<FamilySection>,
+    #[serde(default, rename = "user_fracture")]
+    user_fractures: Vec<UserFractureSection>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct DomainSection {
+    size: [f64; 3],
+    /// Increase of the domain size for the insertion of fracture centers.
+    /// Each side moves out by half of the value. Fractures are truncated to `size`.
+    size_increase: [f64; 3],
+    /// {-z, +z} of each layer
+    #[serde(default)]
+    layers: Vec<[f64; 2]>,
+    /// {-x, +x, -y, +y, -z, +z} of each region
+    #[serde(default)]
+    regions: Vec<[f64; 6]>,
+    /// {x, y} of each vertex of the domain polygon
+    #[serde(default)]
+    polygon_boundary: Vec<[f64; 2]>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct GenerationSection {
+    stop_condition: StopCondition,
+    n_poly: Option<usize>,
+    radii_list_increase: f64,
+    rejects_per_fracture: usize,
+    force_large_fractures: bool,
+    remove_fractures_less_than: f64,
+    insert_user_rectangles_first: bool,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct FramSection {
+    disable: bool,
+    relaxed: bool,
+    triple_intersections: bool,
+    visualization_mode: bool,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ClustersSection {
+    boundary_faces: [bool; 6],
+    ignore_boundary_faces: bool,
+    keep_only_largest: bool,
+    keep_isolated_fractures: bool,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct OutputSection {
+    print_reject_reasons: bool,
+    all_radii: bool,
+    final_radii_per_family: bool,
+    accepted_radii_per_family: bool,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct FamilySection {
+    shape: ShapeName,
+    number_of_points: Option<u8>,
+    probability: f64,
+    aspect_ratio: f64,
+    layer: usize,
+    region: usize,
+    beta: Option<f64>,
+    p32_target: Option<f64>,
+    radius: RadiusSection,
+    orientation: OrientationSection,
+}
+
+#[derive(Deserialize)]
+#[serde(tag = "distribution", rename_all = "snake_case", deny_unknown_fields)]
+enum RadiusSection {
+    LogNormal {
+        log_mean: f64,
+        sd: f64,
+        min: f64,
+        max: f64,
+    },
+    TruncatedPowerLaw {
+        alpha: f64,
+        min: f64,
+        max: f64,
+    },
+    Exponential {
+        mean: f64,
+        min: f64,
+        max: f64,
+    },
+    Constant {
+        value: f64,
+    },
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct OrientationSection {
+    theta: Option<f64>,
+    phi: Option<f64>,
+    trend: Option<f64>,
+    plunge: Option<f64>,
+    dip: Option<f64>,
+    strike: Option<f64>,
+    kappa: f64,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct UserFractureSection {
+    shape: ShapeName,
+    angle_unit: Option<AngleUnit>,
+
+    // Definition by parameters
+    number_of_points: Option<usize>,
+    radius: Option<f64>,
+    aspect_ratio: Option<f64>,
+    beta: Option<f64>,
+    translation: Option<[f64; 3]>,
+    normal: Option<[f64; 3]>,
+    trend_plunge: Option<[f64; 2]>,
+    dip_strike: Option<[f64; 2]>,
+
+    // Definition by vertices
+    vertices: Option<Vec<[f64; 3]>>,
+}
+
+fn invalid_input(message: String) -> DfngenError {
+    DfngenError::InvalidInput(message)
+}
+
+/// Reads the TOML input file.
+///
+/// Returns the input options and the stochastic fracture families.
+pub fn read_input(input_file: &str) -> Result<(Input, FractureFamilyCollection), DfngenError> {
     info!("DFN Generator Input File: {}", input_file);
-    let mut input_reader = InputReader::new(input_file);
 
-    macro_rules! input_var {
-        ($label:expr, $field:ident) => {
-            input_reader.read_value(concat!($label, ":"), &mut input_var.$field);
-        };
-    }
+    let text = std::fs::read_to_string(input_file)
+        .map_err(|e| invalid_input(format!("cannot read {}: {}", input_file, e)))?;
 
-    let mut stop_condition: u8 = 0;
-    input_reader.read_value("stopCondition:", &mut stop_condition);
-    input_var.stop_condition = match stop_condition {
-        0 => StopCondition::NPoly,
-        1 => StopCondition::P32,
-        _ => panic!("Invalid stopCondition option. Must be 0: nPoly or 1: p32"),
-    };
-    input_var!("printRejectReasons", print_reject_reasons);
-    input_var!("domainSize", domain_size);
+    parse_input(&text)
+}
 
-    let mut n_layers: usize = 0;
-    input_reader.read_value("numOfLayers:", &mut n_layers);
-    if n_layers > 0 {
-        // -z and +z for each layer
-        input_var.layers = input_reader.read_value_groups("layers:", n_layers, 2);
+fn parse_input(text: &str) -> Result<(Input, FractureFamilyCollection), DfngenError> {
+    let file: InputFile = toml::from_str(text).map_err(|e| invalid_input(e.to_string()))?;
 
-        for i in 0..n_layers {
-            let idx = i * 2;
-            info!(
-                "    Layer {}{{-z,+z}}: {:?}, Volume: ",
-                i + 1,
-                &input_var.layers[idx..idx + 2]
-            );
-            let vol = input_var.domain_size[0]
-                * input_var.domain_size[1]
-                * (input_var.layers[idx + 1] - input_var.layers[idx]).abs();
-            info!("{} m^3", vol);
-            input_var.layer_volumes.push(vol);
-        }
-    }
+    let eps = file.h * 1e-8;
+    info!("h: {}", file.h);
 
-    let mut n_regions: usize = 0;
-    input_reader.read_value("numOfRegions:", &mut n_regions);
-    if n_regions > 0 {
-        // xmin, xmax, ymin, ymax, zmin, zmax for each region
-        input_var.regions = input_reader.read_value_groups("regions:", n_regions, 6);
-
-        info!("Number of Regions: {}", n_regions);
-
-        for i in 0..n_regions {
-            let idx = i * 6;
-            info!(
-                " Region {}: {{-x,+x,-y,+y,-z,+z}}: {:?}",
-                i + 1,
-                &input_var.regions[idx..idx + 6]
-            );
-            let vol = (input_var.regions[idx + 1] - input_var.regions[idx]).abs()
-                * (input_var.regions[idx + 3] - input_var.regions[idx + 2]).abs()
-                * (input_var.regions[idx + 5] - input_var.regions[idx + 4]).abs();
-            info!(" Volume: {} m^3", vol);
-            input_var.region_volumes.push(vol);
-        }
-    }
-
-    input_var!("h", h);
-    info!("h: {}", input_var.h);
-
-    // Set epsilon
-    input_var.eps = input_var.h * 1e-8;
-
-    input_var!("disableFram", disable_fram);
-
-    if input_var.disable_fram {
+    if file.fram.disable {
         info!("FRAM IS DISABLED");
     }
 
-    input_var!("rFram", r_fram);
-
-    if input_var.r_fram {
+    if file.fram.relaxed {
         info!("Running with relaxed FRAM. Mesh may not be fully conforming");
     }
 
-    input_var!("tripleIntersections", triple_intersections);
-    input_var!("forceLargeFractures", force_large_fractures);
-    input_var!("visualizationMode", visualization_mode);
+    let domain_size = Vector3::from(file.domain.size);
+    let domain_size_increase = Vector3::from(file.domain.size_increase);
 
-    if input_var.disable_fram {
-        input_var.visualization_mode = true;
-    }
+    let layers: Vec<f64> = file.domain.layers.iter().flatten().copied().collect();
+    let layer_volumes = file
+        .domain
+        .layers
+        .iter()
+        .enumerate()
+        .map(|(i, layer)| {
+            let volume = domain_size[0] * domain_size[1] * (layer[1] - layer[0]).abs();
+            info!(
+                "Layer {} {{-z,+z}}: {:?}, Volume: {} m^3",
+                i + 1,
+                layer,
+                volume
+            );
+            volume
+        })
+        .collect();
 
-    input_var!("outputAllRadii", output_all_radii);
-    input_var!("outputFinalRadiiPerFamily", output_final_radii_per_family);
-    input_var!(
-        "outputAcceptedRadiiPerFamily",
-        output_accepted_radii_per_family
-    );
-    input_var!("seed", seed);
-    input_var!("domainSizeIncrease", domain_size_increase);
-    input_var!("keepOnlyLargestCluster", keep_only_largest_cluster);
-    input_var!("keepIsolatedFractures", keep_isolated_fractures);
-    input_var!("ignoreBoundaryFaces", ignore_boundary_faces);
-    input_var!("boundaryFaces", boundary_faces);
-    input_var!("rejectsPerFracture", rejects_per_fracture);
-    input_var!("nFamRect", n_fam_rect);
-    input_var!("nFamEll", n_fam_ell);
-    input_var!("removeFracturesLessThan", remove_fractures_less_than);
-    input_var!("orientationOption", orientation_option);
+    let regions: Vec<f64> = file.domain.regions.iter().flatten().copied().collect();
+    let region_volumes = file
+        .domain
+        .regions
+        .iter()
+        .enumerate()
+        .map(|(i, region)| {
+            let volume = (region[1] - region[0]).abs()
+                * (region[3] - region[2]).abs()
+                * (region[5] - region[4]).abs();
+            info!(
+                "Region {} {{-x,+x,-y,+y,-z,+z}}: {:?}, Volume: {} m^3",
+                i + 1,
+                region,
+                volume
+            );
+            volume
+        })
+        .collect();
 
-    match input_var.orientation_option {
-        0 => info!("Expecting Theta and phi for orientations"),
-        1 => info!("Expecting Trend and Plunge for orientations"),
-        2 => info!("Expecting Dip and Strike (RHR) for orientations"),
-        _ => {}
-    }
-
-    input_var!("polygonBoundaryFlag", polygon_boundary_flag);
-
-    if input_var.polygon_boundary_flag {
-        info!("Expecting Polygon Boundary for domain edges");
-        let mut poly_boundary_file: String = String::new();
-        input_reader.read_value("polygonBoundaryFile:", &mut poly_boundary_file);
-        info!("Polygon Boundary File: {}", &poly_boundary_file);
-        read_domain_vertices(&mut input_var, &poly_boundary_file);
+    let domain_vertices: Vec<Point2<f64>> = file
+        .domain
+        .polygon_boundary
+        .iter()
+        .map(|&[x, y]| Point2::new(x, y))
+        .collect();
+    if !domain_vertices.is_empty() {
         info!(
-            "There are {} Vertices on the boundary",
-            input_var.domain_vertices.len()
+            "The domain polygon boundary has {} vertices",
+            domain_vertices.len()
         );
-
-        for (i, vertex) in input_var.domain_vertices.iter().enumerate() {
-            info!("Vertex {}: {{{}, {}}}", i + 1, vertex.x, vertex.y);
-        }
     }
 
-    fracture_families.extend(input_reader.read_fracture_family(
-        "e",
-        &input_var.layers,
-        &input_var.regions,
-        &input_var.domain_size,
-        &input_var.domain_size_increase,
-    ));
-    fracture_families.extend(input_reader.read_fracture_family(
-        "r",
-        &input_var.layers,
-        &input_var.regions,
-        &input_var.domain_size,
-        &input_var.domain_size_increase,
-    ));
-
-    let fracture_family_probabilities = if !fracture_families.is_empty() {
-        input_var!("radiiListIncrease", radii_list_increase);
-
-        if input_var.stop_condition == StopCondition::NPoly {
-            input_var!("nPoly", n_poly);
+    let stop_condition = file.generation.stop_condition;
+    let n_poly = match (stop_condition, file.generation.n_poly) {
+        (StopCondition::NPoly, None) if !file.families.is_empty() => {
+            return Err(invalid_input(
+                "generation.n_poly is necessary for stop_condition \"n_poly\"".to_string(),
+            ));
         }
-
-        let mut fam_prob = Vec::with_capacity(fracture_families.len());
-        input_reader.read_value("famProb:", &mut fam_prob);
-        fam_prob
-    } else {
-        Vec::new()
+        (_, n_poly) => n_poly.unwrap_or(0),
     };
 
-    //
-    // Get external fracture definition files
-    //
+    let user_fractures = file
+        .user_fractures
+        .iter()
+        .enumerate()
+        .map(|(i, section)| {
+            build_user_fracture(section, file.angle_unit, eps)
+                .map_err(|message| invalid_input(format!("user_fracture {}: {}", i + 1, message)))
+        })
+        .collect::<Result<Vec<_>, _>>()?;
 
-    let files = &mut input_var.ext_fracture_files;
-    files.user_ell_file =
-        input_reader.read_optional_path("userEllipsesOnOff:", "UserEll_Input_File_Path:");
-    files.user_rect_file =
-        input_reader.read_optional_path("userRectanglesOnOff:", "UserRect_Input_File_Path:");
-    files.user_poly_by_coord_file =
-        input_reader.read_optional_path("userPolygonByCoord:", "PolygonByCoord_Input_File_Path:");
-    files.user_ell_by_coord_file =
-        input_reader.read_optional_path("userEllByCoord:", "EllByCoord_Input_File_Path:");
-    files.user_rect_by_coord_file =
-        input_reader.read_optional_path("userRecByCoord:", "RectByCoord_Input_File_Path:");
+    let family_context = FamilyContext {
+        angle_unit: file.angle_unit,
+        stop_condition,
+        h: file.h,
+        eps,
+        layers: &layers,
+        regions: &regions,
+        domain_size: &domain_size,
+        domain_size_increase: &domain_size_increase,
+    };
 
-    let has_user_rectangles =
-        files.user_rect_file.is_some() || files.user_rect_by_coord_file.is_some();
-    let has_user_ellipses = files.user_ell_file.is_some() || files.user_ell_by_coord_file.is_some();
-
-    // The insertion order matters only if both kinds are defined
-    if has_user_rectangles && has_user_ellipses {
-        input_var!("insertUserRectanglesFirst", insert_user_rectangles_first);
+    // All ellipse families come before all rectangle families. The family id
+    // counts from 1 in each of the two groups.
+    let mut families = Vec::with_capacity(file.families.len());
+    let mut probabilities = Vec::with_capacity(file.families.len());
+    for shape in [ShapeName::Ellipse, ShapeName::Rectangle] {
+        let mut id = 0;
+        for (i, section) in file.families.iter().enumerate() {
+            if section.shape != shape {
+                continue;
+            }
+            id += 1;
+            let family = build_family(section, id, &family_context)
+                .map_err(|message| invalid_input(format!("family {}: {}", i + 1, message)))?;
+            families.push(family);
+            probabilities.push(section.probability);
+        }
+    }
+    if families.len() != file.families.len() {
+        return Err(invalid_input(
+            "the shape of a family must be \"ellipse\" or \"rectangle\"".to_string(),
+        ));
     }
 
-    (
-        input_var,
+    let input = Input {
+        stop_condition,
+        n_poly,
+        domain_size,
+        h: file.h,
+        eps,
+        radii_list_increase: file.generation.radii_list_increase,
+        disable_fram: file.fram.disable,
+        // Without FRAM there is no fine mesh
+        visualization_mode: file.fram.visualization_mode || file.fram.disable,
+        r_fram: file.fram.relaxed,
+        triple_intersections: file.fram.triple_intersections,
+        boundary_faces: file.clusters.boundary_faces,
+        keep_only_largest_cluster: file.clusters.keep_only_largest,
+        keep_isolated_fractures: file.clusters.keep_isolated_fractures,
+        print_reject_reasons: file.output.print_reject_reasons,
+        output_final_radii_per_family: file.output.final_radii_per_family,
+        output_accepted_radii_per_family: file.output.accepted_radii_per_family,
+        insert_user_rectangles_first: file.generation.insert_user_rectangles_first,
+        force_large_fractures: file.generation.force_large_fractures,
+        seed: file.seed,
+        remove_fractures_less_than: file.generation.remove_fractures_less_than,
+        output_all_radii: file.output.all_radii,
+        rejects_per_fracture: file.generation.rejects_per_fracture,
+        layers,
+        layer_volumes,
+        regions,
+        region_volumes,
+        domain_vertices,
+        ignore_boundary_faces: file.clusters.ignore_boundary_faces,
+        user_fractures,
+    };
+
+    Ok((
+        input,
         FractureFamilyCollection {
-            families: fracture_families,
-            probabilities: fracture_family_probabilities.clone(),
-            original_probabilities: fracture_family_probabilities,
+            families,
+            probabilities: probabilities.clone(),
+            original_probabilities: probabilities,
         },
-    )
+    ))
+}
+
+/// Values of the input file which each family needs.
+struct FamilyContext<'a> {
+    angle_unit: AngleUnit,
+    stop_condition: StopCondition,
+    h: f64,
+    eps: f64,
+    layers: &'a [f64],
+    regions: &'a [f64],
+    domain_size: &'a Vector3<f64>,
+    domain_size_increase: &'a Vector3<f64>,
+}
+
+fn build_family(
+    section: &FamilySection,
+    id: usize,
+    context: &FamilyContext,
+) -> Result<FractureFamily, String> {
+    if section.layer > context.layers.len() / 2 {
+        return Err(format!("layer {} is not defined", section.layer));
+    }
+    if section.region > context.regions.len() / 6 {
+        return Err(format!("region {} is not defined", section.region));
+    }
+
+    let mut builder = FractureFamilyBuilder::default();
+
+    match (section.shape, section.number_of_points) {
+        (ShapeName::Ellipse, Some(number_of_points)) => {
+            builder.number_of_nodes(number_of_points);
+        }
+        (ShapeName::Ellipse, None) => {
+            return Err("number_of_points is necessary for an ellipse".to_string());
+        }
+        (_, Some(_)) => {
+            return Err("number_of_points applies only to an ellipse".to_string());
+        }
+        (_, None) => {}
+    }
+
+    builder
+        .id(id)
+        .radius(build_radius_distribution(&section.radius, 3.0 * context.h))
+        .aspect_ratio(section.aspect_ratio)
+        .orientation(build_orientation(
+            &section.orientation,
+            context.angle_unit,
+            context.eps,
+        )?)
+        .layer_id(section.layer)
+        .region_id(section.region)
+        .layers(context.layers)
+        .regions(context.regions)
+        .domain_size(context.domain_size)
+        .domain_size_increase(context.domain_size_increase);
+
+    if let Some(beta) = section.beta {
+        builder.beta(context.angle_unit.to_radians(beta));
+    }
+
+    if context.stop_condition == StopCondition::P32 {
+        let p32_target = section
+            .p32_target
+            .ok_or("p32_target is necessary for stop_condition \"p32\"")?;
+        builder.p32_target(p32_target);
+    }
+
+    builder.build()
+}
+
+/// Returns `radius`, or `min_radius` with a warning if `radius` is too small for the mesh.
+fn limit_to_min_radius(radius: f64, min_radius: f64, description: &str) -> f64 {
+    if radius >= min_radius {
+        return radius;
+    }
+
+    warn!(
+        "{} ({}) is less than 3 times h, reset to {}",
+        description, radius, min_radius
+    );
+    min_radius
+}
+
+fn build_radius_distribution(section: &RadiusSection, min_radius: f64) -> RadiusDistribution {
+    match *section {
+        RadiusSection::LogNormal {
+            log_mean,
+            sd,
+            min,
+            max,
+        } => RadiusDistribution::new_log_normal(
+            log_mean,
+            sd,
+            limit_to_min_radius(min, min_radius, "Minimum radius of log-normal distribution"),
+            max,
+        ),
+        RadiusSection::TruncatedPowerLaw { alpha, min, max } => {
+            RadiusDistribution::new_truncated_power_law(
+                alpha,
+                limit_to_min_radius(
+                    min,
+                    min_radius,
+                    "Minimum radius of truncated power-law distribution",
+                ),
+                max,
+            )
+        }
+        RadiusSection::Exponential { mean, min, max } => RadiusDistribution::new_exponential(
+            1. / mean,
+            limit_to_min_radius(
+                min,
+                min_radius,
+                "Minimum radius of exponential distribution",
+            ),
+            max,
+        ),
+        RadiusSection::Constant { value } => RadiusDistribution::new_constant(limit_to_min_radius(
+            value,
+            min_radius,
+            "Constant radius",
+        )),
+    }
+}
+
+fn build_orientation(
+    section: &OrientationSection,
+    angle_unit: AngleUnit,
+    eps: f64,
+) -> Result<Fisher, String> {
+    let radians = |angle: f64| angle_unit.to_radians(angle);
+    let kappa = section.kappa;
+
+    match (
+        (section.theta, section.phi),
+        (section.trend, section.plunge),
+        (section.dip, section.strike),
+    ) {
+        ((Some(theta), Some(phi)), (None, None), (None, None)) => Ok(Fisher::new_with_theta_phi(
+            radians(theta),
+            radians(phi),
+            kappa,
+            eps,
+        )),
+        ((None, None), (Some(trend), Some(plunge)), (None, None)) => Ok(
+            Fisher::new_with_trend_plunge(radians(trend), radians(plunge), kappa, eps),
+        ),
+        ((None, None), (None, None), (Some(dip), Some(strike))) => Ok(Fisher::new_with_dip_strike(
+            radians(dip),
+            radians(strike),
+            kappa,
+            eps,
+        )),
+        _ => Err(
+            "orientation must have one pair: theta and phi, trend and plunge, or dip and strike"
+                .to_string(),
+        ),
+    }
+}
+
+fn build_user_fracture(
+    section: &UserFractureSection,
+    file_angle_unit: AngleUnit,
+    eps: f64,
+) -> Result<UserFracture, String> {
+    let has_parameters = section.number_of_points.is_some()
+        || section.radius.is_some()
+        || section.aspect_ratio.is_some()
+        || section.beta.is_some()
+        || section.translation.is_some()
+        || section.normal.is_some()
+        || section.trend_plunge.is_some()
+        || section.dip_strike.is_some();
+
+    if let Some(vertices) = &section.vertices {
+        if has_parameters {
+            return Err("a fracture with vertices can have no other parameters".to_string());
+        }
+        return build_user_fracture_by_vertices(section.shape, vertices.clone());
+    }
+
+    let num_nodes = match (section.shape, section.number_of_points) {
+        (ShapeName::Polygon, _) => return Err("vertices is necessary for a polygon".to_string()),
+        (ShapeName::Ellipse, Some(number_of_points)) => number_of_points,
+        (ShapeName::Ellipse, None) => {
+            return Err("number_of_points is necessary for an ellipse".to_string());
+        }
+        (ShapeName::Rectangle, Some(_)) => {
+            return Err("number_of_points applies only to an ellipse".to_string());
+        }
+        // A fracture with no nodes is a rectangle
+        (ShapeName::Rectangle, None) => 0,
+    };
+
+    let angle_unit = section.angle_unit.unwrap_or(file_angle_unit);
+    let radians = |angle: f64| angle_unit.to_radians(angle);
+
+    let normal = match (section.normal, section.trend_plunge, section.dip_strike) {
+        (Some(normal), None, None) => normal,
+        (None, Some([trend, plunge]), None) => {
+            normal_from_trend_plunge(radians(trend), radians(plunge)).into()
+        }
+        (None, None, Some([dip, strike])) => {
+            normal_from_dip_strike(radians(dip), radians(strike)).into()
+        }
+        _ => {
+            return Err("one of normal, trend_plunge, or dip_strike is necessary".to_string());
+        }
+    };
+
+    Ok(UserFracture::ByParameters(FractureDef {
+        eps,
+        num_nodes,
+        radius: section.radius.ok_or("radius is necessary")?,
+        beta: radians(section.beta.ok_or("beta is necessary")?),
+        aspect_ratio: section.aspect_ratio.ok_or("aspect_ratio is necessary")?,
+        translation: section.translation.ok_or("translation is necessary")?,
+        normal,
+    }))
+}
+
+fn build_user_fracture_by_vertices(
+    shape: ShapeName,
+    vertices: Vec<[f64; 3]>,
+) -> Result<UserFracture, String> {
+    let nodes = match shape {
+        ShapeName::Rectangle if vertices.len() != 4 => {
+            return Err("a rectangle must have 4 vertices".to_string());
+        }
+        _ if vertices.len() < 3 => {
+            return Err("a fracture must have 3 vertices or more".to_string());
+        }
+        ShapeName::Ellipse => FractureNodesDef::Ellipse(vertices),
+        ShapeName::Rectangle => FractureNodesDef::Rectangle(vertices),
+        ShapeName::Polygon => FractureNodesDef::Polygon(vertices),
+    };
+
+    Ok(UserFracture::ByVertices(nodes))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const GENERAL_OPTIONS: &str = r#"
+        seed = 12345
+        h = 0.1
+        angle_unit = "degree"
+
+        [domain]
+        size = [10.0, 10.0, 10.0]
+        size_increase = [1.0, 1.0, 1.0]
+
+        [generation]
+        stop_condition = "n_poly"
+        n_poly = 60
+        radii_list_increase = 0.1
+        rejects_per_fracture = 10
+        force_large_fractures = false
+        remove_fractures_less_than = 0.0
+        insert_user_rectangles_first = true
+
+        [fram]
+        disable = false
+        relaxed = false
+        triple_intersections = true
+        visualization_mode = false
+
+        [clusters]
+        boundary_faces = [true, true, false, false, false, false]
+        ignore_boundary_faces = true
+        keep_only_largest = false
+        keep_isolated_fractures = false
+
+        [output]
+        print_reject_reasons = false
+        all_radii = false
+        final_radii_per_family = false
+        accepted_radii_per_family = false
+    "#;
+
+    const RECTANGLE_FAMILY: &str = r#"
+        [[family]]
+        shape = "rectangle"
+        probability = 0.6
+        aspect_ratio = 1.5
+        layer = 0
+        region = 0
+        radius = { distribution = "log_normal", log_mean = 0.5, sd = 0.4, min = 1.0, max = 4.0 }
+        orientation = { trend = 90.0, plunge = 30.0, kappa = 10.0 }
+    "#;
+
+    const ELLIPSE_FAMILY: &str = r#"
+        [[family]]
+        shape = "ellipse"
+        number_of_points = 8
+        probability = 0.4
+        aspect_ratio = 1.0
+        layer = 0
+        region = 0
+        beta = 90.0
+        radius = { distribution = "truncated_power_law", alpha = 2.5, min = 1.0, max = 5.0 }
+        orientation = { theta = 0.0, phi = 0.0, kappa = 8.0 }
+    "#;
+
+    fn parse(sections: &[&str]) -> Result<(Input, FractureFamilyCollection), DfngenError> {
+        parse_input(&sections.concat())
+    }
+
+    fn parse_user_fracture(user_fracture: &str) -> Result<UserFracture, DfngenError> {
+        let (mut input, _) = parse(&[GENERAL_OPTIONS, "[[user_fracture]]\n", user_fracture])?;
+        Ok(input.user_fractures.remove(0))
+    }
+
+    fn error_message(result: Result<(Input, FractureFamilyCollection), DfngenError>) -> String {
+        result
+            .err()
+            .expect("the input must be rejected")
+            .to_string()
+    }
+
+    #[test]
+    fn test_general_options_are_read() {
+        let (input, _) = parse(&[GENERAL_OPTIONS]).unwrap();
+
+        assert_eq!(
+            (input.seed, input.n_poly, input.domain_size),
+            (12345, 60, Vector3::new(10., 10., 10.))
+        );
+    }
+
+    #[test]
+    fn test_eps_is_derived_from_h() {
+        let (input, _) = parse(&[GENERAL_OPTIONS]).unwrap();
+
+        assert_eq!(input.eps, 0.1 * 1e-8);
+    }
+
+    #[test]
+    fn test_disabled_fram_sets_visualization_mode() {
+        let options = GENERAL_OPTIONS.replace("disable = false", "disable = true");
+
+        let (input, _) = parse(&[&options]).unwrap();
+
+        assert!(input.visualization_mode);
+    }
+
+    #[test]
+    fn test_layer_volume_uses_domain_cross_section() {
+        let options = GENERAL_OPTIONS.replace(
+            "[generation]",
+            "layers = [[-5.0, 0.0], [0.0, 2.0]]\n[generation]",
+        );
+
+        let (input, _) = parse(&[&options]).unwrap();
+
+        assert_eq!(input.layer_volumes, vec![500., 200.]);
+    }
+
+    #[test]
+    fn test_ellipse_families_come_before_rectangle_families() {
+        let (_, families) = parse(&[GENERAL_OPTIONS, RECTANGLE_FAMILY, ELLIPSE_FAMILY]).unwrap();
+
+        assert_eq!(families.probabilities, vec![0.4, 0.6]);
+    }
+
+    #[test]
+    fn test_family_beta_is_converted_to_radians() {
+        let (_, families) = parse(&[GENERAL_OPTIONS, ELLIPSE_FAMILY]).unwrap();
+
+        assert_eq!(families.families[0].beta, std::f64::consts::FRAC_PI_2);
+    }
+
+    #[test]
+    fn test_family_without_beta_has_uniform_rotation() {
+        let (_, families) = parse(&[GENERAL_OPTIONS, RECTANGLE_FAMILY]).unwrap();
+
+        assert!(!families.families[0].beta_distribution);
+    }
+
+    #[test]
+    fn test_minimum_radius_is_limited_to_three_times_h() {
+        let family = ELLIPSE_FAMILY.replace("min = 1.0", "min = 0.1");
+
+        let (_, families) = parse(&[GENERAL_OPTIONS, &family]).unwrap();
+
+        assert_eq!(families.families[0].radius.min, 3.0 * 0.1);
+    }
+
+    #[test]
+    fn test_missing_key_is_rejected() {
+        let options = GENERAL_OPTIONS.replace("seed = 12345", "");
+
+        let message = error_message(parse(&[&options]));
+
+        assert!(message.contains("missing field `seed`"), "{}", message);
+    }
+
+    #[test]
+    fn test_unknown_key_is_rejected() {
+        let options = GENERAL_OPTIONS.replace("seed = 12345", "seed = 12345\nsede = 1");
+
+        let message = error_message(parse(&[&options]));
+
+        assert!(message.contains("unknown field `sede`"), "{}", message);
+    }
+
+    #[test]
+    fn test_unknown_radius_distribution_is_rejected() {
+        let family = ELLIPSE_FAMILY.replace("truncated_power_law", "power_law");
+
+        let message = error_message(parse(&[GENERAL_OPTIONS, &family]));
+
+        assert!(
+            message.contains("unknown variant `power_law`"),
+            "{}",
+            message
+        );
+    }
+
+    #[test]
+    fn test_parameter_of_other_radius_distribution_is_rejected() {
+        let family = ELLIPSE_FAMILY.replace("alpha = 2.5", "alpha = 2.5, sd = 1.0");
+
+        let message = error_message(parse(&[GENERAL_OPTIONS, &family]));
+
+        assert!(message.contains("unknown field `sd`"), "{}", message);
+    }
+
+    #[test]
+    fn test_orientation_with_two_angle_pairs_is_rejected() {
+        let family = ELLIPSE_FAMILY.replace("theta = 0.0", "theta = 0.0, dip = 1.0, strike = 1.0");
+
+        let message = error_message(parse(&[GENERAL_OPTIONS, &family]));
+
+        assert!(message.contains("family 1: orientation"), "{}", message);
+    }
+
+    #[test]
+    fn test_p32_stop_condition_needs_family_target() {
+        let options = GENERAL_OPTIONS.replace("\"n_poly\"", "\"p32\"");
+
+        let message = error_message(parse(&[&options, ELLIPSE_FAMILY]));
+
+        assert!(message.contains("p32_target is necessary"), "{}", message);
+    }
+
+    #[test]
+    fn test_family_in_undefined_layer_is_rejected() {
+        let family = ELLIPSE_FAMILY.replace("layer = 0", "layer = 1");
+
+        let message = error_message(parse(&[GENERAL_OPTIONS, &family]));
+
+        assert!(message.contains("layer 1 is not defined"), "{}", message);
+    }
+
+    #[test]
+    fn test_polygon_family_is_rejected() {
+        let family = RECTANGLE_FAMILY.replace("rectangle", "polygon");
+
+        let message = error_message(parse(&[GENERAL_OPTIONS, &family]));
+
+        assert!(message.contains("shape of a family"), "{}", message);
+    }
+
+    #[test]
+    fn test_user_rectangle_by_normal_is_read() {
+        let fracture = parse_user_fracture(
+            r#"shape = "rectangle"
+            radius = 4.0
+            aspect_ratio = 1.0
+            beta = 0.0
+            translation = [0.0, 0.0, 0.0]
+            normal = [0.0, 0.0, 1.0]"#,
+        )
+        .unwrap();
+
+        assert_eq!(fracture.to_poly().family_num, -2);
+    }
+
+    #[test]
+    fn test_user_ellipse_by_trend_plunge_uses_angle_unit() {
+        let fracture = parse_user_fracture(
+            r#"shape = "ellipse"
+            number_of_points = 8
+            radius = 2.0
+            aspect_ratio = 1.0
+            beta = 0.0
+            translation = [0.0, 0.0, 0.0]
+            trend_plunge = [90.0, 30.0]"#,
+        )
+        .unwrap();
+
+        let expected = normal_from_trend_plunge(90f64.to_radians(), 30f64.to_radians());
+        assert_eq!(fracture.to_poly().normal, expected);
+    }
+
+    #[test]
+    fn test_user_fracture_angle_unit_overrides_file_angle_unit() {
+        let fracture = parse_user_fracture(
+            r#"shape = "rectangle"
+            angle_unit = "radian"
+            radius = 2.0
+            aspect_ratio = 1.0
+            beta = 0.0
+            translation = [0.0, 0.0, 0.0]
+            dip_strike = [0.5, 1.0]"#,
+        )
+        .unwrap();
+
+        assert_eq!(fracture.to_poly().normal, normal_from_dip_strike(0.5, 1.0));
+    }
+
+    #[test]
+    fn test_user_polygon_by_vertices_is_read() {
+        let fracture = parse_user_fracture(
+            r#"shape = "polygon"
+            vertices = [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [1.0, 1.0, 0.0]]"#,
+        )
+        .unwrap();
+
+        assert_eq!(fracture.to_poly().vertices.len(), 3);
+    }
+
+    #[test]
+    fn test_user_rectangle_with_three_vertices_is_rejected() {
+        let result = parse_user_fracture(
+            r#"shape = "rectangle"
+            vertices = [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [1.0, 1.0, 0.0]]"#,
+        );
+
+        let message = result.expect_err("the input must be rejected").to_string();
+        assert!(message.contains("user_fracture 1: a rectangle must have 4 vertices"));
+    }
+
+    #[test]
+    fn test_user_fracture_without_orientation_is_rejected() {
+        let result = parse_user_fracture(
+            r#"shape = "rectangle"
+            radius = 4.0
+            aspect_ratio = 1.0
+            beta = 0.0
+            translation = [0.0, 0.0, 0.0]"#,
+        );
+
+        let message = result.expect_err("the input must be rejected").to_string();
+        assert!(message.contains("one of normal, trend_plunge, or dip_strike"));
+    }
 }

@@ -139,7 +139,9 @@ pub fn cumsum(fam_prob: &[f64]) -> Vec<f64> {
 
     if let Some(last) = cdf.last() {
         if !(0.999..=1.001).contains(last) {
-            warn!("Family probabilities (famProb in input file) do not sum to 1");
+            warn!(
+                "Family probabilities (probability of each family in input file) do not sum to 1"
+            );
             warn!("sum = {:.17}", last);
             warn!("Please check input file.");
         }
