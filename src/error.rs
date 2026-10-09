@@ -7,7 +7,7 @@ pub enum DfngenError {
     #[error(transparent)]
     DistrUniform(#[from] rand::distr::uniform::Error),
     #[error(transparent)]
-    DistrNormal(#[from] rand_distr::NormalError),
+    LogNormalSampling(#[from] crate::distribution::log_norm::Error),
     #[error(transparent)]
     ExponentialSampling(#[from] crate::distribution::exp::Error),
     #[error("Too many fractures are being generated with radii less than minimum radius.")]

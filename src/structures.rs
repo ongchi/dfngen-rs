@@ -8,7 +8,7 @@ use rand_mt::Mt64;
 use tracing::{error, info, warn};
 
 use crate::cg::intersection_checking;
-use crate::distribution::{TruncExp, TruncLogNormal, TruncPowerLaw};
+use crate::distribution::{LogNormalSampling, TruncExp, TruncLogNormal, TruncPowerLaw};
 use crate::error::DfngenError;
 use crate::fracture::insert_shape::print_reject_reason;
 use crate::fracture::poly::Poly;
@@ -216,9 +216,17 @@ pub struct Stats {
 }
 
 pub enum RadiusFunction {
-    LogNormal { mu: f64, sigma: f64 },
-    TruncatedPowerLaw { alpha: f64 },
-    Exponential { lambda: f64 },
+    LogNormal {
+        mu: f64,
+        sigma: f64,
+        sampling: LogNormalSampling,
+    },
+    TruncatedPowerLaw {
+        alpha: f64,
+    },
+    Exponential {
+        lambda: f64,
+    },
     Constant(f64),
 }
 
@@ -237,9 +245,19 @@ impl RadiusDistribution {
         }
     }
 
-    pub fn new_log_normal(mu: f64, sigma: f64, min: f64, max: f64) -> Self {
+    pub fn new_log_normal(
+        mu: f64,
+        sigma: f64,
+        min: f64,
+        max: f64,
+        sampling: LogNormalSampling,
+    ) -> Self {
         Self {
-            function: RadiusFunction::LogNormal { mu, sigma },
+            function: RadiusFunction::LogNormal {
+                mu,
+                sigma,
+                sampling,
+            },
             min,
             max,
         }
@@ -264,8 +282,12 @@ impl RadiusDistribution {
     /// Sampling from distribution function.
     pub fn sample(&self, generator: Rc<RefCell<Mt64>>) -> Result<f64, DfngenError> {
         let radius = match self.function {
-            RadiusFunction::LogNormal { mu, sigma } => {
-                let distr = TruncLogNormal::new(self.min, self.max, mu, sigma)?;
+            RadiusFunction::LogNormal {
+                mu,
+                sigma,
+                sampling,
+            } => {
+                let distr = TruncLogNormal::new(self.min, self.max, mu, sigma, sampling)?;
                 generator.borrow_mut().sample(&distr)?
             }
             RadiusFunction::TruncatedPowerLaw { alpha } => {
@@ -523,7 +545,13 @@ mod tests {
 
     #[test]
     fn test_log_normal_radius_is_within_min_and_max() {
-        assert_samples_are_within_limits(RadiusDistribution::new_log_normal(1., 1., 1., 4.));
+        assert_samples_are_within_limits(RadiusDistribution::new_log_normal(
+            1.,
+            1.,
+            1.,
+            4.,
+            LogNormalSampling::Rejection,
+        ));
     }
 
     #[test]

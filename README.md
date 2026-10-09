@@ -76,10 +76,17 @@ Radius distributions:
 
 | `distribution` | Parameters |
 |----------------|------------|
-| `log_normal` | `log_mean`, `sd`, `min`, `max` |
+| `log_normal` | `log_mean`, `sd`, `min`, `max`, `sampling` (optional) |
 | `truncated_power_law` | `alpha`, `min`, `max` |
 | `exponential` | `mean`, `min`, `max` |
 | `constant` | `value` |
+
+`sampling` of `log_normal` is `"rejection"` (default) or `"inverse_cdf"`.
+`"rejection"` samples the full distribution until a value is in `[min, max]`. It
+is fast when `[min, max]` contains most of the distribution, and it stops with an
+error after 1000 rejected values. `"inverse_cdf"` uses one random number for each
+radius, also when `[min, max]` is in a tail of the distribution. The two methods
+give different networks for the same seed.
 
 Orientation of a family: `theta` and `phi`, or `trend` and `plunge`, or `dip`
 and `strike`, each with `kappa` (Fisher distribution).

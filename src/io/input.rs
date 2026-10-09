@@ -3,7 +3,7 @@ use serde::Deserialize;
 use tracing::{debug, info, warn};
 
 use crate::cg::{normal_from_dip_strike, normal_from_trend_plunge};
-use crate::distribution::Fisher;
+use crate::distribution::{Fisher, LogNormalSampling};
 use crate::error::DfngenError;
 use crate::fracture::fracture_family::{
     FractureFamily, FractureFamilyBuilder, FractureFamilyCollection,
@@ -236,6 +236,7 @@ enum RadiusSection {
         sd: f64,
         min: f64,
         max: f64,
+        sampling: Option<LogNormalSampling>,
     },
     TruncatedPowerLaw {
         alpha: f64,
@@ -496,11 +497,13 @@ fn build_radius_distribution(section: &RadiusSection, min_radius: f64) -> Radius
             sd,
             min,
             max,
+            sampling,
         } => RadiusDistribution::new_log_normal(
             log_mean,
             sd,
             limit_to_min_radius(min, min_radius, "Minimum radius of log-normal distribution"),
             max,
+            sampling.unwrap_or_default(),
         ),
         RadiusSection::TruncatedPowerLaw { alpha, min, max } => {
             RadiusDistribution::new_truncated_power_law(
@@ -624,6 +627,7 @@ fn build_user_fracture(section: &UserFractureSection, eps: f64) -> Result<UserFr
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::structures::RadiusFunction;
 
     const GENERAL_OPTIONS: &str = r#"
         seed = 12345
@@ -785,6 +789,51 @@ mod tests {
             "{}",
             message
         );
+    }
+
+    fn log_normal_sampling(family: &str) -> LogNormalSampling {
+        let (_, families) = parse(&[GENERAL_OPTIONS, family]).unwrap();
+        match families.families[0].radius.function {
+            RadiusFunction::LogNormal { sampling, .. } => sampling,
+            _ => panic!("the family must have a log-normal radius"),
+        }
+    }
+
+    #[test]
+    fn test_log_normal_sampling_is_rejection_without_the_key() {
+        assert_eq!(
+            log_normal_sampling(RECTANGLE_FAMILY),
+            LogNormalSampling::Rejection
+        );
+    }
+
+    #[test]
+    fn test_log_normal_sampling_inverse_cdf_is_read() {
+        let family = RECTANGLE_FAMILY.replace("max = 4.0", "max = 4.0, sampling = \"inverse_cdf\"");
+
+        assert_eq!(log_normal_sampling(&family), LogNormalSampling::InverseCdf);
+    }
+
+    #[test]
+    fn test_unknown_log_normal_sampling_is_rejected() {
+        let family = RECTANGLE_FAMILY.replace("max = 4.0", "max = 4.0, sampling = \"ziggurat\"");
+
+        let message = error_message(parse(&[GENERAL_OPTIONS, &family]));
+
+        assert!(
+            message.contains("unknown variant `ziggurat`"),
+            "{}",
+            message
+        );
+    }
+
+    #[test]
+    fn test_sampling_key_of_other_radius_distribution_is_rejected() {
+        let family = ELLIPSE_FAMILY.replace("max = 5.0", "max = 5.0, sampling = \"inverse_cdf\"");
+
+        let message = error_message(parse(&[GENERAL_OPTIONS, &family]));
+
+        assert!(message.contains("unknown field `sampling`"), "{}", message);
     }
 
     #[test]
