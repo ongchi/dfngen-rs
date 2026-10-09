@@ -1,10 +1,10 @@
 mod domain_truncation;
 
 use parry3d_f64::bounding_volume::Aabb;
-use parry3d_f64::na::{Point3, Vector3};
+use parry3d_f64::na::{Point3, Rotation3, Vector3};
 
 use crate::{
-    cg::{is_parallel, rotate, rotation_matrix},
+    cg::{is_parallel, rotation_between},
     distribution::generating_points::generate_theta,
 };
 
@@ -237,15 +237,14 @@ impl Poly {
     pub fn rotation_3d(&mut self, normal_b: &Vector3<f64>, eps: f64) {
         // Normals should already be normalized by this point!!!
         if !is_parallel(&self.normal, normal_b, eps) {
-            let r = rotation_matrix(&self.normal, normal_b);
-            self.rotate(&r);
+            self.rotate(&rotation_between(&self.normal, normal_b));
         }
     }
 
-    /// Applies the row-major rotation matrix `r` to all vertices.
-    pub fn rotate(&mut self, r: &[f64; 9]) {
+    /// Applies the rotation to all vertices.
+    pub fn rotate(&mut self, rotation: &Rotation3<f64>) {
         for vertex in &mut self.vertices {
-            *vertex = Point3::from(rotate(r, vertex.x, vertex.y, vertex.z));
+            *vertex = rotation * *vertex;
         }
     }
 

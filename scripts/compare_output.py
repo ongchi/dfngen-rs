@@ -109,7 +109,7 @@ def main() -> int:
     for path in sorted(baseline_files & output_files):
         difference, messages = compare_files(baseline_dir / path, output_dir / path, tolerance)
         largest_difference = max(largest_difference, difference)
-        changed_files += difference > 0.0 or bool(messages)
+        changed_files += (baseline_dir / path).read_bytes() != (output_dir / path).read_bytes()
 
         if messages:
             status = 1

@@ -1,9 +1,9 @@
 use std::fmt::{Display, Formatter};
 
-use parry3d_f64::na::Vector3;
+use parry3d_f64::na::{Rotation3, Vector3};
 use rand::distr::{Distribution, Uniform};
 
-use crate::cg::{rotate, rotation_matrix};
+use crate::cg::rotation_between;
 
 #[derive(Debug)]
 enum AngleOption {
@@ -116,12 +116,11 @@ impl Distribution<Vector3<f64>> for Fisher {
         let u = Vector3::new(0., 0., 1.);
         let x_prod = u.cross(&self.orientation);
 
-        // Get rotation matrix if normal vectors are not the same (if xProd is not zero vector)
-        let r = if x_prod.magnitude() > self.eps {
-            rotation_matrix(&u, &self.orientation)
+        // Rotation is necessary only if the normal vectors are not the same (xProd is not zero vector)
+        let rotation = if x_prod.magnitude() > self.eps {
+            rotation_between(&u, &self.orientation)
         } else {
-            // Identity Matrix
-            [1., 0., 0., 0., 1., 0., 0., 0., 1.]
+            Rotation3::identity()
         };
 
         let theta_random = rng.sample(self.theta_uniform);
@@ -131,7 +130,6 @@ impl Distribution<Vector3<f64>> for Fisher {
         let temp = (1. - (w * w)).sqrt();
         let v = [temp * theta_random.cos(), temp * theta_random.sin()];
 
-        // Matrix multiply with R
-        Vector3::from(rotate(&r, v[0], v[1], w))
+        rotation * Vector3::new(v[0], v[1], w)
     }
 }

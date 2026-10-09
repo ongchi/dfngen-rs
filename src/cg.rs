@@ -1,5 +1,5 @@
 use parry3d_f64::bounding_volume::BoundingVolume;
-use parry3d_f64::na::{distance, Point3, Translation3, Vector3};
+use parry3d_f64::na::{distance, Point3, Rotation3, Translation3, Unit, Vector3};
 
 use crate::{
     fracture::{
@@ -16,56 +16,18 @@ pub fn is_parallel(v1: &Vector3<f64>, v2: &Vector3<f64>, eps: f64) -> bool {
     1. - eps < dot_prod && dot_prod < 1. + eps
 }
 
-/// Rotation matrix (row-major) which rotates `normal_a` to `normal_b`
-///
-/// RotMatrix = I + V + V^2((1-cos)/sin^2))
-///
-/// Normals must be normalized and must not be parallel: the result is not
-/// finite for parallel normals. No rotation is necessary in that case.
-pub fn rotation_matrix(normal_a: &Vector3<f64>, normal_b: &Vector3<f64>) -> [f64; 9] {
-    // Since vectors are normalized, sin = magnitude(AxB) and cos = A dot B
-    let x_prod = normal_a.cross(normal_b);
-    let sin = x_prod.magnitude();
-    let cos = normal_a.dot(normal_b);
-    let v = [
-        0., -x_prod[2], x_prod[1], x_prod[2], 0., -x_prod[0], -x_prod[1], x_prod[0], 0.,
-    ];
-    let scalar = (1.0 - cos) / (sin * sin);
-    let v_squared = [
-        (v[0] * v[0] + v[1] * v[3] + v[2] * v[6]) * scalar,
-        (v[0] * v[1] + v[1] * v[4] + v[2] * v[7]) * scalar,
-        (v[0] * v[2] + v[1] * v[5] + v[2] * v[8]) * scalar,
-        (v[3] * v[0] + v[4] * v[3] + v[5] * v[6]) * scalar,
-        (v[3] * v[1] + v[4] * v[4] + v[5] * v[7]) * scalar,
-        (v[3] * v[2] + v[4] * v[5] + v[5] * v[8]) * scalar,
-        (v[6] * v[0] + v[7] * v[3] + v[8] * v[6]) * scalar,
-        (v[6] * v[1] + v[7] * v[4] + v[8] * v[7]) * scalar,
-        (v[6] * v[2] + v[7] * v[5] + v[8] * v[8]) * scalar,
-    ];
-    [
-        1. + v[0] + v_squared[0],
-        0. + v[1] + v_squared[1],
-        0. + v[2] + v_squared[2],
-        0. + v[3] + v_squared[3],
-        1. + v[4] + v_squared[4],
-        0. + v[5] + v_squared[5],
-        0. + v[6] + v_squared[6],
-        0. + v[7] + v_squared[7],
-        1. + v[8] + v_squared[8],
-    ]
-}
-
-/// Applies the row-major rotation matrix `r` to the coordinates x, y, z.
-pub fn rotate(r: &[f64; 9], x: f64, y: f64, z: f64) -> [f64; 3] {
-    [
-        x * r[0] + y * r[1] + z * r[2],
-        x * r[3] + y * r[4] + z * r[5],
-        x * r[6] + y * r[7] + z * r[8],
-    ]
-}
-
-fn rotate_point(r: &[f64; 9], point: &Point3<f64>) -> Point3<f64> {
-    Point3::from(rotate(r, point.x, point.y, point.z))
+/// Rotation which turns the unit vector `from` to the unit vector `to`.
+pub fn rotation_between(from: &Vector3<f64>, to: &Vector3<f64>) -> Rotation3<f64> {
+    Rotation3::rotation_between(from, to).unwrap_or_else(|| {
+        // Opposite vectors: half turn about an axis perpendicular to them
+        let not_parallel = if from.x.abs() < 0.9 {
+            Vector3::x()
+        } else {
+            Vector3::y()
+        };
+        let axis = Unit::new_normalize(from.cross(&not_parallel));
+        Rotation3::from_axis_angle(&axis, std::f64::consts::PI)
+    })
 }
 
 /// Rotates an intersection, its triple intersection points, and its polygon to the x-y plane
@@ -108,18 +70,18 @@ pub fn poly_and_intersection_rotation_to_xy(
         temp_intpts.p1 = intersection.p1;
         temp_intpts.p2 = intersection.p2;
     } else {
-        let r = rotation_matrix(&new_poly.normal, &z_axis);
+        let rotation = rotation_between(&new_poly.normal, &z_axis);
 
         // The normal in the polygon structure does not change (we need it to
         // write params.txt), so it does not tell if the vertices are already
         // rotated to the x-y plane. new_poly.xyplane does.
         if !new_poly.xyplane {
-            new_poly.rotate(&r);
+            new_poly.rotate(&rotation);
         }
 
-        temp_intpts.p1 = rotate_point(&r, &intersection.p1);
-        temp_intpts.p2 = rotate_point(&r, &intersection.p2);
-        temp_trip_pts.extend(intersection_triple_points.map(|point| rotate_point(&r, point)));
+        temp_intpts.p1 = rotation * intersection.p1;
+        temp_intpts.p2 = rotation * intersection.p2;
+        temp_trip_pts.extend(intersection_triple_points.map(|point| rotation * point));
     }
 
     new_poly.xyplane = true; // Mark poly being rotated to xy plane
