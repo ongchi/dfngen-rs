@@ -4,12 +4,8 @@ use crate::structures::{DFNGen, PolyOptions};
 
 use super::poly::Poly;
 
-/// Family number of user-defined ellipses.
-pub const USER_ELLIPSE_FAMILY: isize = -1;
-/// Family number of user-defined rectangles.
-pub const USER_RECTANGLE_FAMILY: isize = -2;
-/// Family number of user-defined polygons.
-pub const USER_POLYGON_FAMILY: isize = -3;
+/// Family number of the user-defined fractures.
+pub const USER_FRACTURE_FAMILY: isize = -1;
 
 /// A fracture which the user defines in the input file.
 #[derive(Debug)]
@@ -20,81 +16,39 @@ pub enum UserFracture {
 
 impl UserFracture {
     pub fn to_poly(&self) -> Poly {
-        match self {
+        let mut poly = match self {
             Self::ByParameters(fracture) => fracture.to_poly(),
             Self::ByVertices(fracture) => fracture.to_poly(),
-        }
-    }
-
-    pub fn family_num(&self) -> isize {
-        match self {
-            Self::ByParameters(fracture) => fracture.family_num(),
-            Self::ByVertices(fracture) => fracture.family_num(),
-        }
+        };
+        poly.family_num = USER_FRACTURE_FAMILY;
+        poly
     }
 }
 
-/// Inserts the user-defined fractures. Returns the number of them.
-///
-/// Polygons are inserted first, then rectangles and ellipses in the order
-/// that `rect_first` gives. Each group keeps the order of the input file.
+/// Inserts the user-defined fractures in the order of the input file.
+/// Returns the number of them.
 pub fn insert_user_defined_fractures(
-    rect_first: bool,
     fractures: &[UserFracture],
     poly_opts: &PolyOptions,
     dfngen: &mut DFNGen,
 ) -> usize {
-    let insertion_order = if rect_first {
-        [
-            USER_POLYGON_FAMILY,
-            USER_RECTANGLE_FAMILY,
-            USER_ELLIPSE_FAMILY,
-        ]
-    } else {
-        [
-            USER_POLYGON_FAMILY,
-            USER_ELLIPSE_FAMILY,
-            USER_RECTANGLE_FAMILY,
-        ]
-    };
-
-    for family_id in insertion_order {
-        let family_fractures = fractures
-            .iter()
-            .filter(|fracture| fracture.family_num() == family_id);
-
-        for (i, fracture) in family_fractures.enumerate() {
-            dfngen.insert_poly(fracture.to_poly(), i + 1, family_id as i32, poly_opts);
-        }
+    for (i, fracture) in fractures.iter().enumerate() {
+        dfngen.insert_poly(fracture.to_poly(), i + 1, poly_opts);
     }
 
     fractures.len()
 }
 
-/// User-defined fractures that are defined by a set of nodes.
+/// User-defined fracture that is defined by its vertices.
 #[derive(Debug)]
-pub enum FractureNodesDef {
-    Ellipse(Vec<[f64; 3]>),
-    Rectangle(Vec<[f64; 3]>),
-    Polygon(Vec<[f64; 3]>),
+pub struct FractureNodesDef {
+    pub vertices: Vec<[f64; 3]>,
 }
 
 impl FractureNodesDef {
-    pub fn family_num(&self) -> isize {
-        match self {
-            Self::Ellipse(_) => USER_ELLIPSE_FAMILY,
-            Self::Rectangle(_) => USER_RECTANGLE_FAMILY,
-            Self::Polygon(_) => USER_POLYGON_FAMILY,
-        }
-    }
-
     pub fn to_poly(&self) -> Poly {
-        let mut poly = Poly {
-            family_num: self.family_num(),
-            ..Default::default()
-        };
-
-        let (Self::Ellipse(nodes) | Self::Rectangle(nodes) | Self::Polygon(nodes)) = self;
+        let mut poly = Poly::default();
+        let nodes = &self.vertices;
 
         // Get a normal vector
         // Vector from fist node to node accross middle of polygon
@@ -118,27 +72,17 @@ impl FractureNodesDef {
         // Estimate radius
         // across middle if even number of nodes
         poly.xradius = 0.5 * v2.magnitude();
-        match self {
-            Self::Ellipse(_) | Self::Polygon(_) => {
-                // Get idx for node 1/4 around polygon
-                let pt_idx_14 = nodes.len() / 4;
-                // Get idx for node 3/4 around polygon
-                // across middle close to perpendicular to xradius magnitude calculation
-                let pt_idx_34 = pt_idx_14 + pt_idx_12;
 
-                let p_14 = Point3::from_slice(&nodes[pt_idx_14]);
-                let p_34 = Point3::from_slice(&nodes[pt_idx_34]);
+        // Get idx for node 1/4 around polygon
+        let pt_idx_14 = nodes.len() / 4;
+        // Get idx for node 3/4 around polygon
+        // across middle close to perpendicular to xradius magnitude calculation
+        let pt_idx_34 = pt_idx_14 + pt_idx_12;
 
-                poly.yradius = 0.5 * distance(&p_14, &p_34);
-            }
-            Self::Rectangle(_) => {
-                let p4 = Point3::from_slice(&nodes[3]);
-                let v3 = p4 - p1;
+        let p_14 = Point3::from_slice(&nodes[pt_idx_14]);
+        let p_34 = Point3::from_slice(&nodes[pt_idx_34]);
 
-                // Set radius (x and y radii might be switched based on order of users coordinates)
-                poly.yradius = 0.5 * v3.magnitude();
-            }
-        }
+        poly.yradius = 0.5 * distance(&p_14, &p_34);
 
         poly.aspect_ratio = poly.yradius / poly.xradius;
         poly.vertices = nodes.iter().map(|node| Point3::from_slice(node)).collect();
@@ -147,12 +91,11 @@ impl FractureNodesDef {
     }
 }
 
-/// User-defined fractures that are defined by a set of properties.
+/// User-defined fracture that is defined by a set of properties.
 #[derive(Debug)]
 pub struct FractureDef {
     pub eps: f64, // TODO: Move this parameter into global
-    /// Number of nodes of an ellipse. 0 for a rectangle.
-    pub num_nodes: usize,
+    pub number_of_points: usize,
     pub radius: f64,
     /// Rotation around the normal vector in radians
     pub beta: f64,
@@ -162,28 +105,10 @@ pub struct FractureDef {
 }
 
 impl FractureDef {
-    fn is_rect(&self) -> bool {
-        self.num_nodes == 0
-    }
-
-    pub fn family_num(&self) -> isize {
-        if self.is_rect() {
-            USER_RECTANGLE_FAMILY
-        } else {
-            USER_ELLIPSE_FAMILY
-        }
-    }
-
     pub fn to_poly(&self) -> Poly {
-        let is_rect = self.is_rect();
         let normal = Vector3::from_row_slice(&self.normal);
 
-        let mut new_poly = if is_rect {
-            Poly::new_rect(self.radius, self.aspect_ratio)
-        } else {
-            Poly::new_ell(self.num_nodes, self.radius, self.aspect_ratio)
-        };
-        new_poly.family_num = self.family_num();
+        let mut new_poly = Poly::new(self.number_of_points, self.radius, self.aspect_ratio);
         new_poly.translation = Vector3::from_row_slice(&self.translation);
 
         // Apply 2d rotation matrix, twist around origin

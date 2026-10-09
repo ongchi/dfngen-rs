@@ -87,10 +87,6 @@ pub struct Input {
     ///     1 - Print all rejection reasons to screen
     pub print_reject_reasons: bool,
 
-    /// False - User ellipses will be inserted first
-    /// True  - User rectangles will be inserted first
-    pub insert_user_rectangles_first: bool,
-
     /// Inserts the largest possible fracture for each defined fracture family,
     /// defined by the user-defined maxium radius
     ///     0 - Off (Do not force insertion of larest fractures)
@@ -165,14 +161,6 @@ impl AngleUnit {
     }
 }
 
-#[derive(Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
-enum ShapeName {
-    Ellipse,
-    Rectangle,
-    Polygon,
-}
-
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct InputFile {
@@ -217,7 +205,6 @@ struct GenerationSection {
     rejects_per_fracture: usize,
     force_large_fractures: bool,
     remove_fractures_less_than: f64,
-    insert_user_rectangles_first: bool,
 }
 
 #[derive(Deserialize)]
@@ -247,8 +234,7 @@ struct OutputSection {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct FamilySection {
-    shape: ShapeName,
-    number_of_points: Option<u8>,
+    number_of_points: usize,
     probability: f64,
     aspect_ratio: f64,
     layer: usize,
@@ -298,7 +284,6 @@ struct OrientationSection {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct UserFractureSection {
-    shape: ShapeName,
     angle_unit: Option<AngleUnit>,
 
     // Definition by parameters
@@ -413,27 +398,13 @@ fn parse_input(text: &str) -> Result<(Input, FractureFamilyCollection), DfngenEr
         domain_size_increase: &domain_size_increase,
     };
 
-    // All ellipse families come before all rectangle families. The family id
-    // counts from 1 in each of the two groups.
     let mut families = Vec::with_capacity(file.families.len());
     let mut probabilities = Vec::with_capacity(file.families.len());
-    for shape in [ShapeName::Ellipse, ShapeName::Rectangle] {
-        let mut id = 0;
-        for (i, section) in file.families.iter().enumerate() {
-            if section.shape != shape {
-                continue;
-            }
-            id += 1;
-            let family = build_family(section, id, &family_context)
-                .map_err(|message| invalid_input(format!("family {}: {}", i + 1, message)))?;
-            families.push(family);
-            probabilities.push(section.probability);
-        }
-    }
-    if families.len() != file.families.len() {
-        return Err(invalid_input(
-            "the shape of a family must be \"ellipse\" or \"rectangle\"".to_string(),
-        ));
+    for (i, section) in file.families.iter().enumerate() {
+        let family = build_family(section, i + 1, &family_context)
+            .map_err(|message| invalid_input(format!("family {}: {}", i + 1, message)))?;
+        families.push(family);
+        probabilities.push(section.probability);
     }
 
     let input = Input {
@@ -450,7 +421,6 @@ fn parse_input(text: &str) -> Result<(Input, FractureFamilyCollection), DfngenEr
         keep_only_largest_cluster: file.clusters.keep_only_largest,
         keep_isolated_fractures: file.clusters.keep_isolated_fractures,
         print_reject_reasons: file.output.print_reject_reasons,
-        insert_user_rectangles_first: file.generation.insert_user_rectangles_first,
         force_large_fractures: file.generation.force_large_fractures,
         seed: file.seed,
         remove_fractures_less_than: file.generation.remove_fractures_less_than,
@@ -500,21 +470,9 @@ fn build_family(
 
     let mut builder = FractureFamilyBuilder::default();
 
-    match (section.shape, section.number_of_points) {
-        (ShapeName::Ellipse, Some(number_of_points)) => {
-            builder.number_of_nodes(number_of_points);
-        }
-        (ShapeName::Ellipse, None) => {
-            return Err("number_of_points is necessary for an ellipse".to_string());
-        }
-        (_, Some(_)) => {
-            return Err("number_of_points applies only to an ellipse".to_string());
-        }
-        (_, None) => {}
-    }
-
     builder
         .id(id)
+        .number_of_points(valid_number_of_points(section.number_of_points)?)
         .radius(build_radius_distribution(&section.radius, 3.0 * context.h))
         .aspect_ratio(section.aspect_ratio)
         .orientation(build_orientation(
@@ -632,6 +590,13 @@ fn build_orientation(
     }
 }
 
+fn valid_number_of_points(number_of_points: usize) -> Result<usize, String> {
+    if number_of_points < 3 {
+        return Err("number_of_points must be 3 or more".to_string());
+    }
+    Ok(number_of_points)
+}
+
 fn build_user_fracture(
     section: &UserFractureSection,
     file_angle_unit: AngleUnit,
@@ -650,21 +615,19 @@ fn build_user_fracture(
         if has_parameters {
             return Err("a fracture with vertices can have no other parameters".to_string());
         }
-        return build_user_fracture_by_vertices(section.shape, vertices.clone());
+        if vertices.len() < 3 {
+            return Err("a fracture must have 3 vertices or more".to_string());
+        }
+        return Ok(UserFracture::ByVertices(FractureNodesDef {
+            vertices: vertices.clone(),
+        }));
     }
 
-    let num_nodes = match (section.shape, section.number_of_points) {
-        (ShapeName::Polygon, _) => return Err("vertices is necessary for a polygon".to_string()),
-        (ShapeName::Ellipse, Some(number_of_points)) => number_of_points,
-        (ShapeName::Ellipse, None) => {
-            return Err("number_of_points is necessary for an ellipse".to_string());
-        }
-        (ShapeName::Rectangle, Some(_)) => {
-            return Err("number_of_points applies only to an ellipse".to_string());
-        }
-        // A fracture with no nodes is a rectangle
-        (ShapeName::Rectangle, None) => 0,
-    };
+    let number_of_points = valid_number_of_points(
+        section
+            .number_of_points
+            .ok_or("number_of_points or vertices is necessary")?,
+    )?;
 
     let angle_unit = section.angle_unit.unwrap_or(file_angle_unit);
     let radians = |angle: f64| angle_unit.to_radians(angle);
@@ -684,32 +647,13 @@ fn build_user_fracture(
 
     Ok(UserFracture::ByParameters(FractureDef {
         eps,
-        num_nodes,
+        number_of_points,
         radius: section.radius.ok_or("radius is necessary")?,
         beta: radians(section.beta.ok_or("beta is necessary")?),
         aspect_ratio: section.aspect_ratio.ok_or("aspect_ratio is necessary")?,
         translation: section.translation.ok_or("translation is necessary")?,
         normal,
     }))
-}
-
-fn build_user_fracture_by_vertices(
-    shape: ShapeName,
-    vertices: Vec<[f64; 3]>,
-) -> Result<UserFracture, String> {
-    let nodes = match shape {
-        ShapeName::Rectangle if vertices.len() != 4 => {
-            return Err("a rectangle must have 4 vertices".to_string());
-        }
-        _ if vertices.len() < 3 => {
-            return Err("a fracture must have 3 vertices or more".to_string());
-        }
-        ShapeName::Ellipse => FractureNodesDef::Ellipse(vertices),
-        ShapeName::Rectangle => FractureNodesDef::Rectangle(vertices),
-        ShapeName::Polygon => FractureNodesDef::Polygon(vertices),
-    };
-
-    Ok(UserFracture::ByVertices(nodes))
 }
 
 #[cfg(test)]
@@ -732,7 +676,6 @@ mod tests {
         rejects_per_fracture = 10
         force_large_fractures = false
         remove_fractures_less_than = 0.0
-        insert_user_rectangles_first = true
 
         [fram]
         disable = false
@@ -752,7 +695,7 @@ mod tests {
 
     const RECTANGLE_FAMILY: &str = r#"
         [[family]]
-        shape = "rectangle"
+        number_of_points = 4
         probability = 0.6
         aspect_ratio = 1.5
         layer = 0
@@ -763,7 +706,6 @@ mod tests {
 
     const ELLIPSE_FAMILY: &str = r#"
         [[family]]
-        shape = "ellipse"
         number_of_points = 8
         probability = 0.4
         aspect_ratio = 1.0
@@ -820,10 +762,11 @@ mod tests {
     }
 
     #[test]
-    fn test_ellipse_families_come_before_rectangle_families() {
+    fn test_family_ids_follow_the_file_order() {
         let (_, families) = parse(&[GENERAL_OPTIONS, RECTANGLE_FAMILY, ELLIPSE_FAMILY]).unwrap();
 
-        assert_eq!(families.probabilities, vec![0.4, 0.6]);
+        let ids: Vec<usize> = families.families.iter().map(|family| family.id).collect();
+        assert_eq!((ids, families.probabilities), (vec![1, 2], vec![0.6, 0.4]));
     }
 
     #[test]
@@ -917,18 +860,9 @@ mod tests {
     }
 
     #[test]
-    fn test_polygon_family_is_rejected() {
-        let family = RECTANGLE_FAMILY.replace("rectangle", "polygon");
-
-        let message = error_message(parse(&[GENERAL_OPTIONS, &family]));
-
-        assert!(message.contains("shape of a family"), "{}", message);
-    }
-
-    #[test]
-    fn test_user_rectangle_by_normal_is_read() {
+    fn test_user_fracture_by_normal_is_read() {
         let fracture = parse_user_fracture(
-            r#"shape = "rectangle"
+            r#"number_of_points = 4
             radius = 4.0
             aspect_ratio = 1.0
             beta = 0.0
@@ -937,14 +871,13 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(fracture.to_poly().family_num, -2);
+        assert_eq!(fracture.to_poly().normal, Vector3::new(0., 0., 1.));
     }
 
     #[test]
     fn test_user_ellipse_by_trend_plunge_uses_angle_unit() {
         let fracture = parse_user_fracture(
-            r#"shape = "ellipse"
-            number_of_points = 8
+            r#"number_of_points = 8
             radius = 2.0
             aspect_ratio = 1.0
             beta = 0.0
@@ -960,7 +893,7 @@ mod tests {
     #[test]
     fn test_user_fracture_angle_unit_overrides_file_angle_unit() {
         let fracture = parse_user_fracture(
-            r#"shape = "rectangle"
+            r#"number_of_points = 4
             angle_unit = "radian"
             radius = 2.0
             aspect_ratio = 1.0
@@ -974,10 +907,9 @@ mod tests {
     }
 
     #[test]
-    fn test_user_polygon_by_vertices_is_read() {
+    fn test_user_fracture_by_vertices_is_read() {
         let fracture = parse_user_fracture(
-            r#"shape = "polygon"
-            vertices = [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [1.0, 1.0, 0.0]]"#,
+            r#"vertices = [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [1.0, 1.0, 0.0]]"#,
         )
         .unwrap();
 
@@ -985,20 +917,41 @@ mod tests {
     }
 
     #[test]
-    fn test_user_rectangle_with_three_vertices_is_rejected() {
+    fn test_user_fracture_with_two_vertices_is_rejected() {
+        let result = parse_user_fracture(r#"vertices = [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]]"#);
+
+        let message = result.expect_err("the input must be rejected").to_string();
+        assert!(message.contains("user_fracture 1: a fracture must have 3 vertices or more"));
+    }
+
+    #[test]
+    fn test_user_fracture_with_vertices_and_parameters_is_rejected() {
         let result = parse_user_fracture(
-            r#"shape = "rectangle"
+            r#"number_of_points = 4
             vertices = [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [1.0, 1.0, 0.0]]"#,
         );
 
         let message = result.expect_err("the input must be rejected").to_string();
-        assert!(message.contains("user_fracture 1: a rectangle must have 4 vertices"));
+        assert!(message.contains("a fracture with vertices can have no other parameters"));
+    }
+
+    #[test]
+    fn test_family_with_two_points_is_rejected() {
+        let family = ELLIPSE_FAMILY.replace("number_of_points = 8", "number_of_points = 2");
+
+        let message = error_message(parse(&[GENERAL_OPTIONS, &family]));
+
+        assert!(
+            message.contains("family 1: number_of_points must be 3 or more"),
+            "{}",
+            message
+        );
     }
 
     #[test]
     fn test_user_fracture_without_orientation_is_rejected() {
         let result = parse_user_fracture(
-            r#"shape = "rectangle"
+            r#"number_of_points = 4
             radius = 4.0
             aspect_ratio = 1.0
             beta = 0.0

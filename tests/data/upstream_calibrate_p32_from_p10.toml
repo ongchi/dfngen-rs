@@ -12,7 +12,6 @@ radii_list_increase = 0.1
 rejects_per_fracture = 10
 force_large_fractures = false
 remove_fractures_less_than = 0.0
-insert_user_rectangles_first = true
 
 [fram]
 disable = true
@@ -30,28 +29,29 @@ print_reject_reasons = false
 rejected_fractures = false
 
 [[family]]
-shape = "rectangle"
+number_of_points = 4
 probability = 0.5
 aspect_ratio = 1.0
 layer = 0
 region = 0
 p32_target = 1.4568217933106986
-radius = { distribution = "log_normal", log_mean = 1.59, sd = 0.15, min = 1.0, max = 10.0 }
+radius = { distribution = "log_normal", log_mean = 1.9365735902799728, sd = 0.15, min = 1.4142135623730951, max = 14.142135623730951 }
 orientation = { trend = 231.0, plunge = 41.0, kappa = 8.0 }
 
 [[family]]
-shape = "rectangle"
+number_of_points = 4
 probability = 0.5
 aspect_ratio = 1.0
 layer = 0
 region = 0
 p32_target = 1.4568217933106986
-radius = { distribution = "log_normal", log_mean = 1.59, sd = 0.15, min = 1.0, max = 10.0 }
+radius = { distribution = "log_normal", log_mean = 1.9365735902799728, sd = 0.15, min = 1.4142135623730951, max = 14.142135623730951 }
 orientation = { trend = 40.0, plunge = 46.0, kappa = 9.0 }
 
 [[user_fracture]]
-shape = "rectangle"
-radius = 25.0
+number_of_points = 4
+# 25 * sqrt(2), rounded down: the corners must not be outside the domain
+radius = 35.35533905932737
 aspect_ratio = 0.001
 beta = 0.0
 translation = [0.0, 0.0, 0.0]

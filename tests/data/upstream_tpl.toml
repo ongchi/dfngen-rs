@@ -12,7 +12,6 @@ radii_list_increase = 0.1
 rejects_per_fracture = 10
 force_large_fractures = false
 remove_fractures_less_than = 0.0
-insert_user_rectangles_first = true
 
 [fram]
 disable = false
@@ -30,7 +29,6 @@ print_reject_reasons = false
 rejected_fractures = false
 
 [[family]]
-shape = "ellipse"
 number_of_points = 8
 probability = 1.0
 aspect_ratio = 1.0

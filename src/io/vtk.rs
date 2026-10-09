@@ -14,8 +14,7 @@ use crate::structures::RejectedFracture;
 /// * `accepted_id` - Number of the fracture in the order of acceptance (starts at 1)
 /// * `removed` - 1 if the fracture was removed as isolated, or does not connect
 ///   the boundary faces, else 0
-/// * `family` - Family number: -2 user polygon, -1 user rectangle,
-///   0 user ellipse, > 0 stochastic family
+/// * `family` - Family number: 0 user-defined fracture, > 0 stochastic family
 /// * `cluster` - Number of the connected group of fractures
 /// * `truncated` - 1 if the fracture was cut by the domain, else 0
 /// * `intersection_count` - Number of intersections with other accepted fractures
@@ -110,8 +109,7 @@ pub fn write_fractures_vtk(
 ///
 /// One polygon cell is written for each rejected fracture, at the position of its
 /// last attempt, with the cell data:
-/// * `family` - Family number: -2 user polygon, -1 user rectangle,
-///   0 user ellipse, > 0 stochastic family
+/// * `family` - Family number: 0 user-defined fracture, > 0 stochastic family
 /// * `reject_code` - FRAM reject code of the last attempt
 /// * `truncated` - 1 if the fracture was cut by the domain, else 0
 /// * `x_radius`, `y_radius`, `aspect_ratio` - Size before truncation
@@ -277,12 +275,13 @@ fn write_data_array<T: Display>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::fracture::user_defined_fractures::USER_FRACTURE_FAMILY;
 
     /// Writes a rectangle and an ellipse with 6 nodes. Only the ellipse is a final fracture.
     fn write_two_fractures() -> String {
-        let mut rectangle = Poly::new_rect(1., 2.);
-        rectangle.family_num = -2;
-        let mut ellipse = Poly::new_ell(6, 3., 1.);
+        let mut rectangle = Poly::new(4, 1., 2.);
+        rectangle.family_num = USER_FRACTURE_FAMILY;
+        let mut ellipse = Poly::new(6, 3., 1.);
         ellipse.family_num = 0;
         ellipse.area = 20.;
         ellipse.translation = Vector3::new(1., 2., 3.);
@@ -294,7 +293,7 @@ mod tests {
 
     /// Writes one rejected rectangle of the first stochastic family.
     fn write_rejected_rectangle() -> String {
-        let mut rectangle = Poly::new_rect(1., 2.);
+        let mut rectangle = Poly::new(4, 1., 2.);
         rectangle.family_num = 0;
         let rejected = RejectedFracture {
             poly: rectangle,
@@ -330,7 +329,11 @@ mod tests {
     fn test_points_are_the_polygon_vertices() {
         let file = write_two_fractures();
 
-        assert_eq!(data_array(&file, "points")[0], "1 2 0");
+        let first_vertex = Poly::new(4, 1., 2.).vertices[0];
+        assert_eq!(
+            data_array(&file, "points")[0],
+            format!("{} {} 0", first_vertex.x, first_vertex.y)
+        );
     }
 
     #[test]
@@ -345,7 +348,7 @@ mod tests {
     fn test_family_number_is_one_more_than_the_internal_number() {
         let file = write_two_fractures();
 
-        assert_eq!(data_array(&file, "family"), ["-1", "1"]);
+        assert_eq!(data_array(&file, "family"), ["0", "1"]);
     }
 
     #[test]

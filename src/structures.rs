@@ -1,6 +1,5 @@
-use std::fmt::Formatter;
+use std::cell::RefCell;
 use std::rc::Rc;
-use std::{cell::RefCell, fmt::Display};
 
 use parry3d_f64::na::{Point2, Point3, Vector3};
 use parry3d_f64::utils::point_in_poly2d;
@@ -13,11 +12,6 @@ use crate::distribution::{TruncExp, TruncLogNormal, TruncPowerLaw};
 use crate::error::DfngenError;
 use crate::fracture::insert_shape::print_reject_reason;
 use crate::fracture::poly::Poly;
-
-pub struct RejectedUserFracture {
-    pub id: usize,
-    pub user_fracture_type: i32,
-}
 
 /// A fracture which was not accepted, with the FRAM reject code of its last attempt.
 pub struct RejectedFracture {
@@ -218,28 +212,7 @@ pub struct Stats {
     /// Fracture cluster data. See struct GroupData.
     pub group_data: Vec<GroupData>,
     /// Rejected User Fractures
-    pub rejected_user_fracture: Vec<RejectedUserFracture>,
-}
-
-#[derive(Clone, Copy, Debug)]
-pub enum Shape {
-    Ellipse(u8),
-    Rectangle,
-}
-
-impl Default for Shape {
-    fn default() -> Self {
-        Shape::Ellipse(6)
-    }
-}
-
-impl Display for Shape {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Shape::Ellipse(_) => write!(f, "Ellipse"),
-            Shape::Rectangle => write!(f, "Rectangular"),
-        }
-    }
+    pub rejected_user_fracture: Vec<usize>,
 }
 
 pub enum RadiusFunction {
@@ -382,26 +355,15 @@ impl DFNGen {
         }
     }
 
-    pub fn insert_poly(
-        &mut self,
-        mut new_poly: Poly,
-        poly_id: usize,
-        family_id: i32,
-        opts: &PolyOptions,
-    ) {
+    pub fn insert_poly(&mut self, mut new_poly: Poly, poly_id: usize, opts: &PolyOptions) {
         if new_poly.domain_truncation(opts.h, opts.eps, &opts.domain_size) {
             // Poly completely outside domain
             self.pstats.rejection_reasons.outside += 1;
             self.pstats.rejected_poly_count += 1;
-            self.pstats
-                .rejected_user_fracture
-                .push(RejectedUserFracture {
-                    id: poly_id,
-                    user_fracture_type: family_id,
-                });
+            self.pstats.rejected_user_fracture.push(poly_id);
             warn!(
-                "({}, {}): rejected for being outside the defined domain.",
-                family_id, poly_id
+                "User-defined fracture {}: rejected for being outside the defined domain.",
+                poly_id
             );
             return;
         }
@@ -433,12 +395,7 @@ impl DFNGen {
         } else {
             self.pstats.rejects_per_attempt[self.pstats.accepted_poly_count] += 1;
             self.pstats.rejected_poly_count += 1;
-            self.pstats
-                .rejected_user_fracture
-                .push(RejectedUserFracture {
-                    id: poly_id,
-                    user_fracture_type: family_id,
-                });
+            self.pstats.rejected_user_fracture.push(poly_id);
 
             print_reject_reason(reject_code, &new_poly);
 
@@ -594,9 +551,9 @@ mod tests {
         dfngen.pstats.rejects_per_attempt.push(0);
 
         for poly_id in 1..=2 {
-            let mut rectangle = Poly::new_rect(1., 1.);
+            let mut rectangle = Poly::new(4, 1., 1.);
             rectangle.normal = Vector3::new(0., 0., 1.);
-            dfngen.insert_poly(rectangle, poly_id, -2, &opts);
+            dfngen.insert_poly(rectangle, poly_id, &opts);
         }
 
         dfngen

@@ -16,7 +16,6 @@ radii_list_increase = 0.1
 rejects_per_fracture = 10
 force_large_fractures = false
 remove_fractures_less_than = 0.0
-insert_user_rectangles_first = false
 
 [fram]
 disable = false
@@ -34,7 +33,6 @@ print_reject_reasons = false
 rejected_fractures = true
 
 [[family]]
-shape = "ellipse"
 number_of_points = 8
 probability = 0.4
 aspect_ratio = 1.0
@@ -44,7 +42,6 @@ radius = { distribution = "exponential", mean = 2.0, min = 1.0, max = 5.0 }
 orientation = { dip = 30.0, strike = 10.0, kappa = 8.0 }
 
 [[family]]
-shape = "ellipse"
 number_of_points = 12
 probability = 0.3
 aspect_ratio = 2.0
@@ -55,34 +52,24 @@ radius = { distribution = "constant", value = 2.0 }
 orientation = { dip = 60.0, strike = 200.0, kappa = 20.0 }
 
 [[family]]
-shape = "rectangle"
+number_of_points = 4
 probability = 0.3
 aspect_ratio = 1.5
 layer = 0
 region = 0
-radius = { distribution = "log_normal", log_mean = 0.5, sd = 0.4, min = 1.0, max = 4.0 }
+radius = { distribution = "log_normal", log_mean = 0.8465735902799727, sd = 0.4, min = 1.4142135623730951, max = 5.656854249492381 }
 orientation = { dip = 45.0, strike = 90.0, kappa = 10.0 }
 
 [[user_fracture]]
-shape = "rectangle"
-angle_unit = "radian"
-radius = 3.0
-aspect_ratio = 1.0
-beta = 0.3
-translation = [0.0, 0.0, 0.0]
-dip_strike = [0.7, 1.9]
+vertices = [
+    [-3.0, -2.0, -3.0],
+    [3.0, -2.0, -3.0],
+    [3.5, -2.0, 0.0],
+    [0.0, -2.0, 3.0],
+    [-3.5, -2.0, 0.0],
+]
 
 [[user_fracture]]
-shape = "rectangle"
-angle_unit = "radian"
-radius = 2.0
-aspect_ratio = 1.5
-beta = 0.0
-translation = [2.0, -1.0, 1.0]
-dip_strike = [1.2, 0.4]
-
-[[user_fracture]]
-shape = "ellipse"
 number_of_points = 8
 radius = 2.0
 aspect_ratio = 1.0
@@ -91,7 +78,6 @@ translation = [1.0, 1.0, -2.0]
 trend_plunge = [120.0, 35.0]
 
 [[user_fracture]]
-shape = "ellipse"
 number_of_points = 12
 radius = 1.5
 aspect_ratio = 2.0
@@ -100,11 +86,19 @@ translation = [-2.0, 0.0, 2.0]
 trend_plunge = [10.0, 80.0]
 
 [[user_fracture]]
-shape = "polygon"
-vertices = [
-    [-3.0, -2.0, -3.0],
-    [3.0, -2.0, -3.0],
-    [3.5, -2.0, 0.0],
-    [0.0, -2.0, 3.0],
-    [-3.5, -2.0, 0.0],
-]
+number_of_points = 4
+angle_unit = "radian"
+radius = 4.242640687119286
+aspect_ratio = 1.0
+beta = 0.3
+translation = [0.0, 0.0, 0.0]
+dip_strike = [0.7, 1.9]
+
+[[user_fracture]]
+number_of_points = 4
+angle_unit = "radian"
+radius = 2.8284271247461903
+aspect_ratio = 1.5
+beta = 0.0
+translation = [2.0, -1.0, 1.0]
+dip_strike = [1.2, 0.4]

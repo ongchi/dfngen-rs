@@ -13,7 +13,6 @@ radii_list_increase = 0.1
 rejects_per_fracture = 10
 force_large_fractures = false
 remove_fractures_less_than = 0.0
-insert_user_rectangles_first = true
 
 [fram]
 disable = false
@@ -31,7 +30,6 @@ print_reject_reasons = false
 rejected_fractures = false
 
 [[user_fracture]]
-shape = "rectangle"
 vertices = [
     [-4.0, -4.0, 0.0],
     [4.0, -4.0, 0.0],
@@ -40,7 +38,6 @@ vertices = [
 ]
 
 [[user_fracture]]
-shape = "rectangle"
 vertices = [
     [0.0, -3.0, -3.0],
     [0.0, 3.0, -3.0],
@@ -49,7 +46,6 @@ vertices = [
 ]
 
 [[user_fracture]]
-shape = "ellipse"
 vertices = [
     [2.5, 2.0, 1.0],
     [2.5, 1.414213562, 2.414213562],

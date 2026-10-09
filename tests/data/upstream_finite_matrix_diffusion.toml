@@ -1,4 +1,4 @@
-seed = 101
+seed = 104
 h = 1.0
 angle_unit = "degree"
 
@@ -12,7 +12,6 @@ radii_list_increase = 0.1
 rejects_per_fracture = 10
 force_large_fractures = false
 remove_fractures_less_than = 0.0
-insert_user_rectangles_first = true
 
 [fram]
 disable = false
@@ -30,7 +29,6 @@ print_reject_reasons = false
 rejected_fractures = false
 
 [[family]]
-shape = "ellipse"
 number_of_points = 8
 probability = 0.18173431734317344
 aspect_ratio = 1.0
@@ -41,7 +39,6 @@ radius = { distribution = "truncated_power_law", alpha = 2.5, min = 15.0, max = 
 orientation = { trend = 90.0, plunge = 0.0, kappa = 22.0 }
 
 [[family]]
-shape = "ellipse"
 number_of_points = 8
 probability = 0.14760147601476015
 aspect_ratio = 1.0
@@ -52,7 +49,6 @@ radius = { distribution = "truncated_power_law", alpha = 2.7, min = 15.0, max = 
 orientation = { trend = 180.0, plunge = 0.0, kappa = 22.0 }
 
 [[family]]
-shape = "ellipse"
 number_of_points = 8
 probability = 0.6706642066420664
 aspect_ratio = 1.0

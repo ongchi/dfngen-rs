@@ -10,16 +10,24 @@ relative path in the `.dat` file is relative to the folder of the `.dat` file.
 Keys which dfngen-rs does not use are dropped (`domainCenter`, `framOn`,
 `ecpmOutput`, `nFracFam`, `minimum_fracture_size`).
 
+A rectangle becomes a polygon with 4 points. Its radius in dfnGen is half the
+side; in dfngen-rs it is the distance from the center to a corner of the
+square with that side. Thus the radius values of a rectangle are multiplied
+by sqrt(2).
+
 Needs only the Python standard library.
 """
 
 from __future__ import annotations
 
+import math
 import re
 import sys
 from pathlib import Path
 
 BRACKET_GROUP = re.compile(r"[{\[(]([^}\])]*)[}\])]")
+SQRT_2 = math.sqrt(2.0)
+RECTANGLE_POINT_COUNT = 4
 
 
 class DatFile:
@@ -85,6 +93,11 @@ def number(value: str) -> str:
     return repr(float(value))
 
 
+def rectangle_radius(value: str) -> str:
+    """The radius of the 4-point polygon for a rectangle with this half side."""
+    return repr(float(value) * SQRT_2)
+
+
 def numbers(values: list[str]) -> str:
     return "[" + ", ".join(number(value) for value in values) + "]"
 
@@ -136,7 +149,6 @@ def convert_general_options(dat: DatFile) -> list[str]:
         f"rejects_per_fracture = {int(dat.word('rejectsPerFracture'))}",
         f"force_large_fractures = {boolean(dat.flag('forceLargeFractures'))}",
         f"remove_fractures_less_than = {number(dat.word('removeFracturesLessThan'))}",
-        f"insert_user_rectangles_first = {boolean(dat.flag('insertUserRectanglesFirst'))}",
         "",
         "[fram]",
         f"disable = {boolean(dat.flag('disableFram'))}",
@@ -225,14 +237,21 @@ def convert_families(dat: DatFile, prefix: str, probabilities: list[str]) -> lis
         except StopIteration:
             sys.exit(f"{dat.path}: not sufficient values for {prefix}{label}")
 
+    def next_length(label: str) -> str:
+        """The next value of a parameter which has the unit of the radius."""
+        value = next_value(label)
+        return rectangle_radius(value) if prefix == "r" else value
+
+    def next_log_mean() -> str:
+        value = next_value("LogMean")
+        return repr(float(value) + math.log(SQRT_2)) if prefix == "r" else value
+
     lines = []
     for i in range(family_count):
         lines += ["", "[[family]]"]
-        if prefix == "e":
-            lines += ['shape = "ellipse"', f"number_of_points = {int(values('numPoints')[i])}"]
-        else:
-            lines.append('shape = "rectangle"')
+        point_count = int(values("numPoints")[i]) if prefix == "e" else RECTANGLE_POINT_COUNT
         lines += [
+            f"number_of_points = {point_count}",
             f"probability = {number(probabilities.pop(0))}",
             f"aspect_ratio = {number(values('aspect')[i])}",
             f"layer = {int(values('Layer')[i])}",
@@ -246,22 +265,22 @@ def convert_families(dat: DatFile, prefix: str, probabilities: list[str]) -> lis
         distribution = int(values("distr")[i])
         if distribution == 1:
             radius = (
-                f'distribution = "log_normal", log_mean = {next_value("LogMean")}, '
-                f'sd = {next_value("sd")}, min = {next_value("LogMin")}, '
-                f'max = {next_value("LogMax")}'
+                f'distribution = "log_normal", log_mean = {next_log_mean()}, '
+                f'sd = {next_value("sd")}, min = {next_length("LogMin")}, '
+                f'max = {next_length("LogMax")}'
             )
         elif distribution == 2:
             radius = (
                 f'distribution = "truncated_power_law", alpha = {next_value("alpha")}, '
-                f'min = {next_value("min")}, max = {next_value("max")}'
+                f'min = {next_length("min")}, max = {next_length("max")}'
             )
         elif distribution == 3:
             radius = (
-                f'distribution = "exponential", mean = {next_value("ExpMean")}, '
-                f'min = {next_value("ExpMin")}, max = {next_value("ExpMax")}'
+                f'distribution = "exponential", mean = {next_length("ExpMean")}, '
+                f'min = {next_length("ExpMin")}, max = {next_length("ExpMax")}'
             )
         elif distribution == 4:
-            radius = f'distribution = "constant", value = {next_value("const")}'
+            radius = f'distribution = "constant", value = {next_length("const")}'
         else:
             sys.exit(f"{dat.path}: unknown distribution type: {distribution}")
         lines.append(f"radius = {{ {radius} }}")
@@ -297,13 +316,16 @@ def convert_fractures_by_parameters(path: Path, shape: str, file_angle_unit: str
 
     lines = []
     for i in range(count):
-        lines += ["", "[[user_fracture]]", f'shape = "{shape}"']
+        lines += ["", "[[user_fracture]]"]
         if angle_unit != file_angle_unit:
             lines.append(f'angle_unit = "{angle_unit}"')
         if shape == "ellipse":
-            lines.append(f"number_of_points = {int(point_counts[i])}")
+            point_count, radius = int(point_counts[i]), number(radii[i])
+        else:
+            point_count, radius = RECTANGLE_POINT_COUNT, rectangle_radius(radii[i])
         lines += [
-            f"radius = {number(radii[i])}",
+            f"number_of_points = {point_count}",
+            f"radius = {radius}",
             f"aspect_ratio = {number(aspect_ratios[i])}",
             f"beta = {number(betas[i])}",
             f"translation = {numbers(translations[i])}",
@@ -312,8 +334,8 @@ def convert_fractures_by_parameters(path: Path, shape: str, file_angle_unit: str
     return lines
 
 
-def fracture_by_vertices(shape: str, vertices: list[list[str]]) -> list[str]:
-    lines = ["", "[[user_fracture]]", f'shape = "{shape}"', "vertices = ["]
+def fracture_by_vertices(vertices: list[list[str]]) -> list[str]:
+    lines = ["", "[[user_fracture]]", "vertices = ["]
     lines += [f"    {numbers(vertex)}," for vertex in vertices]
     lines.append("]")
     return lines
@@ -326,12 +348,12 @@ def convert_fractures_by_vertices(path: Path, shape: str) -> list[str]:
         point_count = int(dat.word("nNodes"))
     else:
         count = int(dat.word("nRectangles"))
-        point_count = 4
+        point_count = RECTANGLE_POINT_COUNT
 
     vertices = dat.groups("Coordinates", count * point_count)
     lines = []
     for i in range(count):
-        lines += fracture_by_vertices(shape, vertices[i * point_count : (i + 1) * point_count])
+        lines += fracture_by_vertices(vertices[i * point_count : (i + 1) * point_count])
     return lines
 
 
@@ -351,7 +373,7 @@ def convert_polygons(path: Path) -> list[str]:
                 sys.exit(f"{path}: expected {point_count} nodes for a polygon")
             vertices.append([value.strip() for value in match.group(1).split(",")])
             text = text[match.end() :]
-        lines += fracture_by_vertices("polygon", vertices)
+        lines += fracture_by_vertices(vertices)
     return lines
 
 
@@ -361,20 +383,29 @@ def convert_user_fractures(dat: DatFile) -> list[str]:
     def path_if_enabled(flag_label: str, path_label: str) -> Path | None:
         return resolve(dat, dat.word(path_label)) if dat.flag(flag_label) else None
 
-    # dfngen-rs keeps the file order in each shape group. dfnGen inserts the
+    # dfngen-rs inserts the fractures in the order of the file. dfnGen inserts
+    # the polygons first, then the rectangles and the ellipses in the order
+    # which insertUserRectanglesFirst gives, and in each of these groups the
     # fractures by parameters before those by coordinates.
-    lines = []
-    if path := path_if_enabled("userRectanglesOnOff", "UserRect_Input_File_Path"):
-        lines += convert_fractures_by_parameters(path, "rectangle", file_angle_unit)
-    if path := path_if_enabled("userRecByCoord", "RectByCoord_Input_File_Path"):
-        lines += convert_fractures_by_vertices(path, "rectangle")
-    if path := path_if_enabled("userEllipsesOnOff", "UserEll_Input_File_Path"):
-        lines += convert_fractures_by_parameters(path, "ellipse", file_angle_unit)
-    if path := path_if_enabled("userEllByCoord", "EllByCoord_Input_File_Path"):
-        lines += convert_fractures_by_vertices(path, "ellipse")
+    polygons = []
     if path := path_if_enabled("userPolygonByCoord", "PolygonByCoord_Input_File_Path"):
-        lines += convert_polygons(path)
-    return lines
+        polygons += convert_polygons(path)
+
+    rectangles = []
+    if path := path_if_enabled("userRectanglesOnOff", "UserRect_Input_File_Path"):
+        rectangles += convert_fractures_by_parameters(path, "rectangle", file_angle_unit)
+    if path := path_if_enabled("userRecByCoord", "RectByCoord_Input_File_Path"):
+        rectangles += convert_fractures_by_vertices(path, "rectangle")
+
+    ellipses = []
+    if path := path_if_enabled("userEllipsesOnOff", "UserEll_Input_File_Path"):
+        ellipses += convert_fractures_by_parameters(path, "ellipse", file_angle_unit)
+    if path := path_if_enabled("userEllByCoord", "EllByCoord_Input_File_Path"):
+        ellipses += convert_fractures_by_vertices(path, "ellipse")
+
+    if dat.flag("insertUserRectanglesFirst"):
+        return polygons + rectangles + ellipses
+    return polygons + ellipses + rectangles
 
 
 def convert(dat_path: Path) -> str:

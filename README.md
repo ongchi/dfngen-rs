@@ -32,7 +32,6 @@ radii_list_increase = 0.1
 rejects_per_fracture = 10
 force_large_fractures = false
 remove_fractures_less_than = 0.0
-insert_user_rectangles_first = true
 
 [fram]
 disable = false
@@ -51,8 +50,7 @@ rejected_fractures = false
 
 # One table for each stochastic fracture family (optional)
 [[family]]
-shape = "ellipse"                  # or "rectangle"
-number_of_points = 8               # ellipse only
+number_of_points = 8               # 3 or more; 4 gives a rectangle
 probability = 0.4
 aspect_ratio = 1.0
 layer = 0                          # 0 = whole domain, 1 = first layer
@@ -64,7 +62,7 @@ orientation = { theta = 0.0, phi = 0.0, kappa = 8.0 }
 
 # One table for each user-defined fracture (optional)
 [[user_fracture]]
-shape = "rectangle"                # or "ellipse", with number_of_points
+number_of_points = 4
 angle_unit = "degree"              # optional; replaces the angle unit of the file
 radius = 4.0
 aspect_ratio = 1.0
@@ -72,8 +70,7 @@ beta = 0.0
 translation = [0.0, 0.0, 0.0]
 normal = [0.0, 0.0, 1.0]
 
-[[user_fracture]]
-shape = "polygon"                  # or "ellipse", or "rectangle" (4 vertices)
+[[user_fracture]]                  # a polygon with 3 vertices or more
 vertices = [[2.5, 2.0, 1.0], [2.5, 0.0, 3.0], [2.5, -2.0, 1.0]]
 ```
 
@@ -92,16 +89,26 @@ and `strike`, each with `kappa` (Fisher distribution).
 Orientation of a user-defined fracture: `normal = [x, y, z]`, or
 `trend_plunge = [trend, plunge]`, or `dip_strike = [dip, strike]`.
 
-Order of the fractures: all ellipse families come before all rectangle
-families. User-defined polygons are inserted first, then rectangles and
-ellipses in the order which `insert_user_rectangles_first` gives. Each group
-keeps the order of the file.
+Shape of a fracture: a family and a user-defined fracture with `radius` make
+a regular polygon with `number_of_points` vertices on a circle of the given
+radius. The polygon is then scaled in one direction by `aspect_ratio`.
+Many points give an ellipse. 4 points give a rectangle: its half sides are
+`radius / sqrt(2)` and `radius * aspect_ratio / sqrt(2)`. Because of rounding,
+a corner of such a rectangle can be a little outside a domain face which it
+must only touch. Then the domain cuts the rectangle. Use `vertices` for a
+fracture which must end exactly on a domain face.
+
+Order of the fractures: the user-defined fractures are inserted first, in the
+order of the file. The number of a family is its position in the file.
 
 ### dfnWorks input files
 
 `scripts/convert_dat_to_toml.py <input.dat> <output.toml>` converts a dfnGen
 input file of pydfnworks, with its user-defined fracture files and its polygon
-boundary file, to this format.
+boundary file, to this format. A rectangle of dfnGen becomes a polygon with 4
+points, and its radius values are multiplied by sqrt(2) (in dfnGen, the radius
+of a rectangle is half the side). The ellipses do not have the same vertices
+as in dfnGen, so the network is not the same as that of dfnGen for the same seed.
 
 ## Output files
 
@@ -122,7 +129,7 @@ The log of the run goes to the console (stdout), not to a file. The level is
 | `triple_points.dat` | Coordinates of the triple intersection points. Written only if `triple_intersections = true`. |
 | `rejections.dat` | Number of rejected fractures for each rejection reason. |
 | `rejectsPerAttempt.dat` | Line N: number of rejected attempts before accepted fracture N. |
-| `userFractureRejections.dat` | Number and type of each rejected user-defined fracture. Written only if a user-defined fracture was rejected. |
+| `userFractureRejections.dat` | Number of each rejected user-defined fracture (its position in the input file). Written only if a user-defined fracture was rejected. |
 | `rejected_fractures.vtp` | The rejected fractures as polygons with their properties (VTK PolyData). Written only if `rejected_fractures = true`. See below. |
 
 ### Cell data of `fractures.vtp`
@@ -135,7 +142,7 @@ in 3D.
 | `fracture_id` | Number of the final fracture, 0 if the fracture was removed. |
 | `accepted_id` | Number in the order of acceptance, starts at 1. |
 | `removed` | 1 if the fracture was removed, else 0. |
-| `family` | -2 user polygon, -1 user rectangle, 0 user ellipse, > 0 stochastic family. |
+| `family` | 0 user-defined fracture, > 0 stochastic family. |
 | `cluster` | Number of the connected group of fractures. |
 | `truncated` | 1 if the domain cut the fracture, else 0. |
 | `intersection_count` | Number of intersections with other accepted fractures. |

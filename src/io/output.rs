@@ -220,10 +220,10 @@ fn write_user_rejected_fracture_information(pstats: &Stats, output: &str) -> io:
 
     info!("Writing User Fracture Rejection File (userFractureRejections.dat)");
     let mut file = create_file(format!("{}/userFractureRejections.dat", output))?;
-    writeln!(file, "Fracture id,User Fracture Type")?;
+    writeln!(file, "Fracture id")?;
 
-    for rejected in &pstats.rejected_user_fracture {
-        writeln!(file, "{},{}", rejected.id, rejected.user_fracture_type)?;
+    for fracture_id in &pstats.rejected_user_fracture {
+        writeln!(file, "{}", fracture_id)?;
     }
 
     file.flush()
@@ -447,7 +447,7 @@ mod tests {
 
     #[test]
     fn test_fracture_inside_the_domain_meets_no_boundary_face() {
-        let rectangle = Poly::new_rect(1., 2.);
+        let rectangle = Poly::new(4, std::f64::consts::SQRT_2, 2.);
 
         let lines = find_boundary_face_lines(&rectangle, &Vector3::new(10., 10., 10.), EPS);
 
@@ -457,7 +457,7 @@ mod tests {
     #[test]
     fn test_fracture_with_two_vertices_on_a_face_meets_that_face() {
         // The rectangle has x = 1 at vertices 0 and 3, and x = -1 at vertices 1 and 2
-        let rectangle = Poly::new_rect(1., 2.);
+        let rectangle = Poly::new(4, std::f64::consts::SQRT_2, 2.);
 
         let lines = find_boundary_face_lines(&rectangle, &Vector3::new(2., 10., 10.), EPS);
 

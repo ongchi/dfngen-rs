@@ -82,12 +82,8 @@ fn main() -> Result<(), DfngenError> {
         )?;
     }
 
-    let num_user_defined_fractures = insert_user_defined_fractures(
-        input.insert_user_rectangles_first,
-        &input.user_fractures,
-        &poly_opts,
-        &mut dfngen,
-    );
+    let num_user_defined_fractures =
+        insert_user_defined_fractures(&input.user_fractures, &poly_opts, &mut dfngen);
 
     if total_families == 0 && input.stop_condition != StopCondition::NPoly {
         // If no stochastic shapes, use nPoly option with npoly = number of user polygons
@@ -304,9 +300,8 @@ fn prepare_radii_lists(
 
         for fracture_family in &frac_fam_col.families {
             info!(
-                "Estimated {} fractures for {} family {}",
+                "Estimated {} fractures for family {}",
                 fracture_family.radii_list.len(),
-                fracture_family.shape,
                 fracture_family.id
             );
         }
@@ -519,14 +514,11 @@ fn log_insertion_progress(input: &Input, families: &[FractureFamily], pstats: &S
 
     for shape in families {
         if input.stop_condition == StopCondition::NPoly {
-            info!(
-                "{} family {} Current P32 = {:.8}",
-                shape.shape, shape.id, shape.current_p32
-            );
+            info!("Family {} Current P32 = {:.8}", shape.id, shape.current_p32);
         } else {
             info!(
-                "{} family {} target P32 = {:.8}, Current P32 = {}",
-                shape.shape, shape.id, shape.p32_target, shape.current_p32
+                "Family {} target P32 = {:.8}, Current P32 = {}",
+                shape.id, shape.p32_target, shape.current_p32
             );
         }
 
@@ -769,12 +761,12 @@ fn report_estimation_statistics(frac_fam_col: &FractureFamilyCollection, pstats:
     for (i, shape) in frac_fam_col.families.iter().enumerate() {
         match shape.radius.function {
             RadiusFunction::Constant(_) => {
-                info!("{} Family {} Using constant size", shape.shape, shape.id);
+                info!("Family {} Using constant size", shape.id);
             }
             _ => {
                 info!(
-                    "{} Family {} Estimated: {}",
-                    shape.shape, shape.id, pstats.expected_from_fam[i]
+                    "Family {} Estimated: {}",
+                    shape.id, pstats.expected_from_fam[i]
                 );
 
                 info!(

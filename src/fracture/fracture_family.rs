@@ -10,17 +10,16 @@ use tracing::error;
 use crate::distribution::generating_points::random_position;
 use crate::distribution::Fisher;
 use crate::error::DfngenError;
-use crate::structures::{RadiusDistribution, Shape};
+use crate::structures::RadiusDistribution;
 
 use super::poly::Poly;
 
-/// FractureFamily is used to hold varibales for all types of stochastic shapes. During getInput(),
-/// all stochastic families for both recaangles and ellipses are parsed from the user input
-/// and are placed in a Shape structure array.
+/// FractureFamily holds the variables of one stochastic family of the input file.
 pub struct FractureFamily {
     pub id: usize,
 
-    pub shape: Shape,
+    /// Number of vertices of each fracture before fracture-domain truncation.
+    pub number_of_points: usize,
 
     pub radius: RadiusDistribution,
 
@@ -110,8 +109,7 @@ impl FractureFamily {
                             error!("");
                             error!("{}", e);
                             panic!(
-                                "distribution for {} family {} has been unable to generate a fracture with radius within set parameters after 1000 consecutive tries.",
-                                self.shape,
+                                "distribution for family {} has been unable to generate a fracture with radius within set parameters after 1000 consecutive tries.",
                                 self.id
                             );
                         }
@@ -127,10 +125,7 @@ impl FractureFamily {
         };
 
         // New polygon to build
-        let mut new_poly = match self.shape {
-            Shape::Ellipse(n) => Poly::new_ell(n as usize, radius, self.aspect_ratio),
-            Shape::Rectangle => Poly::new_rect(radius, self.aspect_ratio),
-        };
+        let mut new_poly = Poly::new(self.number_of_points, radius, self.aspect_ratio);
         new_poly.family_num = fam_idx as isize;
 
         // Initialize beta based on distrubution type: 0 = unifrom on [0,2PI], 1 = constant
@@ -164,7 +159,7 @@ impl FractureFamily {
 #[derive(Default)]
 pub struct FractureFamilyBuilder<'a> {
     id: Option<usize>,
-    number_of_nodes: Option<u8>,
+    number_of_points: Option<usize>,
     radius: Option<RadiusDistribution>,
     orientation: Option<Fisher>,
     aspect_ratio: Option<f64>,
@@ -184,8 +179,8 @@ impl<'a> FractureFamilyBuilder<'a> {
         self
     }
 
-    pub fn number_of_nodes(&mut self, number_of_nodes: u8) -> &mut Self {
-        self.number_of_nodes = Some(number_of_nodes);
+    pub fn number_of_points(&mut self, number_of_points: usize) -> &mut Self {
+        self.number_of_points = Some(number_of_points);
         self
     }
 
@@ -245,11 +240,6 @@ impl<'a> FractureFamilyBuilder<'a> {
     }
 
     pub fn build(&mut self) -> Result<FractureFamily, String> {
-        let shape = self
-            .number_of_nodes
-            .map(Shape::Ellipse)
-            .unwrap_or(Shape::Rectangle);
-
         let layers = self.layers.ok_or("layers is required".to_string())?;
         let regions = self.regions.ok_or("regions is required".to_string())?;
         let layer_id = self.layer_id.ok_or("layer_id is required".to_string())?;
@@ -300,7 +290,9 @@ impl<'a> FractureFamilyBuilder<'a> {
 
         Ok(FractureFamily {
             id: self.id.take().ok_or("id is required".to_string())?,
-            shape,
+            number_of_points: self
+                .number_of_points
+                .ok_or("number of points is required".to_string())?,
             radius: self.radius.take().ok_or("radius is required".to_string())?,
             radii_idx: 0,
             radii_list: Vec::new(),
@@ -352,10 +344,7 @@ impl FractureFamilyCollection {
                 match frac_fam.radius.sample(generator.clone()) {
                     Ok(radius) => frac_fam.radii_list.push(radius),
                     Err(e) => {
-                        error!(
-                            "Attempt to populate fracture radii: {} Family {}",
-                            frac_fam.shape, frac_fam.id
-                        );
+                        error!("Attempt to populate fracture radii: Family {}", frac_fam.id);
                         error!("{}", e);
                         return Err(e);
                     }

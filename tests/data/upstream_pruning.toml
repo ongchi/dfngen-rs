@@ -12,7 +12,6 @@ radii_list_increase = 0.1
 rejects_per_fracture = 10
 force_large_fractures = false
 remove_fractures_less_than = 0.0
-insert_user_rectangles_first = true
 
 [fram]
 disable = false
@@ -30,7 +29,6 @@ print_reject_reasons = false
 rejected_fractures = false
 
 [[family]]
-shape = "ellipse"
 number_of_points = 8
 probability = 0.5
 aspect_ratio = 1.0
@@ -41,7 +39,6 @@ radius = { distribution = "truncated_power_law", alpha = 2.1, min = 1.0, max = 1
 orientation = { theta = 0.0, phi = 0.0, kappa = 0.1 }
 
 [[family]]
-shape = "ellipse"
 number_of_points = 8
 probability = 0.5
 aspect_ratio = 1.0

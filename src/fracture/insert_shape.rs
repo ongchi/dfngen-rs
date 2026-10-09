@@ -8,7 +8,6 @@ use tracing::warn;
 
 use crate::distribution::generating_points::random_position;
 use crate::fracture::fracture_family::FractureFamily;
-use crate::structures::Shape;
 
 use super::poly::Poly;
 
@@ -54,10 +53,11 @@ pub fn re_translate_poly(
         new_poly.group_num = 0; // Clear cluster group information
         new_poly.intersection_index.clear(); // Clear any saved intersections
 
-        let tmp = match frac_fam.shape {
-            Shape::Ellipse(n) => Poly::new_ell(n as usize, new_poly.xradius, frac_fam.aspect_ratio),
-            Shape::Rectangle => Poly::new_rect(new_poly.xradius, new_poly.aspect_ratio),
-        };
+        let tmp = Poly::new(
+            frac_fam.number_of_points,
+            new_poly.xradius,
+            frac_fam.aspect_ratio,
+        );
         new_poly.vertices = tmp.vertices;
 
         // Save newPoly's previous normal vector and then reset poly normal to {0,0,1} for applyRotation3D function

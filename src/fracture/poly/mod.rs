@@ -4,20 +4,16 @@ use parry3d_f64::bounding_volume::Aabb;
 use parry3d_f64::na::{center, Point3, Rotation3, Vector3};
 use parry3d_f64::shape::Triangle;
 
-use crate::{
-    cg::{is_parallel, rotation_between},
-    distribution::generating_points::generate_theta,
-};
+use crate::cg::{is_parallel, rotation_between};
 
 #[derive(Clone)]
 /// The Poly structre is used to create and store fracrures/polygons.
 pub struct Poly {
     /// Contains the index of the 'shapeFamilies' array in main() from which the fracture was
     /// created from. If the polygon was created from user defined input, it will be marked
-    /// (-2 for user-rect, and -1 for user ell.
-    /// The stochastic shape family numbers start at 0 for the first family, and increase by
-    /// 1 for each addition family. Families are in the same order which they are defined in the
-    /// 'famProb' variable in the input file, starting with ellipse families, then rectangular families.
+    /// with `USER_FRACTURE_FAMILY` (-1).
+    /// The stochastic family numbers start at 0 for the first family, and increase by
+    /// 1 for each addition family. Families are in the order of the input file.
     pub family_num: isize,
 
     /// Fracture cluster number which the fracture belongs to. This variable is used to keep
@@ -31,14 +27,12 @@ pub struct Poly {
     /// Polygon area (Not calculated until after DFN generation has completed).
     pub area: f64,
 
-    /// X-radius before fracture-domain truncation. In the case of rectangles, radius is
-    /// 1/2 the width of the polygon.
+    /// X-radius before fracture-domain truncation.
     /// X-radius is equal to the value generated from randum distributions or given by the user
     /// in the case of constant distributions and user-defined fractures.
     pub xradius: f64,
 
-    /// Y-radius before fracture-domain truncation. In the case of rectangles, radius is 1/2
-    /// the width of the polygon.
+    /// Y-radius before fracture-domain truncation.
     /// Y-radius is equal to x-radius * aspect ratio (yradius = aspectRatio * xradius).
     pub yradius: f64,
 
@@ -97,48 +91,30 @@ impl Default for Poly {
 }
 
 impl Poly {
-    /// Create a Rectangular
+    /// Creates a polygon on the x-y plane, with its center at the origin.
+    ///
+    /// The polygon is a regular polygon with its vertices on a circle of the
+    /// given radius, stretched in y by the aspect ratio. 4 points give a
+    /// rectangle with its sides parallel to the axes. Many points give an ellipse.
     ///
     /// # Arguments
     ///
-    /// * `radius` - Radius (1/2 x dimension length)
-    /// * `aspect_ratio` - Aspect ratio
-    pub fn new_rect(radius: f64, aspect_ratio: f64) -> Self {
-        let x = radius;
-        let y = radius * aspect_ratio;
-
-        Self {
-            normal: Vector3::new(0., 0., 1.),
-            xradius: x,
-            yradius: y,
-            aspect_ratio,
-            // Poly is on x-y plane
-            vertices: vec![
-                Point3::new(x, y, 0.),
-                Point3::new(-x, y, 0.),
-                Point3::new(-x, -y, 0.),
-                Point3::new(x, -y, 0.),
-            ],
-            ..Default::default()
-        }
-    }
-
-    /// Create a Ellipse
-    ///
-    /// # Arguments
-    ///
+    /// * `number_of_points` - Number of vertices
     /// * `radius` - Radius (xradius = radius. yradius = radius * aspectRatio)
     /// * `aspect_ratio` - Aspect ratio
-    pub fn new_ell(num_nodes: usize, radius: f64, aspect_ratio: f64) -> Self {
+    pub fn new(number_of_points: usize, radius: f64, aspect_ratio: f64) -> Self {
+        let angle_step = 2. * std::f64::consts::PI / number_of_points as f64;
+
         Self {
             normal: Vector3::new(0., 0., 1.),
             xradius: radius,
             yradius: radius * aspect_ratio,
             aspect_ratio,
-            // Ellipse vertices on x-y plane
-            vertices: generate_theta(aspect_ratio, num_nodes)
-                .into_iter()
-                .map(|theta| {
+            // The first vertex is half a step from the x axis, so that
+            // the sides of a polygon with 4 points are parallel to the axes
+            vertices: (0..number_of_points)
+                .map(|k| {
+                    let theta = angle_step * (k as f64 + 0.5);
                     Point3::new(
                         radius * theta.cos(),
                         radius * aspect_ratio * theta.sin(),
@@ -244,6 +220,37 @@ impl Poly {
 
         for vertex in &mut self.vertices {
             *vertex += translation;
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const TOLERANCE: f64 = 1e-12;
+
+    #[test]
+    fn test_four_points_give_a_rectangle_with_sides_parallel_to_the_axes() {
+        let poly = Poly::new(4, std::f64::consts::SQRT_2, 2.);
+
+        let corners = [[1., 2.], [-1., 2.], [-1., -2.], [1., -2.]];
+        for (vertex, corner) in poly.vertices.iter().zip(corners) {
+            let offset = vertex - Point3::new(corner[0], corner[1], 0.);
+            assert!(offset.norm() < TOLERANCE, "{} is not {:?}", vertex, corner);
+        }
+    }
+
+    #[test]
+    fn test_all_vertices_are_on_the_ellipse() {
+        let (radius, aspect_ratio) = (3., 0.5);
+
+        let poly = Poly::new(7, radius, aspect_ratio);
+
+        for vertex in &poly.vertices {
+            let ellipse_equation =
+                (vertex.x / radius).powi(2) + (vertex.y / (radius * aspect_ratio)).powi(2);
+            assert!((ellipse_equation - 1.).abs() < TOLERANCE, "{}", vertex);
         }
     }
 }

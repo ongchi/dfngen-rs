@@ -12,7 +12,6 @@ radii_list_increase = 0.1
 rejects_per_fracture = 10
 force_large_fractures = false
 remove_fractures_less_than = 0.0
-insert_user_rectangles_first = true
 
 [fram]
 disable = false
@@ -30,32 +29,32 @@ print_reject_reasons = false
 rejected_fractures = false
 
 [[user_fracture]]
-shape = "rectangle"
-radius = 0.6
+number_of_points = 4
+radius = 0.848528137423857
 aspect_ratio = 1.0
 beta = 0.0
 translation = [-0.4, 0.0, 0.0]
 normal = [0.0, 0.0, 1.0]
 
 [[user_fracture]]
-shape = "rectangle"
-radius = 1.0
+number_of_points = 4
+radius = 1.4142135623730951
 aspect_ratio = 0.65
 beta = 0.0
 translation = [0.0, 0.0, 0.0]
 normal = [1.0, 0.0, 0.0]
 
 [[user_fracture]]
-shape = "rectangle"
-radius = 0.6
+number_of_points = 4
+radius = 0.848528137423857
 aspect_ratio = 1.0
 beta = 0.0
 translation = [0.4, 0.0, 0.2]
 normal = [0.0, 0.0, 1.0]
 
 [[user_fracture]]
-shape = "rectangle"
-radius = 0.6
+number_of_points = 4
+radius = 0.848528137423857
 aspect_ratio = 1.0
 beta = 0.0
 translation = [0.4, 0.0, -0.2]
