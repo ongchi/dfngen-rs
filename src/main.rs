@@ -19,7 +19,7 @@ use crate::fracture::fracture_family::{FractureFamily, FractureFamilyCollection,
 use crate::fracture::insert_shape::{print_reject_reason, re_translate_poly};
 use crate::fracture::insert_user_defined_fractures;
 use crate::fracture::poly::Poly;
-use crate::io::input::{read_input, Input};
+use crate::io::input::{read_input, Input, StopCondition};
 use crate::io::output::write_output;
 use crate::math_functions::{
     cumsum, index_from_prob, index_from_prob_and_p32_status, remove_family_probability,
@@ -63,10 +63,10 @@ fn main() -> Result<(), DfngenError> {
     let poly_opts = PolyOptions {
         h: input.h,
         eps: input.eps,
-        domain_size: input.domainSize,
-        r_fram: input.rFram,
-        disable_fram: input.disableFram,
-        triple_intersections: input.tripleIntersections,
+        domain_size: input.domain_size,
+        r_fram: input.r_fram,
+        disable_fram: input.disable_fram,
+        triple_intersections: input.triple_intersections,
     };
 
     let generator = Rc::new(RefCell::new(Mt64::new(match input.seed {
@@ -87,24 +87,24 @@ fn main() -> Result<(), DfngenError> {
     }
 
     let num_user_defined_fractures = insert_user_defined_fractures(
-        input.insertUserRectanglesFirst,
+        input.insert_user_rectangles_first,
         &input.ext_fracture_files,
         &poly_opts,
         &mut dfngen,
     );
 
-    if total_families == 0 && input.stopCondition != 0 {
+    if total_families == 0 && input.stop_condition != StopCondition::NPoly {
         // If no stochastic shapes, use nPoly option with npoly = number of user polygons
         warn!("You have defined stopCondition = 1 (P32 program stopping condition) but have no stochastic shape families defined.");
         warn!("Automatically setting stopCondition to 0 for use with user defined polygons and nPoly.");
-        input.stopCondition = 0;
+        input.stop_condition = StopCondition::NPoly;
 
         if num_user_defined_fractures == 0 {
             panic!("ERROR: No fracture defined, please check input file for errors.");
         }
 
         // Set nPoly to the amount of user defined polygons
-        input.nPoly = num_user_defined_fractures;
+        input.n_poly = num_user_defined_fractures;
     }
 
     if total_families > 0 {
@@ -128,7 +128,7 @@ fn main() -> Result<(), DfngenError> {
     info!("Network Generation Complete");
     info!("Version of dfngen-rs: {}", env!("CARGO_PKG_VERSION"));
 
-    if input.stopCondition == 1 {
+    if input.stop_condition == StopCondition::P32 {
         info!("Final p32 values per family:");
 
         for (i, shape) in frac_fam_col.families.iter().enumerate() {
@@ -143,24 +143,24 @@ fn main() -> Result<(), DfngenError> {
 
     report_statistics_before_removal(&input, &frac_fam_col, &mut dfngen, dom_vol);
 
-    if input.removeFracturesLessThan > 0. {
+    if input.remove_fractures_less_than > 0. {
         info!(
             "Removing fractures with radius less than {} and rebuilding DFN",
-            input.removeFracturesLessThan
+            input.remove_fractures_less_than
         );
         let size = dfngen.accepted_poly.len();
-        dfngen.remove_small_fractures(&poly_opts, input.removeFracturesLessThan);
+        dfngen.remove_small_fractures(&poly_opts, input.remove_fractures_less_than);
         info!(
             "Removed {} fractures with radius less than {}",
             size - dfngen.accepted_poly.len(),
-            input.removeFracturesLessThan
+            input.remove_fractures_less_than
         );
     }
 
-    if input.polygonBoundaryFlag {
+    if input.polygon_boundary_flag {
         info!("Extracting fractures from a polygon boundary domain");
         let size = dfngen.accepted_poly.len();
-        dfngen.remove_fractures_beyond_domains(&poly_opts, &input.domainVertices);
+        dfngen.remove_fractures_beyond_domains(&poly_opts, &input.domain_vertices);
         info!(
             "Removed {} fractures outside subdomain",
             size - dfngen.accepted_poly.len()
@@ -175,10 +175,10 @@ fn main() -> Result<(), DfngenError> {
     // If ignoreBoundaryFaces input option is on,
     // DFN will keep all fractures with intersections.
     let mut final_fractures = get_cluster(
-        input.keepIsolatedFractures,
-        input.keepOnlyLargestCluster,
-        input.ignoreBoundaryFaces,
-        &input.boundaryFaces,
+        input.keep_isolated_fractures,
+        input.keep_only_largest_cluster,
+        input.ignore_boundary_faces,
+        &input.boundary_faces,
         &dfngen.pstats,
     );
     // Sort fracture indices to retain order by acceptance
@@ -186,15 +186,15 @@ fn main() -> Result<(), DfngenError> {
     // Error check for no boundary connection
     let mut print_connectivity_error = false;
 
-    if final_fractures.is_empty() && !input.ignoreBoundaryFaces {
+    if final_fractures.is_empty() && !input.ignore_boundary_faces {
         print_connectivity_error = true;
         // There is no fracture network which connects the boundary faces of the user.
         // Ignore the boundary faces, to report the statistics of the network before the error.
         final_fractures = get_cluster(
-            input.keepIsolatedFractures,
-            input.keepOnlyLargestCluster,
+            input.keep_isolated_fractures,
+            input.keep_only_largest_cluster,
             true,
-            &input.boundaryFaces,
+            &input.boundary_faces,
             &dfngen.pstats,
         );
         final_fractures.sort();
@@ -275,7 +275,7 @@ fn init_tracing(log_file: File) {
 }
 
 fn domain_volume(input: &Input) -> f64 {
-    input.domainSize[0] * input.domainSize[1] * input.domainSize[2]
+    input.domain_size[0] * input.domain_size[1] * input.domain_size[2]
 }
 
 /// Pre-generates the sorted radii list of each family and initializes the
@@ -288,13 +288,17 @@ fn prepare_radii_lists(
 ) -> Result<(), DfngenError> {
     let total_families = frac_fam_col.families.len();
 
-    if input.stopCondition == 0 {
+    if input.stop_condition == StopCondition::NPoly {
         // Npoly Option
         // Estimate fractures, generate radii lists for nPoly option
         info!("Building radii lists for nPoly option...");
-        frac_fam_col.generate_radii(input.forceLargeFractures, input.nPoly, generator.clone())?;
+        frac_fam_col.generate_radii(
+            input.force_large_fractures,
+            input.n_poly,
+            generator.clone(),
+        )?;
         info!("Building radii lists for nPoly option Complete");
-    } else if !input.disableFram {
+    } else if !input.disable_fram {
         // P32 Option
         // ESTIMATE # FRACTURES NEEDED
         info!("Estimating number of fractures needed...");
@@ -305,10 +309,10 @@ fn prepare_radii_lists(
     // list using families' distribution.
     // First arg is percentage, eg: 0.1 will add 10% more fractures
     // to the radii list for each family
-    if !input.disableFram {
+    if !input.disable_fram {
         frac_fam_col.generate_radii(
             false,
-            (input.nPoly as f64 * input.radiiListIncrease).ceil() as usize,
+            (input.n_poly as f64 * input.radii_list_increase).ceil() as usize,
             generator,
         )?;
 
@@ -364,7 +368,7 @@ fn insert_stochastic_fractures(
     // Initialize uniform distribution on [0,1]
     let uniform_dist = Uniform::new(0., 1.)?;
 
-    let mut radii_all = if input.outputAllRadii {
+    let mut radii_all = if input.output_all_radii {
         let radii_folder = format!("{}/dfnGen_output/radii", output_folder);
         std::fs::create_dir_all(&radii_folder)?;
         let mut file = BufWriter::new(File::create(format!("{}/radii_All.dat", radii_folder))?);
@@ -380,14 +384,15 @@ fn insert_stochastic_fractures(
     // P32 requirement
     let mut p32_status = vec![false; total_families];
 
-    while (input.stopCondition == 0 && dfngen.pstats.accepted_poly_count < input.nPoly)
-        || (input.stopCondition == 1 && p32_status.iter().any(|p| !p))
+    while (input.stop_condition == StopCondition::NPoly
+        && dfngen.pstats.accepted_poly_count < input.n_poly)
+        || (input.stop_condition == StopCondition::P32 && p32_status.iter().any(|p| !p))
     {
         // cdfIdx holds the index to the CDF array for the current shape family being inserted
         let roll = generator.borrow_mut().sample(uniform_dist);
 
         // cdf_idx is the index to the CDF array of the family being inserted
-        let (family_index, cdf_idx) = if input.stopCondition == 0 {
+        let (family_index, cdf_idx) = if input.stop_condition == StopCondition::NPoly {
             // nPoly Option
             // Choose a family based purely on famProb probabilities
             let family_index = index_from_prob(&cdf, roll);
@@ -421,12 +426,12 @@ fn insert_stochastic_fractures(
         // Re-translate the polygon until it is accepted or reaches its reject limit
         loop {
             // Truncate poly if needed
-            if new_poly.domain_truncation(input.h, input.eps, &input.domainSize) {
+            if new_poly.domain_truncation(input.h, input.eps, &input.domain_size) {
                 // Poly was completely outside domain, or was truncated to less than
                 // 3 vertices due to vertices being too close together
                 dfngen.pstats.rejection_reasons.outside += 1;
 
-                if reject_counter >= input.rejectsPerFracture {
+                if reject_counter >= input.rejects_per_fracture {
                     // Reject poly, generate new polygon
                     break;
                 }
@@ -465,11 +470,18 @@ fn insert_stochastic_fractures(
                 new_poly.assign_area();
 
                 let family = &mut frac_fam_col.families[family_index];
-                family.add_area_to_p32(new_poly.area, dom_vol, &input.layerVol, &input.regionVol);
+                family.add_area_to_p32(
+                    new_poly.area,
+                    dom_vol,
+                    &input.layer_volumes,
+                    &input.region_volumes,
+                );
 
                 // If the last inserted pologon met the p32 reqirement, set that familiy to no longer
                 // insert any more fractures. ajust the CDF and familiy probabilites to account for this
-                if input.stopCondition == 1 && family.current_p32 >= family.p32_target {
+                if input.stop_condition == StopCondition::P32
+                    && family.current_p32 >= family.p32_target
+                {
                     p32_status[family_index] = true;
                     info!("P32 For Family {} Completed", family_index + 1);
 
@@ -494,18 +506,18 @@ fn insert_stochastic_fractures(
             // (number of rejects until next fracture accepted)
             dfngen.pstats.rejects_per_attempt[dfngen.pstats.accepted_poly_count] += 1;
 
-            if input.printRejectReasons {
+            if input.print_reject_reasons {
                 print_reject_reason(reject_code, &new_poly);
             }
 
-            if reject_counter >= input.rejectsPerFracture {
+            if reject_counter >= input.rejects_per_fracture {
                 dfngen.pstats.rejected_poly_count += 1;
                 dfngen.pstats.rejected_from_fam[family_index] += 1;
                 // Stop retranslating polygon if its reached its reject limit
                 break;
             }
 
-            if input.printRejectReasons {
+            if input.print_reject_reasons {
                 info!("Translating rejected fracture to new position");
             }
 
@@ -537,7 +549,7 @@ fn log_insertion_progress(input: &Input, families: &[FractureFamily], pstats: &S
     info!("Current p32 values per family:");
 
     for shape in families {
-        if input.stopCondition == 0 {
+        if input.stop_condition == StopCondition::NPoly {
             info!(
                 "{} family {} Current P32 = {:.8}",
                 shape.shape, shape.id, shape.current_p32
@@ -549,7 +561,7 @@ fn log_insertion_progress(input: &Input, families: &[FractureFamily], pstats: &S
             );
         }
 
-        if input.stopCondition == 1 && shape.p32_target <= shape.current_p32 {
+        if input.stop_condition == StopCondition::P32 && shape.p32_target <= shape.current_p32 {
             info!("...Done");
         }
     }

@@ -8,7 +8,7 @@ use tracing::info;
 
 use crate::distribution::generating_points::discretize_line_of_intersection;
 use crate::fracture::fracture_family::FractureFamilyCollection;
-use crate::io::input::Input;
+use crate::io::input::{Input, StopCondition};
 use crate::io::vtk::write_fractures_vtk;
 use crate::math_functions::sorted_index;
 use crate::structures::{IntersectionPoints, Stats};
@@ -64,7 +64,7 @@ pub fn write_output(
     std::fs::create_dir_all(&poly_folder)?;
 
     let radii_folder = format!("{}/radii/", output);
-    if input.outputAcceptedRadiiPerFamily || input.outputFinalRadiiPerFamily {
+    if input.output_accepted_radii_per_family || input.output_final_radii_per_family {
         std::fs::create_dir_all(&radii_folder)?;
     }
 
@@ -120,7 +120,7 @@ pub fn write_output(
         family_nums.push(-3);
     }
 
-    if input.outputAcceptedRadiiPerFamily {
+    if input.output_accepted_radii_per_family {
         info!("Writing Accepted Radii Files Per Family");
 
         for &family_num in &family_nums {
@@ -137,7 +137,7 @@ pub fn write_output(
         }
     }
 
-    if input.outputFinalRadiiPerFamily {
+    if input.output_final_radii_per_family {
         info!("Writing Final Radii Files Per Family");
 
         for family_num in family_nums {
@@ -150,7 +150,7 @@ pub fn write_output(
         }
     }
 
-    if input.tripleIntersections {
+    if input.triple_intersections {
         info!("Writing Triple Intersection Points File");
         write_triple_pts(
             triple_points,
@@ -346,7 +346,7 @@ fn write_intersection_files(
     pstats: &mut Stats,
 ) -> io::Result<()> {
     let h = input.h;
-    let visualization_mode = input.visualizationMode;
+    let visualization_mode = input.visualization_mode;
 
     // Keeps track of current un-rotated points we are working with
     let mut temp_point1;
@@ -603,15 +603,15 @@ fn write_params_file(
 
     writeln!(params, "{}", final_fractures.len())?;
     writeln!(params, "{}", input.h)?;
-    writeln!(params, "{}", input.visualizationMode as u8)?; // Production mode
+    writeln!(params, "{}", input.visualization_mode as u8)?; // Production mode
     writeln!(
         params,
         "{}",
         pstats.intersection_node_count / 2 - pstats.triple_node_count
     )?;
-    writeln!(params, "{}", input.domainSize[0])?;
-    writeln!(params, "{}", input.domainSize[1])?;
-    writeln!(params, "{}", input.domainSize[2])?;
+    writeln!(params, "{}", input.domain_size[0])?;
+    writeln!(params, "{}", input.domain_size[1])?;
+    writeln!(params, "{}", input.domain_size[2])?;
     params.flush()
 }
 
@@ -921,7 +921,7 @@ fn write_frac_fams(
         )?;
         writeln!(file, "Aspect Ratio: {}", shape.aspect_ratio)?;
 
-        if input.stopCondition == 1 {
+        if input.stop_condition == StopCondition::P32 {
             writeln!(
                 file,
                 "P32 (Fracture Intensity) Target: {}",
@@ -1047,7 +1047,7 @@ fn write_rotation_data(
     let mut file = create_file(format!("{}/../poly_info.dat", output))?;
     info!("Writing Rotation Data File (poly_info.dat)");
 
-    let domain_size = &input.domainSize;
+    let domain_size = &input.domain_size;
     let max_domain_size = 10. * domain_size[0].max(domain_size[1]).max(domain_size[2]);
     let total_families = frac_families.families.len() as isize;
     let e3 = Vector3::new(0., 0., 1.);
@@ -1175,9 +1175,9 @@ fn write_graph_data(
 ) -> io::Result<()> {
     let eps = input.eps;
     let half_domain = [
-        input.domainSize[0] * 0.5,
-        input.domainSize[1] * 0.5,
-        input.domainSize[2] * 0.5,
+        input.domain_size[0] * 0.5,
+        input.domain_size[1] * 0.5,
+        input.domain_size[2] * 0.5,
     ];
 
     info!("Writing Graph Data Files");

@@ -28,7 +28,7 @@ pub fn dry_run(
     generator: Rc<RefCell<Mt64>>,
 ) {
     info!("Estimating number of fractures per family for defined fracture intensities (P32)...");
-    let dom_vol = input.domainSize[0] * input.domainSize[1] * input.domainSize[2];
+    let dom_vol = input.domain_size[0] * input.domain_size[1] * input.domain_size[2];
     // Probabilities of the families which have not met their P32 target.
     // This is a copy: the family probabilities must stay in their original state.
     let mut probabilities = frac_families.probabilities.clone();
@@ -43,7 +43,7 @@ pub fn dry_run(
         let cdf_idx;
         let mut reject_counter = 0;
         let mut new_poly = if (force_large_fract_count < frac_families.families.len())
-            && input.forceLargeFractures
+            && input.force_large_fractures
         {
             // The CDF has no elements for completed families
             cdf_idx = (0..force_large_fract_count)
@@ -81,13 +81,13 @@ pub fn dry_run(
         // Vector for storing intersection boundaries
         let mut reject = false;
 
-        while new_poly.domain_truncation(input.h, input.eps, &input.domainSize) {
+        while new_poly.domain_truncation(input.h, input.eps, &input.domain_size) {
             // Poly is completely outside domain, or was truncated to
             // less than 3 vertices due to vertices being too close together
             reject_counter += 1; // Counter for re-trying a new translation
 
             // Test if newPoly has reached its limit of insertion attempts
-            if reject_counter >= input.rejectsPerFracture {
+            if reject_counter >= input.rejects_per_fracture {
                 reject = true;
                 break; // Reject poly, generate new polygon
             } else {
@@ -113,8 +113,8 @@ pub fn dry_run(
         frac_families.families[family_index].add_area_to_p32(
             new_poly.area,
             dom_vol,
-            &input.layerVol,
-            &input.regionVol,
+            &input.layer_volumes,
+            &input.region_volumes,
         );
 
         // Save radius for real DFN generation

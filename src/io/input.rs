@@ -24,17 +24,26 @@ pub struct ExternalFractureFiles {
     pub user_rect_file: Option<String>,
 }
 
-#[allow(non_snake_case)]
+#[derive(Default, Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StopCondition {
+    /// Stop at a fixed number of accepted fractures.
+    #[default]
+    NPoly,
+
+    /// Stop when each family has its target fracture intensity.
+    P32,
+}
+
 #[derive(Default, Debug)]
 pub struct Input {
     /// DFN generation stop condition. 0 - nPoly option, 1 - P32 option.
-    pub stopCondition: u8,
+    pub stop_condition: StopCondition,
 
     /// Number of polygons to place in the DFN when uisng nPoly stopCondition option.
-    pub nPoly: usize,
+    pub n_poly: usize,
 
     /// Domain size with dimension x*y*z for DFN, centered at the origin.
-    pub domainSize: Vector3<f64>,
+    pub domain_size: Vector3<f64>,
 
     /// Minimum feature size, FRAM parameter.
     pub h: f64,
@@ -45,26 +54,26 @@ pub struct Input {
     /// Percent to increase the size of the pre-generated radii lists, per family.
     /// Example: 0.2 will increase the size of the list by %20. See example input files
     /// for more details.
-    pub radiiListIncrease: f64,
+    pub radii_list_increase: f64,
 
     /// This option disables the FRAM algorithm. There will be no
     /// fracture rejections or fine mesh. Defaults visualizationMode to 1
-    pub disableFram: bool,
+    pub disable_fram: bool,
 
     ///  Used during meshing:
     ///      0 - Creates a fine mesh, according to h parameter;
     ///      1 - Produce only first round of triangulations. In this case no
     ///          modeling of flow and transport is possible.
-    pub visualizationMode: bool,
+    pub visualization_mode: bool,
 
     /// This option uses a relaxed version of the FRAM algorithm. The mesh may not
     /// be perfectly conforming
-    pub rFram: bool,
+    pub r_fram: bool,
 
     /// Accept or reject triple intersections
     ///     False - Off (Reject)
     ///     True  - On  (Accept)
-    pub tripleIntersections: bool,
+    pub triple_intersections: bool,
 
     /// DFN will only keep clusters with connections to
     /// domain boundaries which are set to 1:
@@ -75,7 +84,7 @@ pub struct Input {
     /// boundaryFaces[3] = -Y domain boundary
     /// boundaryFaces[4] = +Z domain boundary
     /// boundaryFaces[5] = -Z domain boundary
-    pub boundaryFaces: [bool; 6],
+    pub boundary_faces: [bool; 6],
 
     /// 0 - Keep any clusters which connects the specified
     ///     boundary faces in boundaryFaces option below
@@ -84,24 +93,24 @@ pub struct Input {
     ///
     /// If ignoreBoundaryFaces is also set to 1, DFNGen will keep the largest
     /// cluster which connects at least any two sides of the domain.
-    pub keepOnlyLargestCluster: bool,
+    pub keep_only_largest_cluster: bool,
 
     /// 0 - remove isolated fractures and clusters
     /// 1 - Keep isolated fractures and clusters
-    pub keepIsolatedFractures: bool,
+    pub keep_isolated_fractures: bool,
 
     /// Useful for debugging,
     /// This option will print all fracture rejection reasons as they occur.
     ///     0 - Disable
     ///     1 - Print all rejection reasons to screen
-    pub printRejectReasons: bool,
+    pub print_reject_reasons: bool,
 
     /// Outputs radii files after isolated fracture removal.
     /// One file per family.
     ///     0: Do not create output files of radii per family
     ///     1: Creates output files per family, containing a list
     ///        of the family's fracture radii that is in the final DFN
-    pub outputFinalRadiiPerFamily: bool,
+    pub output_final_radii_per_family: bool,
 
     /// Outputs radii files before isolated fracture removal.
     /// One file per family.
@@ -109,17 +118,17 @@ pub struct Input {
     ///     1: Creates output files per family, containing a list
     ///        of the family's fracture radii in the domain before isolated
     ///        fracture removal.
-    pub outputAcceptedRadiiPerFamily: bool,
+    pub output_accepted_radii_per_family: bool,
 
     /// False - User ellipses will be inserted first
     /// True  - User rectangles will be inserted first
-    pub insertUserRectanglesFirst: bool,
+    pub insert_user_rectangles_first: bool,
 
     /// Inserts the largest possible fracture for each defined fracture family,
     /// defined by the user-defined maxium radius
     ///     0 - Off (Do not force insertion of larest fractures)
     ///     1 - On  (Force insertion of largest fractures)
-    pub forceLargeFractures: bool,
+    pub force_large_fractures: bool,
 
     /// Seed for random generator.
     pub seed: u64,
@@ -128,21 +137,21 @@ pub struct Input {
     /// Fracture will be truncated based on domainSize above.
     /// Increases the entire width by this ammount. So, {1,1,1} will increase
     /// the domain by adding .5 to the +x, and subbtracting .5 to the -x, etc
-    pub domainSizeIncrease: Vector3<f64>,
+    pub domain_size_increase: Vector3<f64>,
 
     /// Selection of orientation Option
     /// 0 - spherical coordinates
     /// 1 - trend / plunge
     /// 2 - dip / strike
-    pub orientationOption: u8,
+    pub orientation_option: u8,
 
     /// Number of rectangular families defined below.
     /// Having this option = 0 will ignore all rectangular family variables.
-    pub nFamRect: usize,
+    pub n_fam_rect: usize,
 
     /// Number of ellipse families defined below.
     /// Having this option = 0 will ignore all ellipse family variables.
-    pub nFamEll: usize,
+    pub n_fam_ell: usize,
 
     ///    0 - Ignore this option, keep all fractures.
     ///
@@ -151,7 +160,7 @@ pub struct Input {
     ///
     ///        Minimum and maximum size options under fracture family
     ///        distributions will still be used while generating the DFN.
-    pub removeFracturesLessThan: f64,
+    pub remove_fractures_less_than: f64,
 
     /// Caution: Can create very large files.
     /// Outputs all fractures which were generated during
@@ -159,14 +168,14 @@ pub struct Input {
     ///     False: Do not output all radii file.
     ///     True:  Include file of all raddii, acepted + rejected fractures,
     ///            in output files (radii_All.dat).
-    pub outputAllRadii: bool,
+    pub output_all_radii: bool,
 
     /// If a fracture is rejected, it will be re-translated
     /// to a new position this number of times.
     ///
     /// This helps hit distribution targets for stochastic families
     /// families (Set to 1 to ignore this feature)
-    pub rejectsPerFracture: usize,
+    pub rejects_per_fracture: usize,
 
     /// Array of layers:
     /// e.g. {+z1, -z1, +z2, -z2, ... , +zn, -zn}
@@ -174,7 +183,7 @@ pub struct Input {
 
     /// Array of volumes for each defined layer, in the same order
     /// which layers were listed.
-    pub layerVol: Vec<f64>,
+    pub layer_volumes: Vec<f64>,
 
     /// Array of regions:
     /// e.g. {+z1, -z1, +z2, -z2, ... , +zn, -zn}
@@ -182,19 +191,19 @@ pub struct Input {
 
     /// Array of volumes for each defined layer, in the same order
     /// which regions were listed.
-    pub regionVol: Vec<f64>,
+    pub region_volumes: Vec<f64>,
 
     /// flag if the domain is pruned down to a final domain size
     /// bool polygonBoundaryFlag = false;
-    pub polygonBoundaryFlag: bool,
+    pub polygon_boundary_flag: bool,
 
     /// Vector of points defining the 2D boundary of the domain polygon
-    pub domainVertices: Vec<Point2<f64>>,
+    pub domain_vertices: Vec<Point2<f64>>,
 
     /// False - Use boundaryFaces option.
     /// True  - Ignore boundaryFaces option, keep all clusters
     ///         and remove fractures with no intersections
-    pub ignoreBoundaryFaces: bool,
+    pub ignore_boundary_faces: bool,
 
     pub ext_fracture_files: ExternalFractureFiles,
 }
@@ -214,17 +223,20 @@ pub fn read_input(input_file: &str) -> (Input, FractureFamilyCollection) {
     let mut input_reader = InputReader::new(input_file);
 
     macro_rules! input_var {
-        ($var_name:ident) => {
-            input_reader.read_value(
-                &format!("{}:", stringify!($var_name)),
-                &mut input_var.$var_name,
-            );
+        ($label:expr, $field:ident) => {
+            input_reader.read_value(concat!($label, ":"), &mut input_var.$field);
         };
     }
 
-    input_var!(stopCondition);
-    input_var!(printRejectReasons);
-    input_var!(domainSize);
+    let mut stop_condition: u8 = 0;
+    input_reader.read_value("stopCondition:", &mut stop_condition);
+    input_var.stop_condition = match stop_condition {
+        0 => StopCondition::NPoly,
+        1 => StopCondition::P32,
+        _ => panic!("Invalid stopCondition option. Must be 0: nPoly or 1: p32"),
+    };
+    input_var!("printRejectReasons", print_reject_reasons);
+    input_var!("domainSize", domain_size);
 
     let mut n_layers: usize = 0;
     input_reader.read_value("numOfLayers:", &mut n_layers);
@@ -239,11 +251,11 @@ pub fn read_input(input_file: &str) -> (Input, FractureFamilyCollection) {
                 i + 1,
                 &input_var.layers[idx..idx + 2]
             );
-            let vol = input_var.domainSize[0]
-                * input_var.domainSize[1]
+            let vol = input_var.domain_size[0]
+                * input_var.domain_size[1]
                 * (input_var.layers[idx + 1] - input_var.layers[idx]).abs();
             info!("{} m^3", vol);
-            input_var.layerVol.push(vol);
+            input_var.layer_volumes.push(vol);
         }
     }
 
@@ -266,61 +278,64 @@ pub fn read_input(input_file: &str) -> (Input, FractureFamilyCollection) {
                 * (input_var.regions[idx + 3] - input_var.regions[idx + 2]).abs()
                 * (input_var.regions[idx + 5] - input_var.regions[idx + 4]).abs();
             info!(" Volume: {} m^3", vol);
-            input_var.regionVol.push(vol);
+            input_var.region_volumes.push(vol);
         }
     }
 
-    input_var!(h);
+    input_var!("h", h);
     info!("h: {}", input_var.h);
 
     // Set epsilon
     input_var.eps = input_var.h * 1e-8;
 
-    input_var!(disableFram);
+    input_var!("disableFram", disable_fram);
 
-    if input_var.disableFram {
+    if input_var.disable_fram {
         info!("FRAM IS DISABLED");
     }
 
-    input_var!(rFram);
+    input_var!("rFram", r_fram);
 
-    if input_var.rFram {
+    if input_var.r_fram {
         info!("Running with relaxed FRAM. Mesh may not be fully conforming");
     }
 
-    input_var!(tripleIntersections);
-    input_var!(forceLargeFractures);
-    input_var!(visualizationMode);
+    input_var!("tripleIntersections", triple_intersections);
+    input_var!("forceLargeFractures", force_large_fractures);
+    input_var!("visualizationMode", visualization_mode);
 
-    if input_var.disableFram {
-        input_var.visualizationMode = true;
+    if input_var.disable_fram {
+        input_var.visualization_mode = true;
     }
 
-    input_var!(outputAllRadii);
-    input_var!(outputFinalRadiiPerFamily);
-    input_var!(outputAcceptedRadiiPerFamily);
-    input_var!(seed);
-    input_var!(domainSizeIncrease);
-    input_var!(keepOnlyLargestCluster);
-    input_var!(keepIsolatedFractures);
-    input_var!(ignoreBoundaryFaces);
-    input_var!(boundaryFaces);
-    input_var!(rejectsPerFracture);
-    input_var!(nFamRect);
-    input_var!(nFamEll);
-    input_var!(removeFracturesLessThan);
-    input_var!(orientationOption);
+    input_var!("outputAllRadii", output_all_radii);
+    input_var!("outputFinalRadiiPerFamily", output_final_radii_per_family);
+    input_var!(
+        "outputAcceptedRadiiPerFamily",
+        output_accepted_radii_per_family
+    );
+    input_var!("seed", seed);
+    input_var!("domainSizeIncrease", domain_size_increase);
+    input_var!("keepOnlyLargestCluster", keep_only_largest_cluster);
+    input_var!("keepIsolatedFractures", keep_isolated_fractures);
+    input_var!("ignoreBoundaryFaces", ignore_boundary_faces);
+    input_var!("boundaryFaces", boundary_faces);
+    input_var!("rejectsPerFracture", rejects_per_fracture);
+    input_var!("nFamRect", n_fam_rect);
+    input_var!("nFamEll", n_fam_ell);
+    input_var!("removeFracturesLessThan", remove_fractures_less_than);
+    input_var!("orientationOption", orientation_option);
 
-    match input_var.orientationOption {
+    match input_var.orientation_option {
         0 => info!("Expecting Theta and phi for orientations"),
         1 => info!("Expecting Trend and Plunge for orientations"),
         2 => info!("Expecting Dip and Strike (RHR) for orientations"),
         _ => {}
     }
 
-    input_var!(polygonBoundaryFlag);
+    input_var!("polygonBoundaryFlag", polygon_boundary_flag);
 
-    if input_var.polygonBoundaryFlag {
+    if input_var.polygon_boundary_flag {
         info!("Expecting Polygon Boundary for domain edges");
         let mut poly_boundary_file: String = String::new();
         input_reader.read_value("polygonBoundaryFile:", &mut poly_boundary_file);
@@ -328,10 +343,10 @@ pub fn read_input(input_file: &str) -> (Input, FractureFamilyCollection) {
         read_domain_vertices(&mut input_var, &poly_boundary_file);
         info!(
             "There are {} Vertices on the boundary",
-            input_var.domainVertices.len()
+            input_var.domain_vertices.len()
         );
 
-        for (i, vertex) in input_var.domainVertices.iter().enumerate() {
+        for (i, vertex) in input_var.domain_vertices.iter().enumerate() {
             info!("Vertex {}: {{{}, {}}}", i + 1, vertex.x, vertex.y);
         }
     }
@@ -340,28 +355,22 @@ pub fn read_input(input_file: &str) -> (Input, FractureFamilyCollection) {
         "e",
         &input_var.layers,
         &input_var.regions,
-        &input_var.domainSize,
-        &input_var.domainSizeIncrease,
+        &input_var.domain_size,
+        &input_var.domain_size_increase,
     ));
     fracture_families.extend(input_reader.read_fracture_family(
         "r",
         &input_var.layers,
         &input_var.regions,
-        &input_var.domainSize,
-        &input_var.domainSizeIncrease,
+        &input_var.domain_size,
+        &input_var.domain_size_increase,
     ));
 
     let fracture_family_probabilities = if !fracture_families.is_empty() {
-        input_var!(radiiListIncrease);
+        input_var!("radiiListIncrease", radii_list_increase);
 
-        match input_var.stopCondition {
-            0 => {
-                input_var!(nPoly);
-            }
-            1 => {}
-            _ => {
-                panic!("Invalid stopCondition option. Must be 0: nPoly or 1: p32")
-            }
+        if input_var.stop_condition == StopCondition::NPoly {
+            input_var!("nPoly", n_poly);
         }
 
         let mut fam_prob = Vec::with_capacity(fracture_families.len());
@@ -393,7 +402,7 @@ pub fn read_input(input_file: &str) -> (Input, FractureFamilyCollection) {
 
     // The insertion order matters only if both kinds are defined
     if has_user_rectangles && has_user_ellipses {
-        input_var!(insertUserRectanglesFirst);
+        input_var!("insertUserRectanglesFirst", insert_user_rectangles_first);
     }
 
     (

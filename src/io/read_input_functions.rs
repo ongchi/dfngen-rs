@@ -55,12 +55,12 @@ pub fn read_domain_vertices(global: &mut Input, filename: &str) {
         "There are {} Vertices on the boundary",
         num_of_domain_vertices
     );
-    global.domainVertices.reserve(num_of_domain_vertices);
+    global.domain_vertices.reserve(num_of_domain_vertices);
 
     for _ in 0..num_of_domain_vertices {
         let line = lines.next().unwrap().unwrap();
         let parsed_line: Vec<&str> = line.as_str().split_whitespace().collect();
-        global.domainVertices.push(Point2::new(
+        global.domain_vertices.push(Point2::new(
             parsed_line[0].parse().unwrap(),
             parsed_line[1].parse().unwrap(),
         ));
