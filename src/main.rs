@@ -247,9 +247,9 @@ fn main() -> Result<(), DfngenError> {
                     f.write_all(
                         format!(
                             "{:.8} {:.8} {:.8}\n",
-                            &new_poly.xradius,
-                            &new_poly.yradius,
-                            &new_poly.family_num + 1
+                            new_poly.xradius,
+                            new_poly.yradius,
+                            new_poly.family_num + 1
                         )
                         .as_bytes(),
                     )

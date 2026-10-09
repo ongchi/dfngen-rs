@@ -91,7 +91,7 @@ impl FractureFamily {
                             error!("{}", e);
                             panic!(
                                 "distribution for {} family {} has been unable to generate a fracture with radius within set parameters after 1000 consecutive tries.",
-                                &self.shape,
+                                self.shape,
                                 self.id
                             );
                         }
