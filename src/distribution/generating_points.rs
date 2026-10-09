@@ -1,67 +1,10 @@
 use std::{cell::RefCell, rc::Rc};
 
 use parry3d_f64::bounding_volume::Aabb;
-use parry3d_f64::na::{Point3, Vector3};
+use parry3d_f64::na::Vector3;
 use rand::distr::Uniform;
 use rand::Rng;
 use rand_mt::Mt64;
-
-/// Discretize Intersection
-///
-/// # Arguments
-///
-/// * `h` - Minimum feature size
-/// * `visualization_mode` - If false, creates a fine mesh, according to h parameter.
-///   If true, produce only first round of triangulations. In this case no modeling of flow and transport is possible.
-/// * `pt1` - End point 1
-/// * `pt2` - End point 2
-///
-/// # Returns
-///
-/// List of 3D points of the discretized nodes, including end points
-pub fn discretize_line_of_intersection(
-    h: f64,
-    visualization_mode: bool,
-    pt1: &Point3<f64>,
-    pt2: &Point3<f64>,
-    dist: f64,
-) -> Vec<Point3<f64>> {
-    // If reduced mesh, just save endpoints
-    if visualization_mode {
-        let mut points_list = Vec::new();
-        let pt = Point3::new(pt1[0], pt1[1], pt1[2]);
-        points_list.push(pt);
-        let pt = Point3::new(pt2[0], pt2[1], pt2[2]);
-        points_list.push(pt);
-        return points_list;
-    }
-
-    let v = pt2 - pt1;
-    let p = *pt1;
-
-    let nprime = (2. * dist / h).ceil();
-    let hprime = 1. / nprime;
-    let nprime = nprime as usize;
-    let mut xx = Vec::with_capacity(nprime + 1);
-    let mut temp = 0.;
-
-    for _ in 0..nprime {
-        // Array from 0 - 1 with step = hprime
-        xx.push(temp);
-        temp += hprime;
-    }
-
-    if let Some(last) = xx.last_mut() {
-        *last = 1.;
-    }
-    let mut points_list = Vec::with_capacity(nprime + 1);
-
-    for x in xx.iter().cloned().take(points_list.capacity()) {
-        points_list.push(p + v * x);
-    }
-
-    points_list
-}
 
 /// Returns random position within a bounding box
 pub fn random_position(boundary: Aabb, rng: Rc<RefCell<Mt64>>) -> Vector3<f64> {

@@ -1,21 +1,11 @@
-use std::fmt::{Display, Formatter};
-
 use parry3d_f64::na::{Rotation3, Vector3};
 use rand::distr::{Distribution, Uniform};
 
 use crate::cg::{normal_from_dip_strike, normal_from_trend_plunge, rotation_between};
 
-#[derive(Debug)]
-enum AngleOption {
-    ThetaPhi(f64, f64),
-    TrendPlunge(f64, f64),
-    DipStrike(f64, f64),
-}
-
 /// The fisher distribution of polygon normal vector generation
 #[derive(Debug)]
 pub struct Fisher {
-    angle_option: AngleOption,
     orientation: Vector3<f64>,
     kappa: f64,
     eps: f64,
@@ -24,19 +14,13 @@ pub struct Fisher {
 }
 
 impl Fisher {
-    fn new_with_orientation(
-        orientation: Vector3<f64>,
-        kappa: f64,
-        eps: f64,
-        angle_option: AngleOption,
-    ) -> Self {
+    fn new_with_orientation(orientation: Vector3<f64>, kappa: f64, eps: f64) -> Self {
         Self {
             orientation,
             kappa,
             eps,
             uniform: Uniform::new(0., 1.).unwrap(),
             theta_uniform: Uniform::new(0., 2. * std::f64::consts::PI).unwrap(),
-            angle_option,
         }
     }
 
@@ -49,55 +33,15 @@ impl Fisher {
             ),
             kappa,
             eps,
-            AngleOption::ThetaPhi(theta, phi),
         )
     }
 
     pub fn new_with_trend_plunge(trend: f64, plunge: f64, kappa: f64, eps: f64) -> Self {
-        Self::new_with_orientation(
-            normal_from_trend_plunge(trend, plunge),
-            kappa,
-            eps,
-            AngleOption::TrendPlunge(trend, plunge),
-        )
+        Self::new_with_orientation(normal_from_trend_plunge(trend, plunge), kappa, eps)
     }
 
     pub fn new_with_dip_strike(dip: f64, strike: f64, kappa: f64, eps: f64) -> Self {
-        Self::new_with_orientation(
-            normal_from_dip_strike(dip, strike),
-            kappa,
-            eps,
-            AngleOption::DipStrike(dip, strike),
-        )
-    }
-}
-
-impl Display for Fisher {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        let rad_to_deg = 180. / std::f64::consts::PI;
-
-        match self.angle_option {
-            AngleOption::ThetaPhi(theta, phi) => {
-                writeln!(f, "Theta-rad: {}", theta)?;
-                writeln!(f, "Theta-deg: {}", theta * rad_to_deg)?;
-                writeln!(f, "Phi-rad: {}", phi)?;
-                writeln!(f, "Phi-deg: {}", phi * rad_to_deg)?;
-            }
-            AngleOption::TrendPlunge(trend, plunge) => {
-                writeln!(f, "Trend-rad: {}", trend)?;
-                writeln!(f, "Trend-deg: {}", trend * rad_to_deg)?;
-                writeln!(f, "Plunge-rad: {}", plunge)?;
-                writeln!(f, "Plunge-deg: {}", plunge * rad_to_deg)?;
-            }
-            AngleOption::DipStrike(dip, strike) => {
-                writeln!(f, "Dip-rad: {}", dip)?;
-                writeln!(f, "Dip-deg: {}", dip * rad_to_deg)?;
-                writeln!(f, "Strike-rad: {}", strike)?;
-                writeln!(f, "Strike-deg: {}", strike * rad_to_deg)?;
-            }
-        }
-
-        writeln!(f, "Kappa: {}", self.kappa)
+        Self::new_with_orientation(normal_from_dip_strike(dip, strike), kappa, eps)
     }
 }
 

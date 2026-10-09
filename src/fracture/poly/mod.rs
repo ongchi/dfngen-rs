@@ -67,13 +67,6 @@ pub struct Poly {
     /// Touching boundary faces of the fractures group, not neccesarily the faces of the fracture
     pub faces: [bool; 6],
 
-    /// When writing intersection points and poly vertices to output, we need them to be entirely on the x-y plane.
-    /// XYPlane is used for error checking. During intersection rotations, the polygon is rotated to
-    /// the x-y plane and it's vertices are changed within the Poly structure. Errors will occur if
-    /// the same polygon was to be rotated again because although the vertices are now on the x-y plane, the
-    /// normal is still the normal of the polygon in its 3D space. This variable prevents this from happening. */
-    pub xyplane: bool,
-
     /// True if the polygon has been truncated, false otherwise. This variable is used for re-translating polygons.
     /// If the polygon has been truncated, it must be re-built. Otherwise, it can simply be given a new translation. */
     pub truncated: bool,
@@ -97,7 +90,6 @@ impl Default for Poly {
             bounding_box: Aabb::new_invalid(),
             vertices: Vec::new(),
             faces: [false; 6],
-            xyplane: false,
             truncated: false,
             intersection_index: Vec::new(),
         }

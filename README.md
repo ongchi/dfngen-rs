@@ -38,7 +38,6 @@ insert_user_rectangles_first = true
 disable = false
 relaxed = false
 triple_intersections = true
-visualization_mode = false
 
 [clusters]
 boundary_faces = [true, true, false, false, false, false]  # +x, -x, +y, -y, +z, -z
@@ -48,9 +47,7 @@ keep_isolated_fractures = false
 
 [output]
 print_reject_reasons = false
-all_radii = false
-final_radii_per_family = false
-accepted_radii_per_family = false
+rejected_fractures = false
 
 # One table for each stochastic fracture family (optional)
 [[family]]
@@ -105,3 +102,81 @@ keeps the order of the file.
 `scripts/convert_dat_to_toml.py <input.dat> <output.toml>` converts a dfnGen
 input file of pydfnworks, with its user-defined fracture files and its polygon
 boundary file, to this format.
+
+## Output files
+
+All files are in `<output_folder>`. A "final" fracture is an accepted
+fracture which was not removed after the generation (isolated fracture, or
+not in a kept cluster). Final fractures have the numbers 1, 2, ... in the
+order of acceptance. All files are text files.
+
+The log of the run goes to the console (stdout), not to a file. The level is
+`info`. Set the environment variable `RUST_LOG` to change it, for example
+`RUST_LOG=warn`.
+
+| File | Content |
+|---|---|
+| `fractures.vtp` | All accepted fractures as polygons with their properties (VTK PolyData, for ParaView or PyVista). See below. |
+| `connectivity.dat` | Line N: numbers of the final fractures which intersect final fracture N. |
+| `intersection_list.dat` | One line for each intersection: the two fracture numbers, mid point and length. A negative number is a domain face: -1 top, -2 bottom, -3 left, -4 front, -5 right, -6 back. |
+| `triple_points.dat` | Coordinates of the triple intersection points. Written only if `triple_intersections = true`. |
+| `rejections.dat` | Number of rejected fractures for each rejection reason. |
+| `rejectsPerAttempt.dat` | Line N: number of rejected attempts before accepted fracture N. |
+| `userFractureRejections.dat` | Number and type of each rejected user-defined fracture. Written only if a user-defined fracture was rejected. |
+| `rejected_fractures.vtp` | The rejected fractures as polygons with their properties (VTK PolyData). Written only if `rejected_fractures = true`. See below. |
+
+### Cell data of `fractures.vtp`
+
+The file has one polygon cell for each accepted fracture, with its vertices
+in 3D.
+
+| Array | Content |
+|---|---|
+| `fracture_id` | Number of the final fracture, 0 if the fracture was removed. |
+| `accepted_id` | Number in the order of acceptance, starts at 1. |
+| `removed` | 1 if the fracture was removed, else 0. |
+| `family` | -2 user polygon, -1 user rectangle, 0 user ellipse, > 0 stochastic family. |
+| `cluster` | Number of the connected group of fractures. |
+| `truncated` | 1 if the domain cut the fracture, else 0. |
+| `intersection_count` | Number of intersections with other accepted fractures. |
+| `boundary_face_count` | Number of domain faces which the fracture meets (at least two vertices on the face). For a final fracture, this is the number of its lines with a domain face in `intersection_list.dat`. |
+| `x_radius`, `y_radius`, `aspect_ratio` | Size before truncation. |
+| `area` | Area after truncation. |
+| `normal` | Unit normal vector. |
+| `translation` | Translation of the fracture center from the origin. |
+
+### Cell data of `rejected_fractures.vtp`
+
+The file has one polygon cell for each rejected fracture, at the position of
+its last attempt. A stochastic fracture is rejected when FRAM rejects it and
+it has no re-translation left (`rejects_per_fracture`). A user-defined
+fracture has only one attempt. The file can be very large.
+
+A fracture has no cell if its last attempt was outside the domain, because it
+then has no valid polygon.
+
+| Array | Content |
+|---|---|
+| `family` | Same numbers as in `fractures.vtp`. |
+| `reject_code` | Reason for the rejection of the last attempt. See the table below. |
+| `truncated` | 1 if the domain cut the fracture, else 0. |
+| `x_radius`, `y_radius`, `aspect_ratio` | Size before truncation. |
+| `normal` | Unit normal vector. |
+| `translation` | Translation of the fracture center from the origin. |
+
+| `reject_code` | Reason |
+|---|---|
+| -2 | Intersection shorter than `h`. |
+| -5 | Intersection too near to another intersection. |
+| -6 | Fracture too near to an edge of another fracture. |
+| -7 | Intersecting fractures are in the same plane. |
+| -10 | Triple intersection, and `triple_intersections = false`. |
+| -11 | Intersection too near to a previous intersection. |
+| -12 | Triple intersection with an angle that is too small. |
+| -13 | Triple intersection point too near to an end point of an intersection. |
+| -14 | Triple intersection point too near to another triple intersection point. |
+
+`fractures.vtp` and `rejected_fractures.vtp` together do not have all
+generated fractures. An accepted fracture which is removed later because it
+is smaller than `remove_fractures_less_than`, or outside the polygon boundary,
+is in neither file.

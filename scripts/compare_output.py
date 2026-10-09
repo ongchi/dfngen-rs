@@ -17,7 +17,6 @@ import re
 import sys
 from pathlib import Path
 
-IGNORED_FILES = {"DFN_output.txt"}
 TOKEN_SEPARATORS = re.compile(r"[\s,{}()\[\]]+")
 MAX_REPORTED_DIFFERENCES = 5
 
@@ -26,7 +25,7 @@ def list_files(root: Path) -> set[Path]:
     return {
         path.relative_to(root)
         for path in root.rglob("*")
-        if path.is_file() and path.name not in IGNORED_FILES
+        if path.is_file()
     }
 
 

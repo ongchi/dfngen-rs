@@ -57,64 +57,6 @@ pub fn rotation_between(from: &Vector3<f64>, to: &Vector3<f64>) -> Rotation3<f64
     })
 }
 
-/// Rotates an intersection, its triple intersection points, and its polygon to the x-y plane
-///
-/// The poly is rotated in place, unless it is already on the x-y plane.
-/// Doing these all at once keeps us from having to re-calulate rotation
-/// matricies, or cary them in memory, increasing performance
-/// The original intersection and triple points do not change: they are needed
-/// again to rotate to the other intersecting polys.
-/// Function is used to wrtie intersection.inp output files
-///
-/// # Arguments
-///
-/// * `intersection` - Intersection, belonging to newPoly, to be rotated
-/// * `new_poly` - Poly which is being rotated (OK if already on x-y plane)
-/// * `triple_points` - Vecor array of all triple intersection points in DFN
-/// * `temp_trip_pts` - OUTPUT, Array to place rotated triple intersection points
-/// * `eps` - Epsilon value for floating point comparisons
-///
-/// # Returns
-///
-/// The rotated intersection
-pub fn poly_and_intersection_rotation_to_xy(
-    intersection: &IntersectionPoints,
-    new_poly: &mut Poly,
-    triple_points: &[Point3<f64>],
-    temp_trip_pts: &mut Vec<Point3<f64>>,
-    eps: f64,
-) -> IntersectionPoints {
-    let z_axis = Vector3::new(0., 0., 1.);
-    let mut temp_intpts = IntersectionPoints::new();
-    let intersection_triple_points = intersection
-        .triple_points_idx
-        .iter()
-        .map(|&idx| &triple_points[idx]);
-
-    if is_parallel(&new_poly.normal, &z_axis, eps) {
-        // Already on xy plane (normal = {0,0,1}), no rotation required
-        temp_trip_pts.extend(intersection_triple_points);
-        temp_intpts.p1 = intersection.p1;
-        temp_intpts.p2 = intersection.p2;
-    } else {
-        let rotation = rotation_between(&new_poly.normal, &z_axis);
-
-        // The normal in the polygon structure does not change (we need it to
-        // write params.txt), so it does not tell if the vertices are already
-        // rotated to the x-y plane. new_poly.xyplane does.
-        if !new_poly.xyplane {
-            new_poly.rotate(&rotation);
-        }
-
-        temp_intpts.p1 = rotation * intersection.p1;
-        temp_intpts.p2 = rotation * intersection.p2;
-        temp_trip_pts.extend(intersection_triple_points.map(|point| rotation * point));
-    }
-
-    new_poly.xyplane = true; // Mark poly being rotated to xy plane
-    temp_intpts
-}
-
 /// Check Bounding Box***************************
 ///
 /// Compares two polygons' bounding boxes, returns 1 if bounding boxes intersect

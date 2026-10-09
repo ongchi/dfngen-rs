@@ -19,7 +19,6 @@ insert_user_rectangles_first = true
 disable = false
 relaxed = false
 triple_intersections = true
-visualization_mode = false
 
 [clusters]
 boundary_faces = [true, true, false, false, false, false]
@@ -29,9 +28,7 @@ keep_isolated_fractures = false
 
 [output]
 print_reject_reasons = false
-all_radii = false
-final_radii_per_family = false
-accepted_radii_per_family = false
+rejected_fractures = false
 
 [[family]]
 shape = "ellipse"

@@ -19,6 +19,12 @@ pub struct RejectedUserFracture {
     pub user_fracture_type: i32,
 }
 
+/// A fracture which was not accepted, with the FRAM reject code of its last attempt.
+pub struct RejectedFracture {
+    pub poly: Poly,
+    pub reject_code: i32,
+}
+
 /// Intersections structure.
 /// This structure contains all data pertaining to
 /// one intersection. This includes the IDs for both
@@ -200,18 +206,6 @@ pub struct Stats {
     /// Final intersection length = originalLength - discardedLength
     pub discarded_length: f64,
 
-    /// Total number of intersection points in DFN after isolated fracture removal.
-    /// This variable is used as a counter in writeIntersections() when generating
-    /// output files. It is used to determine the number of nodes lagrit will see
-    /// as duplicates and remove. Used in error checking.
-    pub intersection_node_count: usize,
-
-    /// Total number of triple intersection points in DFN after isolated fracture removal.
-    /// This variable is used as a counter in writeIntersections() when generating
-    /// output files. It is used to determine the number of nodes lagrit will see
-    /// as duplicates and remove. Used in error checking.
-    pub triple_node_count: usize,
-
     /// Rejects per insertion attempt counter. Each element represents the number of tries
     /// it took to fit a fracture into the DFN. e.g. The number stored in the 10th element
     /// is the number of tries it took before the 10th fracture was accepted. This count
@@ -244,15 +238,6 @@ impl Display for Shape {
         match self {
             Shape::Ellipse(_) => write!(f, "Ellipse"),
             Shape::Rectangle => write!(f, "Rectangular"),
-        }
-    }
-}
-
-impl Shape {
-    pub fn number_of_nodes(&self) -> u8 {
-        match self {
-            Shape::Ellipse(n) => *n,
-            Shape::Rectangle => 4,
         }
     }
 }
@@ -325,37 +310,6 @@ impl RadiusDistribution {
     }
 }
 
-impl Display for RadiusDistribution {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        match &self.function {
-            RadiusFunction::LogNormal { mu, sigma } => {
-                writeln!(f, "Distribution: Lognormal")?;
-                writeln!(f, "Mean: {}", mu)?;
-                writeln!(f, "Standard Deviation: {}", sigma)?;
-                writeln!(f, "Minimum Radius (m): {}", self.min)?;
-                writeln!(f, "Maximum Radius (m): {}", self.max)
-            }
-            RadiusFunction::TruncatedPowerLaw { alpha } => {
-                writeln!(f, "Distribution: Truncated Power-Law")?;
-                writeln!(f, "Alpha: {}", alpha)?;
-                writeln!(f, "Minimum Radius (m): {}", self.min)?;
-                writeln!(f, "Maximum Radius (m): {}", self.max)
-            }
-            RadiusFunction::Exponential { lambda } => {
-                writeln!(f, "Distribution: Exponential")?;
-                writeln!(f, "Mean: {}", 1. / lambda)?;
-                writeln!(f, "Lambda: {}", lambda)?;
-                writeln!(f, "Minimum Radius (m): {}", self.min)?;
-                writeln!(f, "Maximum Radius (m): {}", self.max)
-            }
-            RadiusFunction::Constant(value) => {
-                writeln!(f, "Distribution: Constant")?;
-                writeln!(f, "Radius (m): {}", value)
-            }
-        }
-    }
-}
-
 impl IntersectionPoints {
     /// Initializes fract1 and fract2 to -1.
     /// Sets intersectionShortened to false;
@@ -407,6 +361,9 @@ pub struct DFNGen {
     // Vector to store accepted polygons/fractures
     pub accepted_poly: Vec<Poly>,
 
+    // Rejected fractures. Stays empty unless PolyOptions::keep_rejected_fractures is set.
+    pub rejected_poly: Vec<RejectedFracture>,
+
     // Vector for storing intersections
     pub intpts: Vec<IntersectionPoints>,
 
@@ -419,6 +376,7 @@ impl DFNGen {
         Self {
             pstats: Stats::new(),
             accepted_poly: Vec::new(),
+            rejected_poly: Vec::new(),
             intpts: Vec::new(),
             triple_points: Vec::new(),
         }
@@ -483,6 +441,13 @@ impl DFNGen {
                 });
 
             print_reject_reason(reject_code, &new_poly);
+
+            if opts.keep_rejected_fractures {
+                self.rejected_poly.push(RejectedFracture {
+                    poly: new_poly,
+                    reject_code,
+                });
+            }
         }
     }
 
@@ -578,6 +543,7 @@ pub struct PolyOptions {
     pub r_fram: bool,
     pub disable_fram: bool,
     pub triple_intersections: bool,
+    pub keep_rejected_fractures: bool,
 }
 
 #[cfg(test)]
@@ -611,5 +577,45 @@ mod tests {
     #[test]
     fn test_truncated_power_law_radius_is_within_min_and_max() {
         assert_samples_are_within_limits(RadiusDistribution::new_truncated_power_law(2.5, 1., 4.));
+    }
+
+    /// Inserts the same rectangle two times. FRAM rejects the second one.
+    fn insert_two_equal_rectangles(keep_rejected_fractures: bool) -> DFNGen {
+        let opts = PolyOptions {
+            h: 0.1,
+            eps: 1e-9,
+            domain_size: Vector3::new(10., 10., 10.),
+            r_fram: false,
+            disable_fram: false,
+            triple_intersections: false,
+            keep_rejected_fractures,
+        };
+        let mut dfngen = DFNGen::new();
+        dfngen.pstats.rejects_per_attempt.push(0);
+
+        for poly_id in 1..=2 {
+            let mut rectangle = Poly::new_rect(1., 1.);
+            rectangle.normal = Vector3::new(0., 0., 1.);
+            dfngen.insert_poly(rectangle, poly_id, -2, &opts);
+        }
+
+        dfngen
+    }
+
+    #[test]
+    fn test_rejected_user_fracture_is_kept_when_the_option_is_on() {
+        let dfngen = insert_two_equal_rectangles(true);
+
+        assert_eq!(dfngen.accepted_poly.len(), 1);
+        assert_eq!(dfngen.rejected_poly.len(), 1);
+        assert_ne!(dfngen.rejected_poly[0].reject_code, 0);
+    }
+
+    #[test]
+    fn test_rejected_user_fracture_is_not_kept_when_the_option_is_off() {
+        let dfngen = insert_two_equal_rectangles(false);
+
+        assert_eq!(dfngen.accepted_poly.len(), 1);
+        assert!(dfngen.rejected_poly.is_empty());
     }
 }

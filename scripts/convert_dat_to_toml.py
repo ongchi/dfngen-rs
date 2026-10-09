@@ -141,9 +141,7 @@ def convert_general_options(dat: DatFile) -> list[str]:
         "[fram]",
         f"disable = {boolean(dat.flag('disableFram'))}",
         f"relaxed = {boolean(dat.flag('rFram'))}",
-        f"triple_intersections = {boolean(dat.flag('tripleIntersections'))}",
-        f"visualization_mode = {boolean(dat.flag('visualizationMode'))}",
-        "",
+        f"triple_intersections = {boolean(dat.flag('tripleIntersections'))}",        "",
         "[clusters]",
         "boundary_faces = ["
         + ", ".join(boolean(int(face) != 0) for face in dat.list("boundaryFaces"))
@@ -154,9 +152,7 @@ def convert_general_options(dat: DatFile) -> list[str]:
         "",
         "[output]",
         f"print_reject_reasons = {boolean(dat.flag('printRejectReasons'))}",
-        f"all_radii = {boolean(dat.flag('outputAllRadii'))}",
-        f"final_radii_per_family = {boolean(dat.flag('outputFinalRadiiPerFamily'))}",
-        f"accepted_radii_per_family = {boolean(dat.flag('outputAcceptedRadiiPerFamily'))}",
+        f"rejected_fractures = {boolean(dat.flag('outputAllRadii'))}",
     ]
     return lines
 

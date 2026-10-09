@@ -7,8 +7,7 @@
 #   scripts/compare_output.sh check  <baseline_dir> <tolerance>
 #                                                     # decimal numbers can differ by the tolerance
 #
-# DFN_output.txt is ignored because it contains timestamps. The console log is
-# compared with the timestamps removed.
+# The console log is compared with the timestamps removed.
 set -euo pipefail
 
 mode="${1:?usage: compare_output.sh record|check <baseline_dir>}"
@@ -41,7 +40,7 @@ for input_file in *.toml; do
     mv "$output_dir/$case_name.log" "$output_dir/$case_name/console.log"
 
     if [ "$mode" = check ]; then
-        if diff -r -q -x DFN_output.txt "$baseline_dir/$case_name" "$output_dir/$case_name" >/dev/null; then
+        if diff -r -q"$baseline_dir/$case_name" "$output_dir/$case_name" >/dev/null; then
             echo "ok   $case_name (identical)"
         elif [ -n "$tolerance" ] && python3 "$repo_root/scripts/compare_output.py" \
             "$baseline_dir/$case_name" "$output_dir/$case_name" "$tolerance"; then

@@ -45,14 +45,8 @@ pub struct Input {
     pub radii_list_increase: f64,
 
     /// This option disables the FRAM algorithm. There will be no
-    /// fracture rejections or fine mesh. Defaults visualizationMode to 1
+    /// fracture rejections.
     pub disable_fram: bool,
-
-    ///  Used during meshing:
-    ///      0 - Creates a fine mesh, according to h parameter;
-    ///      1 - Produce only first round of triangulations. In this case no
-    ///          modeling of flow and transport is possible.
-    pub visualization_mode: bool,
 
     /// This option uses a relaxed version of the FRAM algorithm. The mesh may not
     /// be perfectly conforming
@@ -93,21 +87,6 @@ pub struct Input {
     ///     1 - Print all rejection reasons to screen
     pub print_reject_reasons: bool,
 
-    /// Outputs radii files after isolated fracture removal.
-    /// One file per family.
-    ///     0: Do not create output files of radii per family
-    ///     1: Creates output files per family, containing a list
-    ///        of the family's fracture radii that is in the final DFN
-    pub output_final_radii_per_family: bool,
-
-    /// Outputs radii files before isolated fracture removal.
-    /// One file per family.
-    ///     0: Do not create output files of radii per family
-    ///     1: Creates output files per family, containing a list
-    ///        of the family's fracture radii in the domain before isolated
-    ///        fracture removal.
-    pub output_accepted_radii_per_family: bool,
-
     /// False - User ellipses will be inserted first
     /// True  - User rectangles will be inserted first
     pub insert_user_rectangles_first: bool,
@@ -130,13 +109,9 @@ pub struct Input {
     ///        distributions will still be used while generating the DFN.
     pub remove_fractures_less_than: f64,
 
-    /// Caution: Can create very large files.
-    /// Outputs all fractures which were generated during
-    /// DFN generation (Accepted + Rejected).
-    ///     False: Do not output all radii file.
-    ///     True:  Include file of all raddii, acepted + rejected fractures,
-    ///            in output files (radii_All.dat).
-    pub output_all_radii: bool,
+    /// Caution: Can create a very large file.
+    /// True: Write the rejected fractures to rejected_fractures.vtp.
+    pub output_rejected_fractures: bool,
 
     /// If a fracture is rejected, it will be re-translated
     /// to a new position this number of times.
@@ -251,7 +226,6 @@ struct FramSection {
     disable: bool,
     relaxed: bool,
     triple_intersections: bool,
-    visualization_mode: bool,
 }
 
 #[derive(Deserialize)]
@@ -267,9 +241,7 @@ struct ClustersSection {
 #[serde(deny_unknown_fields)]
 struct OutputSection {
     print_reject_reasons: bool,
-    all_radii: bool,
-    final_radii_per_family: bool,
-    accepted_radii_per_family: bool,
+    rejected_fractures: bool,
 }
 
 #[derive(Deserialize)]
@@ -489,21 +461,17 @@ fn parse_input(text: &str) -> Result<(Input, FractureFamilyCollection), DfngenEr
         eps,
         radii_list_increase: file.generation.radii_list_increase,
         disable_fram: file.fram.disable,
-        // Without FRAM there is no fine mesh
-        visualization_mode: file.fram.visualization_mode || file.fram.disable,
         r_fram: file.fram.relaxed,
         triple_intersections: file.fram.triple_intersections,
         boundary_faces: file.clusters.boundary_faces,
         keep_only_largest_cluster: file.clusters.keep_only_largest,
         keep_isolated_fractures: file.clusters.keep_isolated_fractures,
         print_reject_reasons: file.output.print_reject_reasons,
-        output_final_radii_per_family: file.output.final_radii_per_family,
-        output_accepted_radii_per_family: file.output.accepted_radii_per_family,
         insert_user_rectangles_first: file.generation.insert_user_rectangles_first,
         force_large_fractures: file.generation.force_large_fractures,
         seed: file.seed,
         remove_fractures_less_than: file.generation.remove_fractures_less_than,
-        output_all_radii: file.output.all_radii,
+        output_rejected_fractures: file.output.rejected_fractures,
         rejects_per_fracture: file.generation.rejects_per_fracture,
         layers,
         layer_volumes,
@@ -518,8 +486,7 @@ fn parse_input(text: &str) -> Result<(Input, FractureFamilyCollection), DfngenEr
         input,
         FractureFamilyCollection {
             families,
-            probabilities: probabilities.clone(),
-            original_probabilities: probabilities,
+            probabilities,
         },
     ))
 }
@@ -788,7 +755,6 @@ mod tests {
         disable = false
         relaxed = false
         triple_intersections = true
-        visualization_mode = false
 
         [clusters]
         boundary_faces = [true, true, false, false, false, false]
@@ -798,9 +764,7 @@ mod tests {
 
         [output]
         print_reject_reasons = false
-        all_radii = false
-        final_radii_per_family = false
-        accepted_radii_per_family = false
+        rejected_fractures = false
     "#;
 
     const RECTANGLE_FAMILY: &str = r#"
@@ -858,15 +822,6 @@ mod tests {
         let (input, _) = parse(&[GENERAL_OPTIONS]).unwrap();
 
         assert_eq!(input.eps, 0.1 * 1e-8);
-    }
-
-    #[test]
-    fn test_disabled_fram_sets_visualization_mode() {
-        let options = GENERAL_OPTIONS.replace("disable = false", "disable = true");
-
-        let (input, _) = parse(&[&options]).unwrap();
-
-        assert!(input.visualization_mode);
     }
 
     #[test]

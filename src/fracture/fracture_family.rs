@@ -329,9 +329,6 @@ pub struct FractureFamilyCollection {
     // the element's corresponding family to be inserted into the DFN.
     // The elements should add up to 1.0 (for %100).
     pub probabilities: Vec<f64>,
-
-    // Copy of the original values of probabilities
-    pub original_probabilities: Vec<f64>,
 }
 
 impl FractureFamilyCollection {

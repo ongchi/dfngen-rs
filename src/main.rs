@@ -1,6 +1,4 @@
 use std::cell::RefCell;
-use std::fs::File;
-use std::io::{BufWriter, Write};
 use std::rc::Rc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -24,7 +22,7 @@ use crate::io::output::write_output;
 use crate::math_functions::{
     cumsum, index_from_prob, index_from_prob_and_p32_status, remove_family_probability,
 };
-use crate::structures::{DFNGen, PolyOptions, RadiusFunction, Stats};
+use crate::structures::{DFNGen, PolyOptions, RadiusFunction, RejectedFracture, Stats};
 
 mod cg;
 mod distribution;
@@ -47,11 +45,7 @@ struct Cli {
 fn main() -> Result<(), DfngenError> {
     let cli = Cli::parse();
 
-    std::fs::create_dir_all(&cli.output_folder)?;
-    init_tracing(File::create(format!(
-        "{}/DFN_output.txt",
-        cli.output_folder
-    ))?);
+    init_tracing();
 
     info!("Starting dfngen-rs");
 
@@ -68,6 +62,7 @@ fn main() -> Result<(), DfngenError> {
         r_fram: input.r_fram,
         disable_fram: input.disable_fram,
         triple_intersections: input.triple_intersections,
+        keep_rejected_fractures: input.output_rejected_fractures,
     };
 
     let generator = Rc::new(RefCell::new(Mt64::new(match input.seed {
@@ -111,7 +106,6 @@ fn main() -> Result<(), DfngenError> {
     if total_families > 0 {
         insert_stochastic_fractures(
             &input,
-            &cli.output_folder,
             &poly_opts,
             &mut frac_fam_col,
             &mut dfngen,
@@ -237,21 +231,13 @@ fn main() -> Result<(), DfngenError> {
     write_output(
         &input,
         &cli.output_folder,
-        &mut dfngen.accepted_poly,
+        &dfngen.accepted_poly,
+        &dfngen.rejected_poly,
         &mut dfngen.intpts,
         &dfngen.triple_points,
-        &mut dfngen.pstats,
+        &dfngen.pstats,
         &final_fractures,
-        &frac_fam_col,
     )?;
-
-    // Duplicate node counters are set in write_output(), so this must come after it.
-    info!(
-        "Lagrit Should Remove {} Nodes ({}/2 - {})",
-        dfngen.pstats.intersection_node_count / 2 - dfngen.pstats.triple_node_count,
-        dfngen.pstats.intersection_node_count,
-        dfngen.pstats.triple_node_count
-    );
 
     info!("dfngen-rs - Complete");
 
@@ -259,18 +245,17 @@ fn main() -> Result<(), DfngenError> {
 }
 
 /// Logs to stdout (compact) and to the given file (JSON).
-fn init_tracing(log_file: File) {
+/// Logs to stdout. The level is `info`, unless the environment variable `RUST_LOG` gives another.
+fn init_tracing() {
+    let level_filter = tracing_subscriber::EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info"));
+
     tracing_subscriber::registry()
-        .with(tracing_subscriber::EnvFilter::from_default_env())
+        .with(level_filter)
         .with(
             tracing_subscriber::fmt::layer()
                 .compact()
                 .with_writer(std::io::stdout),
-        )
-        .with(
-            tracing_subscriber::fmt::layer()
-                .json()
-                .with_writer(log_file),
         )
         .init();
 }
@@ -352,7 +337,6 @@ fn prepare_radii_lists(
 /// (`nPoly` count or P32 target of every family) is met.
 fn insert_stochastic_fractures(
     input: &Input,
-    output_folder: &str,
     poly_opts: &PolyOptions,
     frac_fam_col: &mut FractureFamilyCollection,
     dfngen: &mut DFNGen,
@@ -368,16 +352,6 @@ fn insert_stochastic_fractures(
 
     // Initialize uniform distribution on [0,1]
     let uniform_dist = Uniform::new(0., 1.)?;
-
-    let mut radii_all = if input.output_all_radii {
-        let radii_folder = format!("{}/dfnGen_output/radii", output_folder);
-        std::fs::create_dir_all(&radii_folder)?;
-        let mut file = BufWriter::new(File::create(format!("{}/radii_All.dat", radii_folder))?);
-        writeln!(file, "Format: xRadius yRadius Family# (-1 = userRectangle, 0 = userEllipse, > 0 is family in order of famProb)")?;
-        Some(file)
-    } else {
-        None
-    };
 
     // Used with stopCondition = 1, P32 option.
     // Values are set to true once the families p32 requirement is met.
@@ -411,16 +385,6 @@ fn insert_stochastic_fractures(
             RadiusOption::FromCacheOrRng,
             generator.clone(),
         );
-
-        if let Some(file) = radii_all.as_mut() {
-            writeln!(
-                file,
-                "{:.8} {:.8} {:.8}",
-                new_poly.xradius,
-                new_poly.yradius,
-                new_poly.family_num + 1
-            )?;
-        }
 
         let mut reject_counter = 0;
 
@@ -514,6 +478,14 @@ fn insert_stochastic_fractures(
             if reject_counter >= input.rejects_per_fracture {
                 dfngen.pstats.rejected_poly_count += 1;
                 dfngen.pstats.rejected_from_fam[family_index] += 1;
+
+                if poly_opts.keep_rejected_fractures {
+                    dfngen.rejected_poly.push(RejectedFracture {
+                        poly: new_poly,
+                        reject_code,
+                    });
+                }
+
                 // Stop retranslating polygon if its reached its reject limit
                 break;
             }
@@ -535,10 +507,6 @@ fn insert_stochastic_fractures(
     // Remove last element off the rejects per attempt counter.
     // It will have one extra item due to how each element is initialized.
     dfngen.pstats.rejects_per_attempt.pop();
-
-    if let Some(mut file) = radii_all {
-        file.flush()?;
-    }
 
     Ok(())
 }
