@@ -83,19 +83,8 @@ pub fn get_cluster(
         }
 
         if keep_only_largest_cluster && matching_groups.len() > 1 {
-            // If only keeping the largest cluster, find group with largest size
-            // Initialize largestGroup
-            let mut largest_group = matching_groups[0];
-
-            for gid in matching_groups.iter() {
-                // If largest group < current group, the current group is the new largest group
-                if largest_group < pstats.group_data[gid - 1].size {
-                    largest_group = *gid;
-                }
-            }
-
-            matching_groups.clear(); // Clear group numbers
-            matching_groups.push(largest_group); // Save only the largest group
+            // If only keeping the largest cluster, save only the largest group
+            matching_groups = vec![largest_group(&matching_groups, &pstats.group_data)];
         }
 
         // Gather the final polygon numbers/indecies.
@@ -206,80 +195,87 @@ pub fn update_groups(
     pstats: &mut Stats,
     new_poly_index: usize,
 ) {
-    if encountered_groups.is_empty() {
-        // 'newPoly' didn't encounter more than 1 other group of fractures
-        // Save newPoly to the group structure
-        let mut i = 0;
-        // Update boundary face info
-        or(
-            &mut pstats.group_data[new_poly.group_num - 1].faces,
-            &new_poly.faces,
-        );
-        // NOTE: Groups start at 1, but array starts at zero hence the groupNum-1 for index
-        // Incriment the groups size for the new polygon
-        pstats.group_data[new_poly.group_num - 1].size += 1;
+    // NOTE: Groups start at 1, but array starts at zero hence the groupNum-1 for index
+    let group_index = new_poly.group_num - 1;
 
-        // Search for group newPoly belongs to and add newPoly to it's list, add to first matching group found
-        while pstats.fract_group[i].group_num != new_poly.group_num && i != pstats.fract_group.len()
+    // Add newPoly to its group: boundary face info, size, and list of polygons
+    or(&mut pstats.group_data[group_index].faces, &new_poly.faces);
+    pstats.group_data[group_index].size += 1;
+
+    match pstats
+        .fract_group
+        .iter_mut()
+        .find(|group| group.group_num == new_poly.group_num)
+    {
+        Some(group) => group.poly_list.push(new_poly_index),
+        None => error!("Group not found"),
+    }
+
+    // Merge each other group which newPoly bridges into the group of newPoly
+    for &gid in encountered_groups {
+        if pstats.group_data[gid - 1].valid {
+            pstats.group_data[group_index].size += pstats.group_data[gid - 1].size;
+            let encountered_faces = pstats.group_data[gid - 1].faces;
+            or(
+                &mut pstats.group_data[group_index].faces,
+                &encountered_faces,
+            );
+            // Mark merged groups group data as invalid
+            pstats.group_data[gid - 1].valid = false;
+        }
+
+        for group in pstats
+            .fract_group
+            .iter_mut()
+            .filter(|group| group.group_num == gid)
         {
-            i += 1;
-        }
+            group.group_num = new_poly.group_num;
 
-        // Error check
-        if i == pstats.fract_group.len() && pstats.fract_group[i].group_num != new_poly.group_num {
-            error!("Group not found");
-        }
-
-        // Add newPoly to fracture/cluster group
-        pstats.fract_group[i].poly_list.push(new_poly_index);
-    } else {
-        // Multiple cluter groups were encountered.
-        // Merge the groups (change/update the group numbers)
-        // Search for encountered groups and make them all have the same group numbers
-        // First, add newpoly to correct group
-        let mut k = 0;
-
-        while new_poly.group_num != pstats.fract_group[k].group_num {
-            k += 1;
-        }
-
-        // Add new poly to the group
-        pstats.fract_group[k].poly_list.push(new_poly_index);
-        // Incriment size of group by one for newPoly
-        pstats.group_data[new_poly.group_num - 1].size += 1;
-        // Add any boundary face data to group fro newPoly
-        or(
-            &mut pstats.group_data[new_poly.group_num - 1].faces,
-            &new_poly.faces,
-        );
-
-        // Need merge groups in encounteredGroups list to newPoly.groupNum
-        for gid in encountered_groups {
-            // Add merging groups size to new group's size
-            if pstats.group_data[gid - 1].valid {
-                pstats.group_data[new_poly.group_num - 1].size += pstats.group_data[gid - 1].size;
-                // Merge any boundary faces data
-                let encountered_faces = pstats.group_data[gid - 1].faces;
-                or(
-                    &mut pstats.group_data[new_poly.group_num - 1].faces,
-                    &encountered_faces,
-                );
-                // Mark merged groups group data as invalid
-                pstats.group_data[gid - 1].valid = false;
-            }
-
-            for jj in 0..pstats.fract_group.len() {
-                if pstats.fract_group[jj].group_num == *gid {
-                    // Change group number to the new group number
-                    pstats.fract_group[jj].group_num = new_poly.group_num;
-
-                    // Change polys group number inside the group to the new group num
-                    for z in 0..pstats.fract_group[jj].poly_list.len() {
-                        accepted_poly[pstats.fract_group[jj].poly_list[z]].group_num =
-                            new_poly.group_num;
-                    }
-                }
+            for &poly_index in &group.poly_list {
+                accepted_poly[poly_index].group_num = new_poly.group_num;
             }
         }
+    }
+}
+
+/// Group number of the group with the most polygons. The first one wins a tie.
+///
+/// NOTE: (groupNumber-1) = index of the corresponding groupData structure
+fn largest_group(group_numbers: &[usize], group_data: &[GroupData]) -> usize {
+    let mut largest = group_numbers[0];
+
+    for &gid in group_numbers {
+        if group_data[gid - 1].size > group_data[largest - 1].size {
+            largest = gid;
+        }
+    }
+
+    largest
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn group_with_size(size: usize) -> GroupData {
+        GroupData {
+            size,
+            ..GroupData::new()
+        }
+    }
+
+    #[test]
+    fn test_largest_group_is_selected_by_size_not_by_group_number() {
+        // Group numbers 1, 2, 3 have 2, 50, and 7 polygons
+        let group_data = [group_with_size(2), group_with_size(50), group_with_size(7)];
+
+        assert_eq!(largest_group(&[1, 2, 3], &group_data), 2);
+    }
+
+    #[test]
+    fn test_largest_group_looks_only_at_the_given_groups() {
+        let group_data = [group_with_size(2), group_with_size(50), group_with_size(7)];
+
+        assert_eq!(largest_group(&[1, 3], &group_data), 3);
     }
 }
