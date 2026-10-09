@@ -16,7 +16,6 @@ necessary, except those marked as optional below. An unknown key is an error.
 ```toml
 seed = 12345                       # 0 = use the system time
 h = 0.1                            # minimum feature size (FRAM)
-angle_unit = "radian"              # or "degree"; applies to all angles in the file
 
 [domain]
 size = [10.0, 10.0, 10.0]          # x, y, z; the domain center is the origin
@@ -55,7 +54,7 @@ probability = 0.4
 aspect_ratio = 1.0
 layer = 0                          # 0 = whole domain, 1 = first layer
 region = 0                         # 0 = whole domain, 1 = first region
-beta = 0.5                         # optional; without it the rotation is uniform
+beta = 30.0                        # optional; without it the rotation is uniform
 p32_target = 0.5                   # necessary only for stop_condition "p32"
 radius = { distribution = "truncated_power_law", alpha = 2.5, min = 1.0, max = 5.0 }
 orientation = { theta = 0.0, phi = 0.0, kappa = 8.0 }
@@ -63,7 +62,6 @@ orientation = { theta = 0.0, phi = 0.0, kappa = 8.0 }
 # One table for each user-defined fracture (optional)
 [[user_fracture]]
 number_of_points = 4
-angle_unit = "degree"              # optional; replaces the angle unit of the file
 radius = 4.0
 aspect_ratio = 1.0
 beta = 0.0
@@ -89,6 +87,9 @@ and `strike`, each with `kappa` (Fisher distribution).
 Orientation of a user-defined fracture: `normal = [x, y, z]`, or
 `trend_plunge = [trend, plunge]`, or `dip_strike = [dip, strike]`.
 
+All angles (`theta`, `phi`, `trend`, `plunge`, `dip`, `strike`, `beta`) are in
+degrees.
+
 Shape of a fracture: a family and a user-defined fracture with `radius` make
 a regular polygon with `number_of_points` vertices on a circle of the given
 radius. The polygon is then scaled in one direction by `aspect_ratio`.
@@ -107,7 +108,7 @@ order of the file. The number of a family is its position in the file.
 input file of pydfnworks, with its user-defined fracture files and its polygon
 boundary file, to this format. A rectangle of dfnGen becomes a polygon with 4
 points, and its radius values are multiplied by sqrt(2) (in dfnGen, the radius
-of a rectangle is half the side). The ellipses do not have the same vertices
+of a rectangle is half the side). Angles in radians are changed to degrees. The ellipses do not have the same vertices
 as in dfnGen, so the network is not the same as that of dfnGen for the same seed.
 
 ## Output files

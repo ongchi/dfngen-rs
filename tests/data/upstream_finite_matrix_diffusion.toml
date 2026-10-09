@@ -1,6 +1,5 @@
 seed = 104
 h = 1.0
-angle_unit = "degree"
 
 [domain]
 size = [1000.0, 1000.0, 1000.0]

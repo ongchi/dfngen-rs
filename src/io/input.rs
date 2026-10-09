@@ -145,28 +145,11 @@ pub struct Input {
     pub user_fractures: Vec<UserFracture>,
 }
 
-#[derive(Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
-enum AngleUnit {
-    Radian,
-    Degree,
-}
-
-impl AngleUnit {
-    fn to_radians(self, angle: f64) -> f64 {
-        match self {
-            AngleUnit::Radian => angle,
-            AngleUnit::Degree => angle.to_radians(),
-        }
-    }
-}
-
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct InputFile {
     seed: u64,
     h: f64,
-    angle_unit: AngleUnit,
     domain: DomainSection,
     generation: GenerationSection,
     fram: FramSection,
@@ -284,8 +267,6 @@ struct OrientationSection {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct UserFractureSection {
-    angle_unit: Option<AngleUnit>,
-
     // Definition by parameters
     number_of_points: Option<usize>,
     radius: Option<f64>,
@@ -382,13 +363,12 @@ fn parse_input(text: &str) -> Result<(Input, FractureFamilyCollection), DfngenEr
         .iter()
         .enumerate()
         .map(|(i, section)| {
-            build_user_fracture(section, file.angle_unit, eps)
+            build_user_fracture(section, eps)
                 .map_err(|message| invalid_input(format!("user_fracture {}: {}", i + 1, message)))
         })
         .collect::<Result<Vec<_>, _>>()?;
 
     let family_context = FamilyContext {
-        angle_unit: file.angle_unit,
         stop_condition,
         h: file.h,
         eps,
@@ -446,7 +426,6 @@ fn parse_input(text: &str) -> Result<(Input, FractureFamilyCollection), DfngenEr
 
 /// Values of the input file which each family needs.
 struct FamilyContext<'a> {
-    angle_unit: AngleUnit,
     stop_condition: StopCondition,
     h: f64,
     eps: f64,
@@ -475,11 +454,7 @@ fn build_family(
         .number_of_points(valid_number_of_points(section.number_of_points)?)
         .radius(build_radius_distribution(&section.radius, 3.0 * context.h))
         .aspect_ratio(section.aspect_ratio)
-        .orientation(build_orientation(
-            &section.orientation,
-            context.angle_unit,
-            context.eps,
-        )?)
+        .orientation(build_orientation(&section.orientation, context.eps)?)
         .layer_id(section.layer)
         .region_id(section.region)
         .layers(context.layers)
@@ -488,7 +463,7 @@ fn build_family(
         .domain_size_increase(context.domain_size_increase);
 
     if let Some(beta) = section.beta {
-        builder.beta(context.angle_unit.to_radians(beta));
+        builder.beta(beta.to_radians());
     }
 
     if context.stop_condition == StopCondition::P32 {
@@ -555,12 +530,8 @@ fn build_radius_distribution(section: &RadiusSection, min_radius: f64) -> Radius
     }
 }
 
-fn build_orientation(
-    section: &OrientationSection,
-    angle_unit: AngleUnit,
-    eps: f64,
-) -> Result<Fisher, String> {
-    let radians = |angle: f64| angle_unit.to_radians(angle);
+/// The angles of the section are in degrees.
+fn build_orientation(section: &OrientationSection, eps: f64) -> Result<Fisher, String> {
     let kappa = section.kappa;
 
     match (
@@ -569,17 +540,17 @@ fn build_orientation(
         (section.dip, section.strike),
     ) {
         ((Some(theta), Some(phi)), (None, None), (None, None)) => Ok(Fisher::new_with_theta_phi(
-            radians(theta),
-            radians(phi),
+            theta.to_radians(),
+            phi.to_radians(),
             kappa,
             eps,
         )),
         ((None, None), (Some(trend), Some(plunge)), (None, None)) => Ok(
-            Fisher::new_with_trend_plunge(radians(trend), radians(plunge), kappa, eps),
+            Fisher::new_with_trend_plunge(trend.to_radians(), plunge.to_radians(), kappa, eps),
         ),
         ((None, None), (None, None), (Some(dip), Some(strike))) => Ok(Fisher::new_with_dip_strike(
-            radians(dip),
-            radians(strike),
+            dip.to_radians(),
+            strike.to_radians(),
             kappa,
             eps,
         )),
@@ -597,11 +568,8 @@ fn valid_number_of_points(number_of_points: usize) -> Result<usize, String> {
     Ok(number_of_points)
 }
 
-fn build_user_fracture(
-    section: &UserFractureSection,
-    file_angle_unit: AngleUnit,
-    eps: f64,
-) -> Result<UserFracture, String> {
+/// The angles of the section are in degrees.
+fn build_user_fracture(section: &UserFractureSection, eps: f64) -> Result<UserFracture, String> {
     let has_parameters = section.number_of_points.is_some()
         || section.radius.is_some()
         || section.aspect_ratio.is_some()
@@ -629,16 +597,13 @@ fn build_user_fracture(
             .ok_or("number_of_points or vertices is necessary")?,
     )?;
 
-    let angle_unit = section.angle_unit.unwrap_or(file_angle_unit);
-    let radians = |angle: f64| angle_unit.to_radians(angle);
-
     let normal = match (section.normal, section.trend_plunge, section.dip_strike) {
         (Some(normal), None, None) => normal,
         (None, Some([trend, plunge]), None) => {
-            normal_from_trend_plunge(radians(trend), radians(plunge)).into()
+            normal_from_trend_plunge(trend.to_radians(), plunge.to_radians()).into()
         }
         (None, None, Some([dip, strike])) => {
-            normal_from_dip_strike(radians(dip), radians(strike)).into()
+            normal_from_dip_strike(dip.to_radians(), strike.to_radians()).into()
         }
         _ => {
             return Err("one of normal, trend_plunge, or dip_strike is necessary".to_string());
@@ -649,7 +614,7 @@ fn build_user_fracture(
         eps,
         number_of_points,
         radius: section.radius.ok_or("radius is necessary")?,
-        beta: radians(section.beta.ok_or("beta is necessary")?),
+        beta: section.beta.ok_or("beta is necessary")?.to_radians(),
         aspect_ratio: section.aspect_ratio.ok_or("aspect_ratio is necessary")?,
         translation: section.translation.ok_or("translation is necessary")?,
         normal,
@@ -663,7 +628,6 @@ mod tests {
     const GENERAL_OPTIONS: &str = r#"
         seed = 12345
         h = 0.1
-        angle_unit = "degree"
 
         [domain]
         size = [10.0, 10.0, 10.0]
@@ -875,7 +839,7 @@ mod tests {
     }
 
     #[test]
-    fn test_user_ellipse_by_trend_plunge_uses_angle_unit() {
+    fn test_user_ellipse_by_trend_plunge_is_in_degrees() {
         let fracture = parse_user_fracture(
             r#"number_of_points = 8
             radius = 2.0
@@ -891,19 +855,16 @@ mod tests {
     }
 
     #[test]
-    fn test_user_fracture_angle_unit_overrides_file_angle_unit() {
-        let fracture = parse_user_fracture(
-            r#"number_of_points = 4
-            angle_unit = "radian"
-            radius = 2.0
-            aspect_ratio = 1.0
-            beta = 0.0
-            translation = [0.0, 0.0, 0.0]
-            dip_strike = [0.5, 1.0]"#,
-        )
-        .unwrap();
+    fn test_angle_unit_is_rejected() {
+        let options = GENERAL_OPTIONS.replace("h = 0.1", "h = 0.1\nangle_unit = \"radian\"");
 
-        assert_eq!(fracture.to_poly().normal, normal_from_dip_strike(0.5, 1.0));
+        let message = error_message(parse(&[&options]));
+
+        assert!(
+            message.contains("unknown field `angle_unit`"),
+            "{}",
+            message
+        );
     }
 
     #[test]

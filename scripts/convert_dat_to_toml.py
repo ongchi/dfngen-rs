@@ -15,6 +15,9 @@ side; in dfngen-rs it is the distance from the center to a corner of the
 square with that side. Thus the radius values of a rectangle are multiplied
 by sqrt(2).
 
+All angles in the TOML file are in degrees. Angles in radians (`angleOption: 0`,
+or `AngleOption: radian` in a user-defined fracture file) are changed to degrees.
+
 Needs only the Python standard library.
 """
 
@@ -106,8 +109,13 @@ def boolean(is_set: bool) -> str:
     return "true" if is_set else "false"
 
 
-def angle_unit_name(is_degree: bool) -> str:
-    return "degree" if is_degree else "radian"
+def angle(value: str, is_degree: bool) -> str:
+    """A TOML float with the angle in degrees."""
+    return number(value) if is_degree else repr(math.degrees(float(value)))
+
+
+def angles(values: list[str], is_degree: bool) -> str:
+    return "[" + ", ".join(angle(value, is_degree) for value in values) + "]"
 
 
 def convert_general_options(dat: DatFile) -> list[str]:
@@ -118,7 +126,6 @@ def convert_general_options(dat: DatFile) -> list[str]:
     lines = [
         f"seed = {int(dat.word('seed'))}",
         f"h = {number(dat.word('h'))}",
-        f'angle_unit = "{angle_unit_name(dat.flag("angleOption"))}"',
         "",
         "[domain]",
         f"size = {numbers(dat.list('domainSize'))}",
@@ -216,6 +223,7 @@ def convert_families(dat: DatFile, prefix: str, probabilities: list[str]) -> lis
         return dat.list(prefix + label)
 
     is_p32 = int(dat.word("stopCondition")) == 1
+    is_degree = dat.flag("angleOption")
     angle_names = [("theta", "phi"), ("trend", "plunge"), ("dip", "strike")][
         int(dat.word("orientationOption"))
     ]
@@ -258,7 +266,7 @@ def convert_families(dat: DatFile, prefix: str, probabilities: list[str]) -> lis
             f"region = {int(values('Region')[i])}",
         ]
         if has_beta[i]:
-            lines.append(f"beta = {number(next(betas))}")
+            lines.append(f"beta = {angle(next(betas), is_degree)}")
         if is_p32:
             lines.append(f"p32_target = {number(values('_p32Targets')[i])}")
 
@@ -286,20 +294,21 @@ def convert_families(dat: DatFile, prefix: str, probabilities: list[str]) -> lis
         lines.append(f"radius = {{ {radius} }}")
 
         lines.append(
-            f"orientation = {{ {angle_names[0]} = {number(values(angle_names[0])[i])}, "
-            f"{angle_names[1]} = {number(values(angle_names[1])[i])}, "
+            f"orientation = {{ {angle_names[0]} = {angle(values(angle_names[0])[i], is_degree)}, "
+            f"{angle_names[1]} = {angle(values(angle_names[1])[i], is_degree)}, "
             f"kappa = {number(values('kappa')[i])} }}"
         )
     return lines
 
 
-def convert_fractures_by_parameters(path: Path, shape: str, file_angle_unit: str) -> list[str]:
+def convert_fractures_by_parameters(path: Path, shape: str) -> list[str]:
     dat = DatFile(path)
     count = int(dat.word("nUserEll" if shape == "ellipse" else "nUserRect"))
 
     angle_unit = dat.word("AngleOption")
     if angle_unit not in ("degree", "radian"):
         sys.exit(f"{path}: AngleOption must be degree or radian")
+    is_degree = angle_unit == "degree"
 
     radii = dat.words("Radii", count)
     betas = dat.words("Beta", count)
@@ -317,8 +326,6 @@ def convert_fractures_by_parameters(path: Path, shape: str, file_angle_unit: str
     lines = []
     for i in range(count):
         lines += ["", "[[user_fracture]]"]
-        if angle_unit != file_angle_unit:
-            lines.append(f'angle_unit = "{angle_unit}"')
         if shape == "ellipse":
             point_count, radius = int(point_counts[i]), number(radii[i])
         else:
@@ -327,10 +334,13 @@ def convert_fractures_by_parameters(path: Path, shape: str, file_angle_unit: str
             f"number_of_points = {point_count}",
             f"radius = {radius}",
             f"aspect_ratio = {number(aspect_ratios[i])}",
-            f"beta = {number(betas[i])}",
+            f"beta = {angle(betas[i], is_degree)}",
             f"translation = {numbers(translations[i])}",
-            f"{orientation_key} = {numbers(orientations[i])}",
         ]
+        if orientation_key == "normal":
+            lines.append(f"normal = {numbers(orientations[i])}")
+        else:
+            lines.append(f"{orientation_key} = {angles(orientations[i], is_degree)}")
     return lines
 
 
@@ -378,8 +388,6 @@ def convert_polygons(path: Path) -> list[str]:
 
 
 def convert_user_fractures(dat: DatFile) -> list[str]:
-    file_angle_unit = angle_unit_name(dat.flag("angleOption"))
-
     def path_if_enabled(flag_label: str, path_label: str) -> Path | None:
         return resolve(dat, dat.word(path_label)) if dat.flag(flag_label) else None
 
@@ -393,13 +401,13 @@ def convert_user_fractures(dat: DatFile) -> list[str]:
 
     rectangles = []
     if path := path_if_enabled("userRectanglesOnOff", "UserRect_Input_File_Path"):
-        rectangles += convert_fractures_by_parameters(path, "rectangle", file_angle_unit)
+        rectangles += convert_fractures_by_parameters(path, "rectangle")
     if path := path_if_enabled("userRecByCoord", "RectByCoord_Input_File_Path"):
         rectangles += convert_fractures_by_vertices(path, "rectangle")
 
     ellipses = []
     if path := path_if_enabled("userEllipsesOnOff", "UserEll_Input_File_Path"):
-        ellipses += convert_fractures_by_parameters(path, "ellipse", file_angle_unit)
+        ellipses += convert_fractures_by_parameters(path, "ellipse")
     if path := path_if_enabled("userEllByCoord", "EllByCoord_Input_File_Path"):
         ellipses += convert_fractures_by_vertices(path, "ellipse")
 

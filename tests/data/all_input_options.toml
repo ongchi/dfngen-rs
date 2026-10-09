@@ -1,6 +1,5 @@
 seed = 12345
 h = 0.1
-angle_unit = "degree"
 
 [domain]
 size = [10.0, 10.0, 10.0]
@@ -87,18 +86,16 @@ trend_plunge = [10.0, 80.0]
 
 [[user_fracture]]
 number_of_points = 4
-angle_unit = "radian"
 radius = 4.242640687119286
 aspect_ratio = 1.0
-beta = 0.3
+beta = 15.0
 translation = [0.0, 0.0, 0.0]
-dip_strike = [0.7, 1.9]
+dip_strike = [40.0, 110.0]
 
 [[user_fracture]]
 number_of_points = 4
-angle_unit = "radian"
 radius = 2.8284271247461903
 aspect_ratio = 1.5
 beta = 0.0
 translation = [2.0, -1.0, 1.0]
-dip_strike = [1.2, 0.4]
+dip_strike = [65.0, 25.0]

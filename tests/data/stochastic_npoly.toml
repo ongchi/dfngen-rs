@@ -1,6 +1,5 @@
 seed = 12345
 h = 0.1
-angle_unit = "radian"
 
 [domain]
 size = [10.0, 10.0, 10.0]
@@ -44,9 +43,9 @@ probability = 0.3
 aspect_ratio = 2.0
 layer = 0
 region = 0
-beta = 0.5
+beta = 30.0
 radius = { distribution = "constant", value = 2.0 }
-orientation = { theta = 0.8, phi = 0.3, kappa = 20.0 }
+orientation = { theta = 45.0, phi = 15.0, kappa = 20.0 }
 
 [[family]]
 number_of_points = 4
@@ -55,4 +54,4 @@ aspect_ratio = 1.5
 layer = 0
 region = 0
 radius = { distribution = "log_normal", log_mean = 0.8465735902799727, sd = 0.4, min = 1.4142135623730951, max = 5.656854249492381 }
-orientation = { theta = 1.2, phi = 1.0, kappa = 10.0 }
+orientation = { theta = 70.0, phi = 60.0, kappa = 10.0 }

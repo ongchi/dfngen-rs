@@ -51,8 +51,7 @@ pub struct FractureFamily {
     /// False - Uniform Distribution
     pub beta_distribution: bool,
 
-    /// 'beta' is the rotation, or twist, around z normal before 3d rotation in radians
-    /// or degrees depending on 'angleOption'.
+    /// 'beta' is the rotation, or twist, around z normal before 3d rotation in radians.
     pub beta: f64,
 
     pub orientation: Fisher,

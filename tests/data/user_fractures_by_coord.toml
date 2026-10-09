@@ -1,6 +1,5 @@
 seed = 12345
 h = 0.1
-angle_unit = "radian"
 
 [domain]
 size = [10.0, 10.0, 10.0]
