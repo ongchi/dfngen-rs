@@ -59,6 +59,7 @@ fn main() -> Result<(), DfngenError> {
         h: input.h,
         eps: input.eps,
         domain_size: input.domain_size,
+        domain_boundary_mode: input.domain_boundary_mode,
         r_fram: input.r_fram,
         disable_fram: input.disable_fram,
         triple_intersections: input.triple_intersections,
@@ -386,7 +387,12 @@ fn insert_stochastic_fractures(
         // Re-translate the polygon until it is accepted or reaches its reject limit
         loop {
             // Truncate poly if needed
-            if new_poly.domain_truncation(input.h, input.eps, &input.domain_size) {
+            if new_poly.domain_truncation(
+                input.h,
+                input.eps,
+                &input.domain_size,
+                input.domain_boundary_mode,
+            ) {
                 // Poly was completely outside domain, or was truncated to less than
                 // 3 vertices due to vertices being too close together
                 dfngen.pstats.rejection_reasons.outside += 1;

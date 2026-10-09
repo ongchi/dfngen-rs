@@ -6,7 +6,7 @@ use std::{
 use parry3d_f64::na::{center, distance, Point3, Vector3};
 use tracing::info;
 
-use crate::fracture::poly::Poly;
+use crate::fracture::poly::{DomainBoundaryMode, Poly};
 use crate::io::input::Input;
 use crate::io::vtk::{write_fractures_vtk, write_rejected_fractures_vtk};
 use crate::structures::{IntersectionPoints, RejectedFracture, Stats};
@@ -53,7 +53,7 @@ pub fn write_output(
     let mut vtk_file = create_file(format!("{}/fractures.vtp", output))?;
     let boundary_face_counts: Vec<usize> = accepted_poly
         .iter()
-        .map(|poly| find_boundary_face_lines(poly, &input.domain_size, input.eps).len())
+        .map(|poly| find_boundary_face_lines_for_mode(poly, input).len())
         .collect();
     write_fractures_vtk(
         final_fractures,
@@ -293,6 +293,19 @@ fn write_rejects_per_attempt(pstats: &Stats, output: &str) -> io::Result<()> {
 /// top / Z+ / 1, bottom / Z- / 2, left / X- / 3, front / Y+ / 4, right / X+ / 5, back / Y- / 6
 const BOUNDARY_FACE_IDS: [(usize, isize, isize); 3] = [(0, -5, -3), (1, -4, -6), (2, -1, -2)];
 
+/// Finds the lines where a fracture meets the domain boundary faces, if the
+/// fractures are truncated
+///
+/// A whole fracture has no edge on a domain face, thus it has no such line.
+fn find_boundary_face_lines_for_mode(poly: &Poly, input: &Input) -> Vec<(isize, usize, usize)> {
+    match input.domain_boundary_mode {
+        DomainBoundaryMode::Truncate => {
+            find_boundary_face_lines(poly, &input.domain_size, input.eps)
+        }
+        DomainBoundaryMode::KeepWhole => Vec::new(),
+    }
+}
+
 /// Finds the lines where a fracture meets the domain boundary faces
 ///
 /// There is at most one line for each face: between the first vertex found
@@ -395,7 +408,7 @@ fn write_intersection_list(
             }
         }
 
-        for (face_id, k, kk) in find_boundary_face_lines(poly, &input.domain_size, input.eps) {
+        for (face_id, k, kk) in find_boundary_face_lines_for_mode(poly, input) {
             write_mid_point(
                 &mut int_file,
                 fracture_id as isize,
@@ -462,5 +475,21 @@ mod tests {
         let lines = find_boundary_face_lines(&rectangle, &Vector3::new(2., 10., 10.), EPS);
 
         assert_eq!(lines, [(-5, 0, 3), (-3, 1, 2)]);
+    }
+
+    #[test]
+    fn test_whole_fracture_across_a_face_gives_no_boundary_face_line() {
+        // The rectangle has x = 1 at vertices 0 and 3, and x = -1 at vertices 1 and 2
+        let rectangle = Poly::new(4, std::f64::consts::SQRT_2, 2.);
+        let input = Input {
+            domain_size: Vector3::new(1., 10., 10.),
+            eps: EPS,
+            domain_boundary_mode: DomainBoundaryMode::KeepWhole,
+            ..Default::default()
+        };
+
+        let lines = find_boundary_face_lines_for_mode(&rectangle, &input);
+
+        assert!(lines.is_empty());
     }
 }

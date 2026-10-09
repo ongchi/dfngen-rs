@@ -130,6 +130,7 @@ def convert_general_options(dat: DatFile) -> list[str]:
         "[domain]",
         f"size = {numbers(dat.list('domainSize'))}",
         f"size_increase = {numbers(dat.list('domainSizeIncrease'))}",
+        "truncate_fractures = true",
     ]
 
     layer_count = int(dat.word("numOfLayers"))

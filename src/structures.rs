@@ -11,7 +11,7 @@ use crate::cg::intersection_checking;
 use crate::distribution::{LogNormalSampling, TruncExp, TruncLogNormal, TruncPowerLaw};
 use crate::error::DfngenError;
 use crate::fracture::insert_shape::print_reject_reason;
-use crate::fracture::poly::Poly;
+use crate::fracture::poly::{DomainBoundaryMode, Poly};
 
 /// A fracture which was not accepted, with the FRAM reject code of its last attempt.
 pub struct RejectedFracture {
@@ -378,7 +378,12 @@ impl DFNGen {
     }
 
     pub fn insert_poly(&mut self, mut new_poly: Poly, poly_id: usize, opts: &PolyOptions) {
-        if new_poly.domain_truncation(opts.h, opts.eps, &opts.domain_size) {
+        if new_poly.domain_truncation(
+            opts.h,
+            opts.eps,
+            &opts.domain_size,
+            opts.domain_boundary_mode,
+        ) {
             // Poly completely outside domain
             self.pstats.rejection_reasons.outside += 1;
             self.pstats.rejected_poly_count += 1;
@@ -519,6 +524,7 @@ pub struct PolyOptions {
     pub h: f64,
     pub eps: f64,
     pub domain_size: Vector3<f64>,
+    pub domain_boundary_mode: DomainBoundaryMode,
     pub r_fram: bool,
     pub disable_fram: bool,
     pub triple_intersections: bool,
@@ -570,6 +576,7 @@ mod tests {
             h: 0.1,
             eps: 1e-9,
             domain_size: Vector3::new(10., 10., 10.),
+            domain_boundary_mode: DomainBoundaryMode::Truncate,
             r_fram: false,
             disable_fram: false,
             triple_intersections: false,

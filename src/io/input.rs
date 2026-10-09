@@ -8,6 +8,7 @@ use crate::error::DfngenError;
 use crate::fracture::fracture_family::{
     FractureFamily, FractureFamilyBuilder, FractureFamilyCollection,
 };
+use crate::fracture::poly::DomainBoundaryMode;
 use crate::fracture::user_defined_fractures::{FractureDef, FractureNodesDef, UserFracture};
 use crate::structures::RadiusDistribution;
 
@@ -32,6 +33,9 @@ pub struct Input {
 
     /// Domain size with dimension x*y*z for DFN, centered at the origin.
     pub domain_size: Vector3<f64>,
+
+    /// What to do with the part of a fracture which is outside the domain.
+    pub domain_boundary_mode: DomainBoundaryMode,
 
     /// Minimum feature size, FRAM parameter.
     pub h: f64,
@@ -168,6 +172,8 @@ struct DomainSection {
     /// Increase of the domain size for the insertion of fracture centers.
     /// Each side moves out by half of the value. Fractures are truncated to `size`.
     size_increase: [f64; 3],
+    /// True: cut each fracture at the domain boundary. False: keep it whole.
+    truncate_fractures: bool,
     /// {-z, +z} of each layer
     #[serde(default)]
     layers: Vec<[f64; 2]>,
@@ -392,6 +398,11 @@ fn parse_input(text: &str) -> Result<(Input, FractureFamilyCollection), DfngenEr
         stop_condition,
         n_poly,
         domain_size,
+        domain_boundary_mode: if file.domain.truncate_fractures {
+            DomainBoundaryMode::Truncate
+        } else {
+            DomainBoundaryMode::KeepWhole
+        },
         h: file.h,
         eps,
         radii_list_increase: file.generation.radii_list_increase,
@@ -636,6 +647,7 @@ mod tests {
         [domain]
         size = [10.0, 10.0, 10.0]
         size_increase = [1.0, 1.0, 1.0]
+        truncate_fractures = true
 
         [generation]
         stop_condition = "n_poly"
@@ -797,6 +809,36 @@ mod tests {
             RadiusFunction::LogNormal { sampling, .. } => sampling,
             _ => panic!("the family must have a log-normal radius"),
         }
+    }
+
+    #[test]
+    fn test_truncate_fractures_true_gives_the_truncate_mode() {
+        let (input, _) = parse(&[GENERAL_OPTIONS]).unwrap();
+
+        assert_eq!(input.domain_boundary_mode, DomainBoundaryMode::Truncate);
+    }
+
+    #[test]
+    fn test_truncate_fractures_false_gives_the_keep_whole_mode() {
+        let options =
+            GENERAL_OPTIONS.replace("truncate_fractures = true", "truncate_fractures = false");
+
+        let (input, _) = parse(&[&options]).unwrap();
+
+        assert_eq!(input.domain_boundary_mode, DomainBoundaryMode::KeepWhole);
+    }
+
+    #[test]
+    fn test_input_without_truncate_fractures_is_rejected() {
+        let options = GENERAL_OPTIONS.replace("truncate_fractures = true", "");
+
+        let message = error_message(parse(&[&options]));
+
+        assert!(
+            message.contains("missing field `truncate_fractures`"),
+            "{}",
+            message
+        );
     }
 
     #[test]

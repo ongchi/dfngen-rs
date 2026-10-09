@@ -1,5 +1,7 @@
 mod domain_truncation;
 
+pub use domain_truncation::DomainBoundaryMode;
+
 use parry3d_f64::bounding_volume::Aabb;
 use parry3d_f64::na::{center, Point3, Rotation3, Vector3};
 use parry3d_f64::shape::Triangle;

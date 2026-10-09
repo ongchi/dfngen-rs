@@ -4,6 +4,7 @@ h = 0.1
 [domain]
 size = [25.0, 25.0, 25.0]
 size_increase = [0.5, 0.5, 0.5]
+truncate_fractures = true
 
 [generation]
 stop_condition = "p32"

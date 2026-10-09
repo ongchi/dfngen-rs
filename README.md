@@ -20,6 +20,7 @@ h = 0.1                            # minimum feature size (FRAM)
 [domain]
 size = [10.0, 10.0, 10.0]          # x, y, z; the domain center is the origin
 size_increase = [1.0, 1.0, 1.0]    # larger volume for the fracture centers
+truncate_fractures = true          # false = keep each fracture whole (see below)
 layers = [[-5.0, 0.0], [0.0, 5.0]]             # optional; -z, +z of each layer
 regions = [[-3.0, 3.0, -3.0, 3.0, -3.0, 3.0]]  # optional; -x, +x, -y, +y, -z, +z
 polygon_boundary = [[-4.0, -4.0], [4.0, -4.0], [0.0, 4.0]]  # optional; x, y of each vertex
@@ -87,6 +88,18 @@ is fast when `[min, max]` contains most of the distribution, and it stops with a
 error after 1000 rejected values. `"inverse_cdf"` uses one random number for each
 radius, also when `[min, max]` is in a tail of the distribution. The two methods
 give different networks for the same seed.
+
+`domain.truncate_fractures = false` keeps each fracture whole. Then:
+
+- A fracture can have vertices outside the domain. A fracture with no part in
+  the domain is rejected, as with truncation.
+- A fracture which crosses a domain face is connected to that face for
+  `clusters.boundary_faces`.
+- FRAM also checks the intersections outside the domain, and they are written.
+- The area and the P32 values include the part outside the domain. Thus a `p32`
+  run stops with a lower intensity in the domain than `p32_target`.
+- `truncated` and `boundary_face_count` are 0, and `intersection_list.dat` has no
+  line between a fracture and a domain face.
 
 Orientation of a family: `theta` and `phi`, or `trend` and `plunge`, or `dip`
 and `strike`, each with `kappa` (Fisher distribution).

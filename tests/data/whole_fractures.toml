@@ -1,0 +1,58 @@
+seed = 1
+h = 0.1
+
+[domain]
+size = [10.0, 10.0, 10.0]
+size_increase = [1.0, 1.0, 1.0]
+truncate_fractures = false
+
+[generation]
+stop_condition = "n_poly"
+n_poly = 60
+radii_list_increase = 0.1
+rejects_per_fracture = 10
+force_large_fractures = false
+remove_fractures_less_than = 0.0
+
+[fram]
+disable = false
+relaxed = false
+triple_intersections = true
+
+[clusters]
+boundary_faces = [true, true, false, false, false, false]
+ignore_boundary_faces = false
+keep_only_largest = false
+keep_isolated_fractures = false
+
+[output]
+print_reject_reasons = false
+rejected_fractures = false
+
+[[family]]
+number_of_points = 8
+probability = 0.4
+aspect_ratio = 1.0
+layer = 0
+region = 0
+radius = { distribution = "truncated_power_law", alpha = 2.5, min = 1.0, max = 5.0 }
+orientation = { theta = 0.0, phi = 0.0, kappa = 8.0 }
+
+[[family]]
+number_of_points = 12
+probability = 0.3
+aspect_ratio = 2.0
+layer = 0
+region = 0
+beta = 30.0
+radius = { distribution = "constant", value = 2.0 }
+orientation = { theta = 45.0, phi = 15.0, kappa = 20.0 }
+
+[[family]]
+number_of_points = 4
+probability = 0.3
+aspect_ratio = 1.5
+layer = 0
+region = 0
+radius = { distribution = "log_normal", log_mean = 0.8465735902799727, sd = 0.4, min = 1.4142135623730951, max = 5.656854249492381 }
+orientation = { theta = 70.0, phi = 60.0, kappa = 10.0 }
