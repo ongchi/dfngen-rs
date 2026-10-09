@@ -19,6 +19,30 @@ pub fn is_parallel(v1: &Vector3<f64>, v2: &Vector3<f64>, eps: f64) -> bool {
     1. - eps < dot_prod && dot_prod < 1. + eps
 }
 
+/// Upward-pointing normal vector of a plane given by the trend and plunge of its pole.
+///
+/// Angles are in radians. Trend is clockwise from North (+y), plunge is positive downward.
+/// x is East, y is North, z is up.
+pub fn normal_from_trend_plunge(trend: f64, plunge: f64) -> Vector3<f64> {
+    Vector3::new(
+        -trend.sin() * plunge.cos(),
+        -trend.cos() * plunge.cos(),
+        plunge.sin(),
+    )
+}
+
+/// Normal vector of a plane given by its dip and strike (right-hand rule).
+///
+/// Angles are in radians. Strike is clockwise from North (+y).
+/// x is East, y is North, z is up.
+pub fn normal_from_dip_strike(dip: f64, strike: f64) -> Vector3<f64> {
+    Vector3::new(
+        dip.sin() * strike.cos(),
+        -dip.sin() * strike.sin(),
+        dip.cos(),
+    )
+}
+
 /// Rotation which turns the unit vector `from` to the unit vector `to`.
 pub fn rotation_between(from: &Vector3<f64>, to: &Vector3<f64>) -> Rotation3<f64> {
     Rotation3::rotation_between(from, to).unwrap_or_else(|| {
@@ -1062,4 +1086,55 @@ fn check_for_triple_intersections(
     }
 
     0
+}
+
+#[cfg(test)]
+mod tests {
+    use std::f64::consts::FRAC_PI_2;
+
+    use super::*;
+
+    fn assert_vector_eq(actual: Vector3<f64>, expected: [f64; 3]) {
+        assert!(
+            (actual - Vector3::from(expected)).magnitude() < 1e-12,
+            "expected {expected:?}, found {:?}",
+            actual.as_slice()
+        );
+    }
+
+    #[test]
+    fn test_vertical_plunge_gives_upward_normal() {
+        assert_vector_eq(normal_from_trend_plunge(0.3, FRAC_PI_2), [0., 0., 1.]);
+    }
+
+    #[test]
+    fn test_horizontal_pole_with_trend_north_gives_normal_to_south() {
+        assert_vector_eq(normal_from_trend_plunge(0., 0.), [0., -1., 0.]);
+    }
+
+    #[test]
+    fn test_horizontal_pole_with_trend_east_gives_normal_to_west() {
+        assert_vector_eq(normal_from_trend_plunge(FRAC_PI_2, 0.), [-1., 0., 0.]);
+    }
+
+    #[test]
+    fn test_zero_dip_gives_upward_normal() {
+        assert_vector_eq(normal_from_dip_strike(0., 1.1), [0., 0., 1.]);
+    }
+
+    #[test]
+    fn test_vertical_plane_with_strike_north_gives_normal_to_east() {
+        assert_vector_eq(normal_from_dip_strike(FRAC_PI_2, 0.), [1., 0., 0.]);
+    }
+
+    #[test]
+    fn test_vertical_plane_with_strike_east_gives_normal_to_south() {
+        assert_vector_eq(normal_from_dip_strike(FRAC_PI_2, FRAC_PI_2), [0., -1., 0.]);
+    }
+
+    #[test]
+    fn test_normals_from_angles_have_unit_length() {
+        assert!((normal_from_trend_plunge(0.7, 0.4).magnitude() - 1.).abs() < 1e-12);
+        assert!((normal_from_dip_strike(0.7, 0.4).magnitude() - 1.).abs() < 1e-12);
+    }
 }

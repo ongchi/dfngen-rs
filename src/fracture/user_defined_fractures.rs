@@ -5,6 +5,7 @@ use itertools::zip_eq;
 use parry3d_f64::na::{center, distance, Point3, Vector3};
 use text_io::read;
 
+use crate::cg::{normal_from_dip_strike, normal_from_trend_plunge};
 use crate::error::DfngenError;
 use crate::io::{
     input::ExternalFractureFiles,
@@ -317,11 +318,7 @@ impl FractureDef {
             for [trend, plunge] in &trend_plunge {
                 let trend = trend * angle_convertion_factor;
                 let plunge = plunge * angle_convertion_factor;
-                normal.push([
-                    trend.cos() * plunge.cos(),
-                    trend.sin() * plunge.cos(),
-                    plunge.sin(),
-                ]);
+                normal.push(normal_from_trend_plunge(trend, plunge).into());
             }
         } else if orientation_option == 2 {
             frac_reader.read_value("Dip_Strike:", &mut dip_strike);
@@ -330,11 +327,7 @@ impl FractureDef {
             for [dip, strike] in &dip_strike {
                 let dip = dip * angle_convertion_factor;
                 let strike = strike * angle_convertion_factor;
-                normal.push([
-                    dip.sin() * strike.sin(),
-                    -dip.sin() * strike.cos(),
-                    dip.cos(),
-                ]);
+                normal.push(normal_from_dip_strike(dip, strike).into());
             }
         }
 

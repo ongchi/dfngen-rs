@@ -3,7 +3,7 @@ use std::fmt::{Display, Formatter};
 use parry3d_f64::na::{Rotation3, Vector3};
 use rand::distr::{Distribution, Uniform};
 
-use crate::cg::rotation_between;
+use crate::cg::{normal_from_dip_strike, normal_from_trend_plunge, rotation_between};
 
 #[derive(Debug)]
 enum AngleOption {
@@ -55,11 +55,7 @@ impl Fisher {
 
     pub fn new_with_trend_plunge(trend: f64, plunge: f64, kappa: f64, eps: f64) -> Self {
         Self::new_with_orientation(
-            Vector3::new(
-                trend.cos() * plunge.cos(),
-                trend.sin() * plunge.cos(),
-                plunge.cos(),
-            ),
+            normal_from_trend_plunge(trend, plunge),
             kappa,
             eps,
             AngleOption::TrendPlunge(trend, plunge),
@@ -68,11 +64,7 @@ impl Fisher {
 
     pub fn new_with_dip_strike(dip: f64, strike: f64, kappa: f64, eps: f64) -> Self {
         Self::new_with_orientation(
-            Vector3::new(
-                dip.sin() * strike.sin(),
-                -dip.sin() * strike.cos(),
-                dip.cos(),
-            ),
+            normal_from_dip_strike(dip, strike),
             kappa,
             eps,
             AngleOption::DipStrike(dip, strike),
