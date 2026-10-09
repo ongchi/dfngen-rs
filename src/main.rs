@@ -1,6 +1,6 @@
 use std::cell::RefCell;
 use std::fs::File;
-use std::io::Write;
+use std::io::{BufWriter, Write};
 use std::rc::Rc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -365,8 +365,10 @@ fn insert_stochastic_fractures(
     let uniform_dist = Uniform::new(0., 1.)?;
 
     let mut radii_all = if input.outputAllRadii {
-        let mut file = File::open(format!("{}/radii/radii_All.dat", output_folder))?;
-        let _ = file.write_all("Format: xRadius yRadius Family# (-1 = userRectangle, 0 = userEllipse, > 0 is family in order of famProb)\n".as_bytes());
+        let radii_folder = format!("{}/dfnGen_output/radii", output_folder);
+        std::fs::create_dir_all(&radii_folder)?;
+        let mut file = BufWriter::new(File::create(format!("{}/radii_All.dat", radii_folder))?);
+        writeln!(file, "Format: xRadius yRadius Family# (-1 = userRectangle, 0 = userEllipse, > 0 is family in order of famProb)")?;
         Some(file)
     } else {
         None
@@ -405,13 +407,13 @@ fn insert_stochastic_fractures(
         );
 
         if let Some(file) = radii_all.as_mut() {
-            let _ = writeln!(
+            writeln!(
                 file,
                 "{:.8} {:.8} {:.8}",
                 new_poly.xradius,
                 new_poly.yradius,
                 new_poly.family_num + 1
-            );
+            )?;
         }
 
         let mut reject_counter = 0;
@@ -520,6 +522,10 @@ fn insert_stochastic_fractures(
     // Remove last element off the rejects per attempt counter.
     // It will have one extra item due to how each element is initialized.
     dfngen.pstats.rejects_per_attempt.pop();
+
+    if let Some(mut file) = radii_all {
+        file.flush()?;
+    }
 
     Ok(())
 }

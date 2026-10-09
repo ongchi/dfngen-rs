@@ -63,6 +63,9 @@ pub fn write_output(
     std::fs::create_dir_all(&poly_folder)?;
 
     let radii_folder = format!("{}/radii/", output);
+    if input.outputAcceptedRadiiPerFamily || input.outputFinalRadiiPerFamily {
+        std::fs::create_dir_all(&radii_folder)?;
+    }
 
     adjust_int_fract_ids(final_fractures, accepted_poly, int_pts);
     write_graph_data(input, final_fractures, accepted_poly, int_pts, &output)?;
@@ -873,14 +876,14 @@ fn write_user_rejected_fracture_information(pstats: &Stats, output: &str) -> io:
     }
 
     info!("Writing User Fracture Rejection File (userFractureRejections.dat)");
-    let mut file = File::open(format!("{}/userFractureRejections.dat", output))?;
+    let mut file = create_file(format!("{}/userFractureRejections.dat", output))?;
     writeln!(file, "Fracture id,User Fracture Type")?;
 
     for rejected in &pstats.rejected_user_fracture {
         writeln!(file, "{},{}", rejected.id, rejected.user_fracture_type)?;
     }
 
-    Ok(())
+    file.flush()
 }
 
 /// Writes families.dat, Shape families definition file
