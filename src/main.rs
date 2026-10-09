@@ -22,6 +22,7 @@ use crate::io::output::write_output;
 use crate::math_functions::{
     cumsum, index_from_prob, index_from_prob_and_p32_status, remove_family_probability,
 };
+use crate::progress::{GenerationProgress, LogWriter};
 use crate::structures::{DFNGen, PolyOptions, RadiusFunction, RejectedFracture, Stats};
 
 mod cg;
@@ -30,6 +31,7 @@ mod error;
 mod fracture;
 mod io;
 mod math_functions;
+mod progress;
 mod structures;
 
 #[derive(Parser)]
@@ -252,7 +254,7 @@ fn init_tracing() {
         .with(
             tracing_subscriber::fmt::layer()
                 .compact()
-                .with_writer(std::io::stdout),
+                .with_writer(|| LogWriter),
         )
         .init();
 }
@@ -354,6 +356,8 @@ fn insert_stochastic_fractures(
     // Once all elements have values all set to true, all families have had their
     // P32 requirement
     let mut p32_status = vec![false; total_families];
+
+    let progress = GenerationProgress::new(input.stop_condition, input.n_poly);
 
     while (input.stop_condition == StopCondition::NPoly
         && dfngen.pstats.accepted_poly_count < input.n_poly)
@@ -458,9 +462,7 @@ fn insert_stochastic_fractures(
                     }
                 }
 
-                if dfngen.pstats.accepted_poly_count.is_multiple_of(200) {
-                    log_insertion_progress(input, &frac_fam_col.families, &dfngen.pstats);
-                }
+                progress.update(dfngen.pstats.accepted_poly_count, &frac_fam_col.families);
 
                 // Intersections and triple points are saved within intersection_checking()
                 dfngen.accepted_poly.push(new_poly);
@@ -510,28 +512,6 @@ fn insert_stochastic_fractures(
     dfngen.pstats.rejects_per_attempt.pop();
 
     Ok(())
-}
-
-fn log_insertion_progress(input: &Input, families: &[FractureFamily], pstats: &Stats) {
-    info!("Accepted {} fractures", pstats.accepted_poly_count);
-    info!("Rejected {} fractures", pstats.rejected_poly_count);
-    info!("Re-translated {} fractures", pstats.retranslated_poly_count);
-    info!("Current p32 values per family:");
-
-    for shape in families {
-        if input.stop_condition == StopCondition::NPoly {
-            info!("Family {} Current P32 = {:.8}", shape.id, shape.current_p32);
-        } else {
-            info!(
-                "Family {} target P32 = {:.8}, Current P32 = {}",
-                shape.id, shape.p32_target, shape.current_p32
-            );
-        }
-
-        if input.stop_condition == StopCondition::P32 && shape.p32_target <= shape.current_p32 {
-            info!("...Done");
-        }
-    }
 }
 
 /// Fracture area (one side) summed over a set of fractures.

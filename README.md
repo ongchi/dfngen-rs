@@ -142,6 +142,18 @@ The log of the run goes to the console (stdout), not to a file. The level is
 `info`. Set the environment variable `RUST_LOG` to change it, for example
 `RUST_LOG=warn`.
 
+During the insertion of the stochastic fractures, a progress bar is shown on
+stderr, if stderr is a terminal:
+
+```
+[00:00:12] [################>-----------------------]  42 %  25/60 fractures  ETA 00:00:17
+```
+
+With `stop_condition = "p32"`, the percent is the part of the total target P32
+which the families have, and the bar shows the number of accepted fractures
+without a total. The large fractures are inserted first, thus the remaining time
+of such a run is approximate.
+
 | File | Content |
 |---|---|
 | `fractures.vtp` | The final fractures as polygons with their properties (VTK PolyData, for ParaView or PyVista). See below. |
