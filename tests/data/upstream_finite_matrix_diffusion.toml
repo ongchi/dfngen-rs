@@ -1,109 +1,66 @@
-stopCondition: 1 
-nPoly: {}
-domainSize: {1000.0,1000.0,1000.0}
-domainSizeIncrease: {100.0,100.0,100.0}
-domainCenter: {0,0,0}
-polygonBoundaryFlag: 0 
-polygonBoundaryFile: {}
-boundaryFaces: {1,1,0,0,0,0}
-insertUserRectanglesFirst: 1 
-keepOnlyLargestCluster: 1 
-keepIsolatedFractures: 0 
-ignoreBoundaryFaces: 0 
-numOfLayers: 0 
-layers: {}
-layerConformingFractures: 1 
-numOfRegions: 0 
-regions: {}
-h: 1.0 
-seed: 101 
-tripleIntersections: 0 
-forceLargeFractures: 0 
-orientationOption: 1 
-orientation_distribution: {}
-disableFram: 0 
-framOn: 1 
-rFram: 0 
-disableShorteningIntersections: 0 
-radiiListIncrease: 0.1 
-removeFracturesLessThan: 0 
-rejectsPerFracture: 10 
-printRejectReasons: 0 
-outputAllRadii: 0 
-outputFinalRadiiPerFamily: 0 
-visualizationMode: 1 
-outputAcceptedRadiiPerFamily: 0 
-ecpmOutput: 0 
-famProb: {0.18173431734317344,0.14760147601476015,0.6706642066420664}
-nFracFam: 3 
-nFamEll: 3 
-angleOption: 1 
-eLayer: {0,0,0}
-eRegion: {0,0,0}
-edistr: {2,2,2}
-ebetaDistribution: {0,0,0}
-eorientation_distribution: {0,0,0}
-ebeta: {0,0,0}
-e_p32Targets: {0.00591,0.0048,0.02181}
-easpect: {1,1,1}
-enumPoints: {8,8,8}
-etheta: {}
-ephi: {}
-etrend: {90.0,180.0,360.0}
-eplunge: {0.0,0.0,90.0}
-edip: {}
-estrike: {}
-ekappa: {22.0,22.0,10.0}
-ekappa1: {0.0,0.0,0.0}
-ekappa2: {0.0,0.0,0.0}
-eLogMean: {}
-esd: {}
-eLogMin: {}
-eLogMax: {}
-ealpha: {2.5,2.7,2.4}
-emin: {15.0,15.0,15.0}
-emax: {500.0,500.0,500.0}
-eExpMean: {}
-eExpMin: {}
-eExpMax: {}
-econst: {}
-nFamRect: 0 
-rLayer: {}
-rRegion: {}
-rdistr: {}
-rbetaDistribution: {}
-rorientation_distribution: {}
-rbeta: {}
-r_p32Targets: {}
-raspect: {}
-rtheta: {}
-rphi: {}
-rtrend: {}
-rplunge: {}
-rdip: {}
-rstrike: {}
-rOrienationDistribution: {}
-rkappa: {}
-rkappa1: {}
-rkappa2: {}
-rLogMean: {}
-rsd: {}
-rLogMin: {}
-rLogMax: {}
-ralpha: {}
-rmin: {}
-rmax: {}
-rExpMean: {}
-rExpMin: {}
-rExpMax: {}
-rconst: {}
-userRectanglesOnOff: 0 
-UserRect_Input_File_Path: {}
-userRecByCoord: 0 
-RectByCoord_Input_File_Path: {}
-userEllByCoord: 0 
-EllByCoord_Input_File_Path: {}
-userEllipsesOnOff: 0 
-UserEll_Input_File_Path: {}
-userPolygonByCoord: 0 
-PolygonByCoord_Input_File_Path: {}
+seed = 101
+h = 1.0
+angle_unit = "degree"
+
+[domain]
+size = [1000.0, 1000.0, 1000.0]
+size_increase = [100.0, 100.0, 100.0]
+
+[generation]
+stop_condition = "p32"
+radii_list_increase = 0.1
+rejects_per_fracture = 10
+force_large_fractures = false
+remove_fractures_less_than = 0.0
+insert_user_rectangles_first = true
+
+[fram]
+disable = false
+relaxed = false
+triple_intersections = false
+visualization_mode = true
+
+[clusters]
+boundary_faces = [true, true, false, false, false, false]
+ignore_boundary_faces = false
+keep_only_largest = true
+keep_isolated_fractures = false
+
+[output]
+print_reject_reasons = false
+all_radii = false
+final_radii_per_family = false
+accepted_radii_per_family = false
+
+[[family]]
+shape = "ellipse"
+number_of_points = 8
+probability = 0.18173431734317344
+aspect_ratio = 1.0
+layer = 0
+region = 0
+p32_target = 0.00591
+radius = { distribution = "truncated_power_law", alpha = 2.5, min = 15.0, max = 500.0 }
+orientation = { trend = 90.0, plunge = 0.0, kappa = 22.0 }
+
+[[family]]
+shape = "ellipse"
+number_of_points = 8
+probability = 0.14760147601476015
+aspect_ratio = 1.0
+layer = 0
+region = 0
+p32_target = 0.0048
+radius = { distribution = "truncated_power_law", alpha = 2.7, min = 15.0, max = 500.0 }
+orientation = { trend = 180.0, plunge = 0.0, kappa = 22.0 }
+
+[[family]]
+shape = "ellipse"
+number_of_points = 8
+probability = 0.6706642066420664
+aspect_ratio = 1.0
+layer = 0
+region = 0
+p32_target = 0.02181
+radius = { distribution = "truncated_power_law", alpha = 2.4, min = 15.0, max = 500.0 }
+orientation = { trend = 360.0, plunge = 90.0, kappa = 10.0 }

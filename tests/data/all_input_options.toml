@@ -1,0 +1,113 @@
+seed = 12345
+h = 0.1
+angle_unit = "degree"
+
+[domain]
+size = [10.0, 10.0, 10.0]
+size_increase = [1.0, 1.0, 1.0]
+layers = [[-5.0, 0.0], [0.0, 5.0]]
+regions = [[-3.0, 3.0, -3.0, 3.0, -3.0, 3.0]]
+polygon_boundary = [[-4.5, -4.5], [4.5, -4.5], [4.5, 4.5], [-4.5, 4.5]]
+
+[generation]
+stop_condition = "n_poly"
+n_poly = 60
+radii_list_increase = 0.1
+rejects_per_fracture = 10
+force_large_fractures = false
+remove_fractures_less_than = 0.0
+insert_user_rectangles_first = false
+
+[fram]
+disable = false
+relaxed = false
+triple_intersections = true
+visualization_mode = false
+
+[clusters]
+boundary_faces = [true, true, false, false, false, false]
+ignore_boundary_faces = true
+keep_only_largest = false
+keep_isolated_fractures = false
+
+[output]
+print_reject_reasons = false
+all_radii = true
+final_radii_per_family = true
+accepted_radii_per_family = true
+
+[[family]]
+shape = "ellipse"
+number_of_points = 8
+probability = 0.4
+aspect_ratio = 1.0
+layer = 1
+region = 0
+radius = { distribution = "exponential", mean = 2.0, min = 1.0, max = 5.0 }
+orientation = { dip = 30.0, strike = 10.0, kappa = 8.0 }
+
+[[family]]
+shape = "ellipse"
+number_of_points = 12
+probability = 0.3
+aspect_ratio = 2.0
+layer = 0
+region = 1
+beta = 25.0
+radius = { distribution = "constant", value = 2.0 }
+orientation = { dip = 60.0, strike = 200.0, kappa = 20.0 }
+
+[[family]]
+shape = "rectangle"
+probability = 0.3
+aspect_ratio = 1.5
+layer = 0
+region = 0
+radius = { distribution = "log_normal", log_mean = 0.5, sd = 0.4, min = 1.0, max = 4.0 }
+orientation = { dip = 45.0, strike = 90.0, kappa = 10.0 }
+
+[[user_fracture]]
+shape = "rectangle"
+angle_unit = "radian"
+radius = 3.0
+aspect_ratio = 1.0
+beta = 0.3
+translation = [0.0, 0.0, 0.0]
+dip_strike = [0.7, 1.9]
+
+[[user_fracture]]
+shape = "rectangle"
+angle_unit = "radian"
+radius = 2.0
+aspect_ratio = 1.5
+beta = 0.0
+translation = [2.0, -1.0, 1.0]
+dip_strike = [1.2, 0.4]
+
+[[user_fracture]]
+shape = "ellipse"
+number_of_points = 8
+radius = 2.0
+aspect_ratio = 1.0
+beta = 0.0
+translation = [1.0, 1.0, -2.0]
+trend_plunge = [120.0, 35.0]
+
+[[user_fracture]]
+shape = "ellipse"
+number_of_points = 12
+radius = 1.5
+aspect_ratio = 2.0
+beta = 30.0
+translation = [-2.0, 0.0, 2.0]
+trend_plunge = [10.0, 80.0]
+
+[[user_fracture]]
+shape = "polygon"
+vertices = [
+    [-3.0, -2.0, -3.0],
+    [3.0, -2.0, -3.0],
+    [3.5, -2.0, 0.0],
+    [0.0, -2.0, 3.0],
+    [-3.5, -2.0, 0.0],
+]

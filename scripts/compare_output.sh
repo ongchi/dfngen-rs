@@ -28,12 +28,11 @@ check) output_dir="$(mktemp -d)" ;;
 esac
 mkdir -p "$output_dir"
 
-# Inputs refer to auxiliary files by relative path, so run from tests/data.
 cd "$repo_root/tests/data"
 
 status=0
-for input_file in *.dat; do
-    case_name="${input_file%.dat}"
+for input_file in *.toml; do
+    case_name="${input_file%.toml}"
     rm -rf "${output_dir:?}/$case_name"
     # Keep the console log too, without the leading timestamp of each line
     # and without the run-specific output path.

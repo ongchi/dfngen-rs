@@ -1,100 +1,65 @@
-stopCondition: 0
-nPoly: 60
-domainSize: {10.0,10.0,10.0}
-domainSizeIncrease: {1,1,1}
-domainCenter: {0,0,0}
-polygonBoundaryFlag: 0
-polygonBoundaryFile: {}
-boundaryFaces: {1,1,0,0,0,0}
-insertUserRectanglesFirst: 1
-keepOnlyLargestCluster: 0
-keepIsolatedFractures: 0
-ignoreBoundaryFaces: 1
-numOfLayers: 0
-layers: {}
-numOfRegions: 0
-regions: {}
-h: 0.1
-seed: 12345
-tripleIntersections: 1
-forceLargeFractures: 0
-orientationOption: 0
-disableFram: 0
-framOn: 1
-rFram: 0
-radiiListIncrease: 0.1
-removeFracturesLessThan: 0
-rejectsPerFracture: 10
-printRejectReasons: 0
-outputAllRadii: 0
-outputFinalRadiiPerFamily: 0
-visualizationMode: 0
-outputAcceptedRadiiPerFamily: 0
-ecpmOutput: 0
-famProb: {}
-nFracFam: 0
-nFamEll: 0
-angleOption: 0
-eLayer: {}
-eRegion: {}
-edistr: {}
-ebetaDistribution: {}
-ebeta: {}
-e_p32Targets: {}
-easpect: {}
-enumPoints: {}
-etheta: {}
-ephi: {}
-etrend: {}
-eplunge: {}
-edip: {}
-estrike: {}
-ekappa: {}
-eLogMean: {}
-esd: {}
-eLogMin: {}
-eLogMax: {}
-ealpha: {}
-emin: {}
-emax: {}
-eExpMean: {}
-eExpMin: {}
-eExpMax: {}
-econst: {}
-nFamRect: 0
-rLayer: {}
-rRegion: {}
-rdistr: {}
-rbetaDistribution: {}
-rbeta: {}
-r_p32Targets: {}
-raspect: {}
-rtheta: {}
-rphi: {}
-rtrend: {}
-rplunge: {}
-rdip: {}
-rstrike: {}
-rkappa: {}
-rLogMean: {}
-rsd: {}
-rLogMin: {}
-rLogMax: {}
-ralpha: {}
-rmin: {}
-rmax: {}
-rExpMean: {}
-rExpMin: {}
-rExpMax: {}
-rconst: {}
-userRectanglesOnOff: 0
-UserRect_Input_File_Path: {}
-userRecByCoord: 1
-RectByCoord_Input_File_Path: user_fractures/rectangles_by_coord.dat
-userEllByCoord: 1
-EllByCoord_Input_File_Path: user_fractures/ellipses_by_coord.dat
-userEllipsesOnOff: 0
-UserEll_Input_File_Path: {}
-userPolygonByCoord: 0
-PolygonByCoord_Input_File_Path: {}
-minimum_fracture_size: {}
+seed = 12345
+h = 0.1
+angle_unit = "radian"
+
+[domain]
+size = [10.0, 10.0, 10.0]
+size_increase = [1.0, 1.0, 1.0]
+
+[generation]
+stop_condition = "n_poly"
+n_poly = 60
+radii_list_increase = 0.1
+rejects_per_fracture = 10
+force_large_fractures = false
+remove_fractures_less_than = 0.0
+insert_user_rectangles_first = true
+
+[fram]
+disable = false
+relaxed = false
+triple_intersections = true
+visualization_mode = false
+
+[clusters]
+boundary_faces = [true, true, false, false, false, false]
+ignore_boundary_faces = true
+keep_only_largest = false
+keep_isolated_fractures = false
+
+[output]
+print_reject_reasons = false
+all_radii = false
+final_radii_per_family = false
+accepted_radii_per_family = false
+
+[[user_fracture]]
+shape = "rectangle"
+vertices = [
+    [-4.0, -4.0, 0.0],
+    [4.0, -4.0, 0.0],
+    [4.0, 4.0, 0.0],
+    [-4.0, 4.0, 0.0],
+]
+
+[[user_fracture]]
+shape = "rectangle"
+vertices = [
+    [0.0, -3.0, -3.0],
+    [0.0, 3.0, -3.0],
+    [0.0, 3.0, 3.0],
+    [0.0, -3.0, 3.0],
+]
+
+[[user_fracture]]
+shape = "ellipse"
+vertices = [
+    [2.5, 2.0, 1.0],
+    [2.5, 1.414213562, 2.414213562],
+    [2.5, 0.0, 3.0],
+    [2.5, -1.414213562, 2.414213562],
+    [2.5, -2.0, 1.0],
+    [2.5, -1.414213562, -0.414213562],
+    [2.5, 0.0, -1.0],
+    [2.5, 1.414213562, -0.414213562],
+]
