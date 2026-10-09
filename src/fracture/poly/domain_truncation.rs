@@ -1,4 +1,5 @@
 use parry3d_f64::na::{Point3, Vector3};
+use parry3d_f64::query::details::clip_halfspace_polygon;
 
 use crate::fracture::poly::Poly;
 
@@ -39,65 +40,41 @@ impl Poly {
 
         // Outward normal of each side of the domain, and the center point of the side
         let domain_sides = [
-            (
-                Vector3::new(0., 0., 1.),
-                Vector3::new(0., 0., half_domain.z),
-            ),
+            (Vector3::new(0., 0., 1.), Point3::new(0., 0., half_domain.z)),
             (
                 Vector3::new(0., 0., -1.),
-                Vector3::new(0., 0., -half_domain.z),
+                Point3::new(0., 0., -half_domain.z),
             ),
-            (
-                Vector3::new(0., 1., 0.),
-                Vector3::new(0., half_domain.y, 0.),
-            ),
+            (Vector3::new(0., 1., 0.), Point3::new(0., half_domain.y, 0.)),
             (
                 Vector3::new(0., -1., 0.),
-                Vector3::new(0., -half_domain.y, 0.),
+                Point3::new(0., -half_domain.y, 0.),
             ),
-            (
-                Vector3::new(1., 0., 0.),
-                Vector3::new(half_domain.x, 0., 0.),
-            ),
+            (Vector3::new(1., 0., 0.), Point3::new(half_domain.x, 0., 0.)),
             (
                 Vector3::new(-1., 0., 0.),
-                Vector3::new(-half_domain.x, 0., 0.),
+                Point3::new(-half_domain.x, 0., 0.),
             ),
         ];
 
         // Cut the polygon with each side of the domain
+        let mut clipped = Vec::with_capacity(self.vertices.len() + 6);
+
         for (side_normal, side_center) in domain_sides {
             let Some(last) = self.vertices.last() else {
                 return true; // Reject
             };
+            let is_last_inside = (last - side_center).dot(&side_normal) <= 0.;
 
-            let mut points = Vec::with_capacity(self.vertices.len() + 1);
-            // Signed distance from the domain side to the previous vertex,
-            // negative towards the inside of the domain
-            let mut prevdist = (last.coords - side_center).dot(&side_normal);
-            let mut previous = last;
+            clip_halfspace_polygon(&side_center, &side_normal, &self.vertices, &mut clipped);
 
-            for vertex in &self.vertices {
-                let currdist = (vertex.coords - side_center).dot(&side_normal);
-
-                if currdist * prevdist < 0. {
-                    // The edge crosses the domain side, save the point on the side
-                    points.push(
-                        previous
-                            + (vertex - previous) * prevdist.abs()
-                                / (currdist.abs() + prevdist.abs()),
-                    );
-                }
-
-                if currdist <= 0. {
-                    points.push(*vertex);
-                }
-
-                prevdist = currdist;
-                previous = vertex;
+            if is_last_inside {
+                // The result starts with the last vertex. Put it back at the end,
+                // so that the first vertex of the polygon stays the first one.
+                clipped.rotate_left(1);
             }
 
-            self.vertices = points;
+            std::mem::swap(&mut self.vertices, &mut clipped);
         }
 
         // Remove a vertex of each edge which is shorter than 2h
