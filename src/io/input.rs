@@ -313,12 +313,11 @@ pub fn read_input(input_file: &str) -> (Input, FractureFamilyCollection) {
     input_var!(removeFracturesLessThan);
     input_var!(orientationOption);
 
-    if input_var.orientationOption == 0 {
-        info!("Expecting Theta and phi for orientations");
-    } else if input_var.orientationOption == 1 {
-        info!("Expecting Trend and Plunge for orientations");
-    } else if input_var.orientationOption == 2 {
-        info!("Expecting Dip and Strike (RHR) for orientations");
+    match input_var.orientationOption {
+        0 => info!("Expecting Theta and phi for orientations"),
+        1 => info!("Expecting Trend and Plunge for orientations"),
+        2 => info!("Expecting Dip and Strike (RHR) for orientations"),
+        _ => {}
     }
 
     input_var!(polygonBoundaryFlag);
@@ -362,13 +361,15 @@ pub fn read_input(input_file: &str) -> (Input, FractureFamilyCollection) {
     let fracture_family_probabilities = if !fracture_families.is_empty() {
         input_var!(radiiListIncrease);
 
-        if input_var.stopCondition == 0 {
-            // npoly option
-            input_var!(nPoly);
-        } else if input_var.stopCondition == 1 {
-        } else {
-            error!("Invalid stopCondition option. Must be 0: nPoly or 1: p32");
-            panic!()
+        match input_var.stopCondition {
+            0 => {
+                input_var!(nPoly);
+            }
+            1 => {}
+            _ => {
+                error!("Invalid stopCondition option. Must be 0: nPoly or 1: p32");
+                panic!()
+            }
         }
 
         let mut fam_prob = Vec::with_capacity(fracture_families.len());
@@ -382,50 +383,25 @@ pub fn read_input(input_file: &str) -> (Input, FractureFamilyCollection) {
     // Get external fracture definition files
     //
 
-    let mut user_ell = false;
-    input_reader.read_value("userEllipsesOnOff:", &mut user_ell);
-    if user_ell {
-        let mut path: String = String::new();
-        input_reader.read_value("UserEll_Input_File_Path:", &mut path);
-        input_var.ext_fracture_files.user_ell_file = Some(path);
-    }
+    let files = &mut input_var.ext_fracture_files;
+    files.user_ell_file =
+        input_reader.read_optional_path("userEllipsesOnOff:", "UserEll_Input_File_Path:");
+    files.user_rect_file =
+        input_reader.read_optional_path("userRectanglesOnOff:", "UserRect_Input_File_Path:");
+    files.user_poly_by_coord_file =
+        input_reader.read_optional_path("userPolygonByCoord:", "PolygonByCoord_Input_File_Path:");
+    files.user_ell_by_coord_file =
+        input_reader.read_optional_path("userEllByCoord:", "EllByCoord_Input_File_Path:");
+    files.user_rect_by_coord_file =
+        input_reader.read_optional_path("userRecByCoord:", "RectByCoord_Input_File_Path:");
 
-    let mut user_rect = false;
-    input_reader.read_value("userRectanglesOnOff:", &mut user_rect);
-    if user_rect {
-        let mut path: String = String::new();
-        input_reader.read_value("UserRect_Input_File_Path:", &mut path);
-        input_var.ext_fracture_files.user_rect_file = Some(path);
-    }
+    let has_user_rectangles =
+        files.user_rect_file.is_some() || files.user_rect_by_coord_file.is_some();
+    let has_user_ellipses = files.user_ell_file.is_some() || files.user_ell_by_coord_file.is_some();
 
-    let mut user_polygon_by_coord = false;
-    input_reader.read_value("userPolygonByCoord:", &mut user_polygon_by_coord);
-    if user_polygon_by_coord {
-        let mut path = String::new();
-        input_reader.read_value("PolygonByCoord_Input_File_Path:", &mut path);
-        input_var.ext_fracture_files.user_poly_by_coord_file = Some(path);
-    }
-
-    let mut user_ell_by_coord = false;
-    input_reader.read_value("userEllByCoord:", &mut user_ell_by_coord);
-    if user_ell_by_coord {
-        let mut path = String::new();
-        input_reader.read_value("EllByCoord_Input_File_Path:", &mut path);
-        input_var.ext_fracture_files.user_ell_by_coord_file = Some(path);
-    }
-
-    let mut user_rect_by_coord = false;
-    input_reader.read_value("userRecByCoord:", &mut user_rect_by_coord);
-    if user_rect_by_coord {
-        let mut path = String::new();
-        input_reader.read_value("RectByCoord_Input_File_Path:", &mut path);
-        input_var.ext_fracture_files.user_rect_by_coord_file = Some(path);
-    }
-
-    if (user_rect || user_rect_by_coord) && (user_ell || user_ell_by_coord) {
+    // The insertion order matters only if both kinds are defined
+    if has_user_rectangles && has_user_ellipses {
         input_var!(insertUserRectanglesFirst);
-    } else {
-        input_var.insertUserRectanglesFirst = false;
     }
 
     (

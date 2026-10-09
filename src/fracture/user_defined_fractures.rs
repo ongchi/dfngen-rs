@@ -20,69 +20,93 @@ pub fn insert_user_defined_fractures(
     poly_opts: &PolyOptions,
     dfngen: &mut DFNGen,
 ) -> usize {
-    let mut num_user_defined_fractures = 0;
+    let mut poly_polys: Vec<Poly> = Vec::new();
+    let mut rect_polys: Vec<Poly> = Vec::new();
+    let mut ell_polys: Vec<Poly> = Vec::new();
 
-    // User Polygons are always inserted first
     if let Some(ref path) = files.user_poly_by_coord_file {
-        let poly_def = FractureNodesDef::from_poly_file(path);
-        for (i, frac) in poly_def.into_iter().enumerate() {
-            dfngen.insert_poly(frac.try_into().unwrap(), i + 1, -3, poly_opts);
-            num_user_defined_fractures += 1;
-        }
+        poly_polys.extend(
+            FractureNodesDef::from_poly_file(path)
+                .into_iter()
+                .map(|fracture| fracture.into_poly()),
+        );
     }
 
-    let mut rect_polys = Vec::new();
-    let mut ell_polys = Vec::new();
-
     if let Some(ref path) = files.user_rect_file {
-        let rect_def = FractureDef::from_file(path, poly_opts.eps, false);
-        for frac in rect_def.into_iter() {
-            rect_polys.push(frac.try_into().unwrap());
-            num_user_defined_fractures += 1;
-        }
+        rect_polys.extend(
+            FractureDef::from_file(path, poly_opts.eps, false)
+                .into_iter()
+                .map(|fracture| fracture.into_poly()),
+        );
     }
 
     if let Some(ref path) = files.user_rect_by_coord_file {
-        let rect_def = FractureNodesDef::from_rect_file(path);
-        for frac in rect_def.into_iter() {
-            rect_polys.push(frac.try_into().unwrap());
-            num_user_defined_fractures += 1;
-        }
+        rect_polys.extend(
+            FractureNodesDef::from_rect_file(path)
+                .into_iter()
+                .map(|fracture| fracture.into_poly()),
+        );
     }
 
     if let Some(ref path) = files.user_ell_file {
-        let ell_def = FractureDef::from_file(path, poly_opts.eps, true);
-        for frac in ell_def.into_iter() {
-            ell_polys.push(frac.try_into().unwrap());
-            num_user_defined_fractures += 1;
-        }
+        ell_polys.extend(
+            FractureDef::from_file(path, poly_opts.eps, true)
+                .into_iter()
+                .map(|fracture| fracture.into_poly()),
+        );
     }
 
     if let Some(ref path) = files.user_ell_by_coord_file {
-        let ell_def = FractureNodesDef::from_ell_file(path);
-        for frac in ell_def.into_iter() {
-            ell_polys.push(frac.try_into().unwrap());
-            num_user_defined_fractures += 1;
-        }
+        ell_polys.extend(
+            FractureNodesDef::from_ell_file(path)
+                .into_iter()
+                .map(|fracture| fracture.into_poly()),
+        );
     }
 
+    let num_user_defined_fractures = poly_polys.len() + rect_polys.len() + ell_polys.len();
+
+    // User Polygons are always inserted first
+    let mut insertion_order = vec![(poly_polys, -3)];
     if rect_first {
-        for (i, poly) in rect_polys.into_iter().enumerate() {
-            dfngen.insert_poly(poly, i + 1, -2, poly_opts);
-        }
-        for (i, poly) in ell_polys.into_iter().enumerate() {
-            dfngen.insert_poly(poly, i + 1, -1, poly_opts);
-        }
+        insertion_order.extend([(rect_polys, -2), (ell_polys, -1)]);
     } else {
-        for (i, poly) in ell_polys.into_iter().enumerate() {
-            dfngen.insert_poly(poly, i + 1, -1, poly_opts);
-        }
-        for (i, poly) in rect_polys.into_iter().enumerate() {
-            dfngen.insert_poly(poly, i + 1, -2, poly_opts);
+        insertion_order.extend([(ell_polys, -1), (rect_polys, -2)]);
+    }
+
+    for (polys, family_id) in insertion_order {
+        for (i, poly) in polys.into_iter().enumerate() {
+            dfngen.insert_poly(poly, i + 1, family_id, poly_opts);
         }
     }
 
     num_user_defined_fractures
+}
+
+/// Reads the node lists of `n_frac` fractures, `num_points` nodes each, from the
+/// whitespace-separated x y z values after the "Coordinates:" label.
+fn read_coordinates(
+    mut file: BufReader<File>,
+    n_frac: usize,
+    num_points: usize,
+) -> Vec<Vec<[f64; 3]>> {
+    search_var(&mut file, "Coordinates:");
+    let mut bytes = file.bytes().map(|ch| ch.unwrap());
+    let mut fractures = Vec::with_capacity(n_frac);
+
+    for _ in 0..n_frac {
+        let mut nodes = Vec::with_capacity(num_points);
+        for _ in 0..num_points {
+            let mut node = [0., 0., 0.];
+            for val in &mut node {
+                *val = read!("{}", bytes);
+            }
+            nodes.push(node);
+        }
+        fractures.push(nodes);
+    }
+
+    fractures
 }
 
 /// User-defined fractures that are defined by a set of nodes.
@@ -116,24 +140,10 @@ impl FractureNodesDef {
         let mut num_points: usize = 0;
         num_points.read_from_text(&mut file);
 
-        search_var(&mut file, "Coordinates:");
-        let mut bytes = file.bytes().map(|ch| ch.unwrap());
-
-        let mut fractures = Vec::new();
-
-        for _ in 0..n_frac {
-            let mut nodes = Vec::new();
-            for _ in 0..num_points {
-                let mut tmp = [0., 0., 0.];
-                for val in &mut tmp {
-                    *val = read!("{}", bytes);
-                }
-                nodes.push(tmp);
-            }
-            fractures.push(FractureNodesDef::Ellipse(nodes));
-        }
-
-        fractures
+        read_coordinates(file, n_frac, num_points)
+            .into_iter()
+            .map(FractureNodesDef::Ellipse)
+            .collect()
     }
 
     /// Reads a file containing user-defined fractures defined by rectangle vertices.
@@ -144,25 +154,10 @@ impl FractureNodesDef {
         let mut n_frac: usize = 0;
         n_frac.read_from_text(&mut file);
 
-        search_var(&mut file, "Coordinates:");
-
-        let mut bytes = file.bytes().map(|ch| ch.unwrap());
-
-        let mut fractures = Vec::new();
-
-        for _ in 0..n_frac {
-            let mut nodes = Vec::new();
-            for _ in 0..4 {
-                let mut tmp = [0., 0., 0.];
-                for val in &mut tmp {
-                    *val = read!("{}", bytes);
-                }
-                nodes.push(tmp);
-            }
-            fractures.push(FractureNodesDef::new_rect(nodes).unwrap());
-        }
-
-        fractures
+        read_coordinates(file, n_frac, 4)
+            .into_iter()
+            .map(|nodes| FractureNodesDef::new_rect(nodes).unwrap())
+            .collect()
     }
 
     /// Reads a file containing user-defined fractures defined by polygon vertices.
@@ -192,10 +187,8 @@ impl FractureNodesDef {
     }
 }
 
-impl TryInto<Poly> for FractureNodesDef {
-    type Error = DfngenError;
-
-    fn try_into(self) -> Result<Poly, Self::Error> {
+impl FractureNodesDef {
+    pub fn into_poly(self) -> Poly {
         let mut poly = Poly::default();
 
         let nodes = match self {
@@ -262,7 +255,7 @@ impl TryInto<Poly> for FractureNodesDef {
         poly.aspect_ratio = poly.yradius / poly.xradius;
         poly.vertices = nodes.iter().flat_map(|&node| node.to_vec()).collect();
 
-        Ok(poly)
+        poly
     }
 }
 
@@ -279,26 +272,6 @@ pub struct FractureDef {
 }
 
 impl FractureDef {
-    pub fn new(
-        eps: f64,
-        num_nodes: usize,
-        radius: f64,
-        beta: f64,
-        aspect_ratio: f64,
-        translation: [f64; 3],
-        normal: [f64; 3],
-    ) -> Self {
-        Self {
-            eps,
-            num_nodes,
-            radius,
-            beta,
-            aspect_ratio,
-            translation,
-            normal,
-        }
-    }
-
     pub fn from_file(path: &str, eps: f64, is_ell: bool) -> Vec<Self> {
         let mut frac_reader = if is_ell {
             UserFractureReader::new(path, "nUserEll:")
@@ -333,14 +306,14 @@ impl FractureDef {
         beta.iter_mut().for_each(|v| *v *= angle_convertion_factor);
 
         frac_reader.read_vec("Aspect_Ratio:", &mut aspect);
-        frac_reader.read_vec_arr3("Translation:", &mut translation);
+        frac_reader.read_value("Translation:", &mut translation);
 
         frac_reader.read_value("userOrientationOption:", &mut orientation_option);
 
         if orientation_option == 0 {
-            frac_reader.read_vec_arr3("Normal:", &mut normal);
+            frac_reader.read_value("Normal:", &mut normal);
         } else if orientation_option == 1 {
-            frac_reader.read_vec_arr2("Trend_Plunge:", &mut trend_plunge);
+            frac_reader.read_value("Trend_Plunge:", &mut trend_plunge);
 
             // Convert Trend and Plunge into normal vectors
             for [trend, plunge] in &trend_plunge {
@@ -353,7 +326,7 @@ impl FractureDef {
                 ]);
             }
         } else if orientation_option == 2 {
-            frac_reader.read_vec_arr2("Dip_Strike:", &mut dip_strike);
+            frac_reader.read_value("Dip_Strike:", &mut dip_strike);
 
             // Convert Dip and Strike into normal vectors
             for [dip, strike] in &dip_strike {
@@ -382,25 +355,23 @@ impl FractureDef {
             ),
             normal,
         ) {
-            fractures.push(FractureDef::new(
+            fractures.push(FractureDef {
                 eps,
-                if is_ell { num_nodes } else { 0 },
+                num_nodes,
                 radius,
                 beta,
                 aspect_ratio,
                 translation,
                 normal,
-            ))
+            })
         }
 
         fractures
     }
 }
 
-impl TryInto<Poly> for FractureDef {
-    type Error = DfngenError;
-
-    fn try_into(self) -> Result<Poly, Self::Error> {
+impl FractureDef {
+    pub fn into_poly(self) -> Poly {
         let is_rect = self.num_nodes == 0;
 
         let family_num = if is_rect { -2 } else { -1 };
@@ -428,6 +399,6 @@ impl TryInto<Poly> for FractureDef {
         // Translate newPoly to uetranslation
         new_poly.translate(Vector3::from_row_slice(&self.translation));
 
-        Ok(new_poly)
+        new_poly
     }
 }

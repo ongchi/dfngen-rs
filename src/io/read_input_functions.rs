@@ -257,6 +257,18 @@ where
     }
 }
 
+/// Reads the value which follows `label` in the file.
+fn read_labeled<T: ReadFromTextFile + std::fmt::Debug>(
+    file: &mut BufReader<File>,
+    label: &str,
+    buf: &mut T,
+) {
+    search_var(file, label);
+    debug!("Reading from {}", label);
+    buf.read_from_text(file);
+    debug!("value: {:?}", buf);
+}
+
 pub struct InputReader {
     file: BufReader<File>,
 }
@@ -266,11 +278,21 @@ impl InputReader {
         let file = BufReader::new(File::open(filename).unwrap());
         Self { file }
     }
+
     pub fn read_value<T: ReadFromTextFile + std::fmt::Debug>(&mut self, label: &str, buf: &mut T) {
-        search_var(&mut self.file, label);
-        debug!("Reading from {}", label);
-        buf.read_from_text(&mut self.file);
-        debug!("value: {:?}", buf);
+        read_labeled(&mut self.file, label, buf);
+    }
+
+    /// Reads the file path at `path_label` if the on/off flag at `flag_label` is set.
+    pub fn read_optional_path(&mut self, flag_label: &str, path_label: &str) -> Option<String> {
+        let mut is_enabled = false;
+        self.read_value(flag_label, &mut is_enabled);
+
+        is_enabled.then(|| {
+            let mut path = String::new();
+            self.read_value(path_label, &mut path);
+            path
+        })
     }
 
     pub fn read_orien_distr(&mut self, prefix: &str) -> Vec<Fisher> {
@@ -284,8 +306,7 @@ impl InputReader {
         let mut angle2: Vec<f64> = Vec::new();
 
         let mut orientation: u8 = 0;
-        search_var(&mut self.file, "orientationOption:");
-        orientation.read_from_text(&mut self.file);
+        self.read_value("orientationOption:", &mut orientation);
 
         match orientation {
             0 => {
@@ -304,8 +325,7 @@ impl InputReader {
         }
 
         let mut angle_option = false;
-        search_var(&mut self.file, "angleOption:");
-        angle_option.read_from_text(&mut self.file);
+        self.read_value("angleOption:", &mut angle_option);
 
         if angle_option {
             let _ = angle1.iter_mut().map(|v| *v = std::f64::consts::PI / 180.);
@@ -316,8 +336,7 @@ impl InputReader {
         read_var!("kappa", kappa);
 
         let mut h: f64 = 0.0;
-        search_var(&mut self.file, "h:");
-        h.read_from_text(&mut self.file);
+        self.read_value("h:", &mut h);
         let eps = h * 1e-8;
 
         zip_eq(zip_eq(angle1, angle2), kappa)
@@ -349,8 +368,7 @@ impl InputReader {
         }
 
         let mut h: f64 = 0.0;
-        search_var(&mut self.file, "h:");
-        h.read_from_text(&mut self.file);
+        self.read_value("h:", &mut h);
 
         let min_radius = 3.0 * h;
 
@@ -370,8 +388,7 @@ impl InputReader {
         read_var!("const", const_);
 
         let mut distr: Vec<u8> = Vec::new();
-        search_var(&mut self.file, &format!("{}distr:", prefix));
-        distr.read_from_text(&mut self.file);
+        self.read_value(&format!("{}distr:", prefix), &mut distr);
 
         distr
             .into_iter()
@@ -572,19 +589,16 @@ impl UserFractureReader {
     pub fn new(filename: &str, n_frac_label: &str) -> Self {
         let mut file = BufReader::new(File::open(filename).unwrap());
 
-        search_var(&mut file, n_frac_label);
         let mut n_frac: usize = 0;
-        n_frac.read_from_text(&mut file);
+        read_labeled(&mut file, n_frac_label, &mut n_frac);
 
         Self { file, n_frac }
     }
 
-    /// Read a single value from user defined fractures file
+    /// Read a value from user defined fractures file.
+    /// A `Vec<[f64; N]>` reads rows of `(x, y, ...)` until the next label.
     pub fn read_value<T: ReadFromTextFile + std::fmt::Debug>(&mut self, label: &str, buf: &mut T) {
-        search_var(&mut self.file, label);
-        debug!("Reading from {}", label);
-        buf.read_from_text(&mut self.file);
-        debug!("value: {:?}", buf);
+        read_labeled(&mut self.file, label, buf);
     }
 
     // 0
@@ -602,23 +616,5 @@ impl UserFractureReader {
             buf.push(tmp.clone());
         }
         debug!("value: {:?}", &buf);
-    }
-
-    // (0, 0)
-    // ...
-    pub fn read_vec_arr2(&mut self, label: &str, buf: &mut Vec<[f64; 2]>) {
-        search_var(&mut self.file, label);
-        debug!("Reading from {} [{}]", label, self.n_frac);
-        buf.read_from_text(&mut self.file);
-        debug!("value: {:?}", buf);
-    }
-
-    // (0, 0, 0)
-    // ...
-    pub fn read_vec_arr3(&mut self, label: &str, buf: &mut Vec<[f64; 3]>) {
-        search_var(&mut self.file, label);
-        debug!("Reading from {} [{}]", label, self.n_frac);
-        buf.read_from_text(&mut self.file);
-        debug!("value: {:?}", buf);
     }
 }
