@@ -5,7 +5,8 @@
 #   scripts/compare_output.sh record <baseline_dir>   # save the current output as baseline
 #   scripts/compare_output.sh check  <baseline_dir>   # diff the current output against it
 #
-# DFN_output.txt is ignored because it contains timestamps.
+# DFN_output.txt is ignored because it contains timestamps. The console log is
+# compared with the timestamps removed.
 set -euo pipefail
 
 mode="${1:?usage: compare_output.sh record|check <baseline_dir>}"
@@ -22,6 +23,7 @@ check) output_dir="$(mktemp -d)" ;;
     exit 2
     ;;
 esac
+mkdir -p "$output_dir"
 
 # Inputs refer to auxiliary files by relative path, so run from tests/data.
 cd "$repo_root/tests/data"
@@ -30,7 +32,11 @@ status=0
 for input_file in *.dat; do
     case_name="${input_file%.dat}"
     rm -rf "${output_dir:?}/$case_name"
-    "$repo_root/target/release/dfngen" "$input_file" "$output_dir/$case_name" >/dev/null
+    # Keep the console log too, without the leading timestamp of each line
+    # and without the run-specific output path.
+    RUST_LOG=info "$repo_root/target/release/dfngen" "$input_file" "$output_dir/$case_name" |
+        sed -E -e 's/^[^ ]+ //' -e "s#$output_dir#<output>#g" >"$output_dir/$case_name.log"
+    mv "$output_dir/$case_name.log" "$output_dir/$case_name/console.log"
 
     if [ "$mode" = check ]; then
         if diff -r -q -x DFN_output.txt "$baseline_dir/$case_name" "$output_dir/$case_name"; then
