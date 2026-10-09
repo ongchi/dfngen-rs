@@ -14,4 +14,8 @@ pub enum DfngenError {
     InefficientSampling,
     #[error("{0}")]
     ValueError(String),
+    #[error("There are no intersecting fractures. Increase the fracture density, or decrease the domain size.")]
+    NoIntersectingFractures,
+    #[error("The fracture network does not connect the specified boundary faces. Increase the fracture density, decrease the domain size, or use the ignoreBoundaryFaces option.")]
+    NoBoundaryConnection,
 }

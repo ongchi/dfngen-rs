@@ -188,22 +188,22 @@ fn main() -> Result<(), DfngenError> {
 
     if final_fractures.is_empty() && !input.ignoreBoundaryFaces {
         print_connectivity_error = true;
-        //if there is no fracture network connected users defined boundary faces
-        //switch to ignore boundary faces option with notice to user that there is no connectivity
+        // There is no fracture network which connects the boundary faces of the user.
+        // Ignore the boundary faces, to report the statistics of the network before the error.
         final_fractures = get_cluster(
             input.keepIsolatedFractures,
             input.keepOnlyLargestCluster,
-            input.ignoreBoundaryFaces,
+            true,
             &input.boundaryFaces,
             &dfngen.pstats,
         );
-        //if still no fractures, there is no fracture network
+        final_fractures.sort();
     }
 
     if final_fractures.is_empty() {
         error!("DFN Generation has finished, however there are no intersecting fractures. Please adjust input parameters.");
         error!("Try increasing the fracture density, or shrinking the domain.",);
-        std::process::exit(0)
+        return Err(DfngenError::NoIntersectingFractures);
     }
 
     report_statistics_after_removal(
@@ -220,7 +220,7 @@ fn main() -> Result<(), DfngenError> {
         error!("the user's specified boundary faces.");
         error!("Try increasing the fracture density, shrinking the domain",);
         error!("or consider using the 'ignoreBoundaryFaces' option.",);
-        panic!();
+        return Err(DfngenError::NoBoundaryConnection);
     }
 
     report_intersection_statistics(&dfngen);
