@@ -1,15 +1,16 @@
+use std::fs::File;
 use std::io::BufReader;
-use std::{fs::File, io::Read};
 
 use itertools::zip_eq;
 use parry3d_f64::na::{center, distance, Point3, Vector3};
-use text_io::read;
 
 use crate::cg::{normal_from_dip_strike, normal_from_trend_plunge};
 use crate::error::DfngenError;
 use crate::io::{
     input::ExternalFractureFiles,
-    read_input_functions::{search_var, ReadFromTextFile, UserFractureReader},
+    read_input_functions::{
+        read_bracketed_point, search_var, ReadFromTextFile, UserFractureReader,
+    },
 };
 use crate::structures::{DFNGen, PolyOptions};
 
@@ -85,29 +86,23 @@ pub fn insert_user_defined_fractures(
 }
 
 /// Reads the node lists of `n_frac` fractures, `num_points` nodes each, from the
-/// whitespace-separated x y z values after the "Coordinates:" label.
+/// {x, y, z} groups after the "Coordinates:" label.
 fn read_coordinates(
     mut file: BufReader<File>,
     n_frac: usize,
     num_points: usize,
 ) -> Vec<Vec<[f64; 3]>> {
     search_var(&mut file, "Coordinates:");
-    let mut bytes = file.bytes().map(|ch| ch.unwrap());
-    let mut fractures = Vec::with_capacity(n_frac);
 
-    for _ in 0..n_frac {
-        let mut nodes = Vec::with_capacity(num_points);
-        for _ in 0..num_points {
-            let mut node = [0., 0., 0.];
-            for val in &mut node {
-                *val = read!("{}", bytes);
-            }
-            nodes.push(node);
-        }
-        fractures.push(nodes);
-    }
+    (0..n_frac)
+        .map(|_| read_points(&mut file, num_points))
+        .collect()
+}
 
-    fractures
+fn read_points(file: &mut BufReader<File>, num_points: usize) -> Vec<[f64; 3]> {
+    (0..num_points)
+        .map(|_| read_bracketed_point(file))
+        .collect()
 }
 
 /// User-defined fractures that are defined by a set of nodes.
@@ -169,22 +164,15 @@ impl FractureNodesDef {
         let mut n_frac: usize = 0;
         n_frac.read_from_text(&mut file);
 
-        let mut num_points: usize = 0;
-        num_points.read_from_text(&mut file);
+        // Each polygon is its number of nodes, then one {x, y, z} group for each node
+        (0..n_frac)
+            .map(|_| {
+                let mut num_points: usize = 0;
+                num_points.read_from_text(&mut file);
 
-        let mut fractures = Vec::new();
-
-        for _ in 0..n_frac {
-            let mut nodes = Vec::new();
-            for _ in 0..num_points {
-                let mut tmp = [0., 0., 0.];
-                tmp.read_from_text(&mut file);
-                nodes.push(tmp);
-            }
-            fractures.push(FractureNodesDef::Polygon(nodes));
-        }
-
-        fractures
+                FractureNodesDef::Polygon(read_points(&mut file, num_points))
+            })
+            .collect()
     }
 }
 

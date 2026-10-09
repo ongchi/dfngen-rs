@@ -140,6 +140,16 @@ fn read_bracketed_list(file: &mut BufReader<File>) -> Result<Vec<String>, String
     }
 }
 
+/// Reads one point written as `{x, y, z}`. Round and square brackets are also accepted.
+pub fn read_bracketed_point(file: &mut BufReader<File>) -> [f64; 3] {
+    let values = read_bracketed_list(file).unwrap();
+
+    match values.as_slice() {
+        [x, y, z] => [x.parse().unwrap(), y.parse().unwrap(), z.parse().unwrap()],
+        _ => panic!("Expected 3 coordinates in a point, found: {:?}", values),
+    }
+}
+
 impl<T> ReadFromTextFile for Vec<T>
 where
     T: FromStr + NotBool + std::fmt::Debug,
