@@ -1,6 +1,6 @@
 use parry3d_f64::na::{Point2, Vector3};
 use serde::Deserialize;
-use tracing::{info, warn};
+use tracing::{debug, info, warn};
 
 use crate::cg::{normal_from_dip_strike, normal_from_trend_plunge};
 use crate::distribution::Fisher;
@@ -335,7 +335,6 @@ fn parse_input(text: &str) -> Result<(Input, FractureFamilyCollection), DfngenEr
     let file: InputFile = toml::from_str(text).map_err(|e| invalid_input(e.to_string()))?;
 
     let eps = file.h * 1e-8;
-    info!("h: {}", file.h);
 
     if file.fram.disable {
         info!("FRAM IS DISABLED");
@@ -349,40 +348,22 @@ fn parse_input(text: &str) -> Result<(Input, FractureFamilyCollection), DfngenEr
     let domain_size_increase = Vector3::from(file.domain.size_increase);
 
     let layers: Vec<f64> = file.domain.layers.iter().flatten().copied().collect();
-    let layer_volumes = file
+    let layer_volumes: Vec<f64> = file
         .domain
         .layers
         .iter()
-        .enumerate()
-        .map(|(i, layer)| {
-            let volume = domain_size[0] * domain_size[1] * (layer[1] - layer[0]).abs();
-            info!(
-                "Layer {} {{-z,+z}}: {:?}, Volume: {} m^3",
-                i + 1,
-                layer,
-                volume
-            );
-            volume
-        })
+        .map(|layer| domain_size[0] * domain_size[1] * (layer[1] - layer[0]).abs())
         .collect();
 
     let regions: Vec<f64> = file.domain.regions.iter().flatten().copied().collect();
-    let region_volumes = file
+    let region_volumes: Vec<f64> = file
         .domain
         .regions
         .iter()
-        .enumerate()
-        .map(|(i, region)| {
-            let volume = (region[1] - region[0]).abs()
+        .map(|region| {
+            (region[1] - region[0]).abs()
                 * (region[3] - region[2]).abs()
-                * (region[5] - region[4]).abs();
-            info!(
-                "Region {} {{-x,+x,-y,+y,-z,+z}}: {:?}, Volume: {} m^3",
-                i + 1,
-                region,
-                volume
-            );
-            volume
+                * (region[5] - region[4]).abs()
         })
         .collect();
 
@@ -392,12 +373,14 @@ fn parse_input(text: &str) -> Result<(Input, FractureFamilyCollection), DfngenEr
         .iter()
         .map(|&[x, y]| Point2::new(x, y))
         .collect();
-    if !domain_vertices.is_empty() {
-        info!(
-            "The domain polygon boundary has {} vertices",
-            domain_vertices.len()
-        );
-    }
+
+    debug!(
+        "Input: h = {}, layer volumes {:?} m^3, region volumes {:?} m^3, {} polygon boundary vertices",
+        file.h,
+        layer_volumes,
+        region_volumes,
+        domain_vertices.len()
+    );
 
     let stop_condition = file.generation.stop_condition;
     let n_poly = match (stop_condition, file.generation.n_poly) {
