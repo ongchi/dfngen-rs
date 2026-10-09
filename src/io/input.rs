@@ -1,5 +1,5 @@
 use parry3d_f64::na::{Point2, Vector3};
-use tracing::{error, info};
+use tracing::info;
 
 use super::read_input_functions::read_domain_vertices;
 
@@ -360,8 +360,7 @@ pub fn read_input(input_file: &str) -> (Input, FractureFamilyCollection) {
             }
             1 => {}
             _ => {
-                error!("Invalid stopCondition option. Must be 0: nPoly or 1: p32");
-                panic!()
+                panic!("Invalid stopCondition option. Must be 0: nPoly or 1: p32")
             }
         }
 
