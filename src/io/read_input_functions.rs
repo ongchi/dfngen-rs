@@ -4,7 +4,7 @@ use std::io::{BufRead, BufReader, Read, Seek, SeekFrom};
 use std::str::FromStr;
 
 use itertools::zip_eq;
-use parry3d_f64::na::{Point3, Vector3};
+use parry3d_f64::na::{Point2, Vector3};
 use text_io::read;
 use tracing::{debug, info, warn};
 
@@ -60,10 +60,9 @@ pub fn read_domain_vertices(global: &mut Input, filename: &str) {
     for _ in 0..num_of_domain_vertices {
         let line = lines.next().unwrap().unwrap();
         let parsed_line: Vec<&str> = line.as_str().split_whitespace().collect();
-        global.domainVertices.push(Point3::new(
+        global.domainVertices.push(Point2::new(
             parsed_line[0].parse().unwrap(),
             parsed_line[1].parse().unwrap(),
-            0., // FIXME: uninitialized
         ));
     }
 

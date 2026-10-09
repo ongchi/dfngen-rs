@@ -1,4 +1,4 @@
-use parry3d_f64::na::{Point3, Vector3};
+use parry3d_f64::na::{Point2, Vector3};
 use tracing::{error, info};
 
 use super::read_input_functions::read_domain_vertices;
@@ -188,11 +188,8 @@ pub struct Input {
     /// bool polygonBoundaryFlag = false;
     pub polygonBoundaryFlag: bool,
 
-    /// Number of points on the 2D boundary of the polygon domain
-    pub numOfDomainVertices: usize,
-
     /// Vector of points defining the 2D boundary of the domain polygon
-    pub domainVertices: Vec<Point3<f64>>,
+    pub domainVertices: Vec<Point2<f64>>,
 
     /// False - Use boundaryFaces option.
     /// True  - Ignore boundaryFaces option, keep all clusters
@@ -330,16 +327,11 @@ pub fn read_input(input_file: &str) -> (Input, FractureFamilyCollection) {
         read_domain_vertices(&mut input_var, &poly_boundary_file);
         info!(
             "There are {} Vertices on the boundary",
-            input_var.numOfDomainVertices
+            input_var.domainVertices.len()
         );
 
-        for i in 0..input_var.numOfDomainVertices {
-            info!(
-                "Vertex {}: {{{}, {}}}",
-                i + 1,
-                input_var.domainVertices[i].x,
-                input_var.domainVertices[i].y
-            );
+        for (i, vertex) in input_var.domainVertices.iter().enumerate() {
+            info!("Vertex {}: {{{}, {}}}", i + 1, vertex.x, vertex.y);
         }
     }
 

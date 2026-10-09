@@ -160,11 +160,7 @@ fn main() -> Result<(), DfngenError> {
     if input.polygonBoundaryFlag {
         info!("Extracting fractures from a polygon boundary domain");
         let size = dfngen.accepted_poly.len();
-        dfngen.remove_fractures_beyond_domains(
-            &poly_opts,
-            input.numOfDomainVertices,
-            &input.domainVertices,
-        );
+        dfngen.remove_fractures_beyond_domains(&poly_opts, &input.domainVertices);
         info!(
             "Removed {} fractures outside subdomain",
             size - dfngen.accepted_poly.len()

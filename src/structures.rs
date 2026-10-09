@@ -2,12 +2,13 @@ use std::fmt::Formatter;
 use std::rc::Rc;
 use std::{cell::RefCell, fmt::Display};
 
-use parry3d_f64::na::{Point3, Vector3};
+use parry3d_f64::na::{Point2, Point3, Vector3};
+use parry3d_f64::utils::point_in_poly2d;
 use rand::Rng;
 use rand_mt::Mt64;
 use tracing::{error, info, warn};
 
-use crate::cg::{intersection_checking, is_in_boundary};
+use crate::cg::intersection_checking;
 use crate::distribution::{TruncExp, TruncLogNormal, TruncPowerLaw};
 use crate::error::DfngenError;
 use crate::fracture::insert_shape::print_reject_reason;
@@ -564,13 +565,11 @@ impl DFNGen {
     ///
     /// # Arguments
     ///
-    /// * `num_of_domain_vertices` - Number of vertices in the domain polygon
-    /// * `domain_vertices` -
+    /// * `domain_vertices` - Vertices of the 2D domain polygon
     pub fn remove_fractures_beyond_domains(
         &mut self,
         opts: &PolyOptions,
-        num_of_domain_vertices: usize,
-        domain_vertices: &[Point3<f64>],
+        domain_vertices: &[Point2<f64>],
     ) {
         let mut final_poly_list: Vec<Poly> = Vec::new();
         self.reset_state();
@@ -579,7 +578,7 @@ impl DFNGen {
             let x = self.accepted_poly[i].translation[0];
             let y = self.accepted_poly[i].translation[1];
 
-            if !is_in_boundary(num_of_domain_vertices, domain_vertices, x, y) {
+            if !point_in_poly2d(&Point2::new(x, y), domain_vertices) {
                 self.accepted_poly.clear();
                 continue;
             }
