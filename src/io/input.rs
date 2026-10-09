@@ -229,8 +229,8 @@ pub fn read_input(input_file: &str) -> (Input, FractureFamilyCollection) {
     let mut n_layers: usize = 0;
     input_reader.read_value("numOfLayers:", &mut n_layers);
     if n_layers > 0 {
-        input_var.layers.reserve(n_layers * 2); // Multiply by 2 for +z and -z for each layer
-        input_var!(layers);
+        // -z and +z for each layer
+        input_var.layers = input_reader.read_value_groups("layers:", n_layers, 2);
 
         for i in 0..n_layers {
             let idx = i * 2;
@@ -241,17 +241,17 @@ pub fn read_input(input_file: &str) -> (Input, FractureFamilyCollection) {
             );
             let vol = input_var.domainSize[0]
                 * input_var.domainSize[1]
-                * ((input_var.layers[idx + 1] as isize - input_var.layers[idx] as isize).abs()
-                    as f64);
+                * (input_var.layers[idx + 1] - input_var.layers[idx]).abs();
             info!("{} m^3", vol);
+            input_var.layerVol.push(vol);
         }
     }
 
     let mut n_regions: usize = 0;
     input_reader.read_value("numOfRegions:", &mut n_regions);
     if n_regions > 0 {
-        input_var.regions.reserve(n_regions * 6); // Multiply by 6 xmin, xmax, ymin, ymax, zmin, zmax
-        input_var!(regions);
+        // xmin, xmax, ymin, ymax, zmin, zmax for each region
+        input_var.regions = input_reader.read_value_groups("regions:", n_regions, 6);
 
         info!("Number of Regions: {}", n_regions);
 
@@ -266,6 +266,7 @@ pub fn read_input(input_file: &str) -> (Input, FractureFamilyCollection) {
                 * (input_var.regions[idx + 3] - input_var.regions[idx + 2]).abs()
                 * (input_var.regions[idx + 5] - input_var.regions[idx + 4]).abs();
             info!(" Volume: {} m^3", vol);
+            input_var.regionVol.push(vol);
         }
     }
 

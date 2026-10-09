@@ -107,32 +107,24 @@ impl ReadFromTextFile for bool {
     }
 }
 
-fn read_quoted(file: &mut BufReader<File>, quote: char) -> Result<Vec<String>, String> {
-    let (left, right) = match quote {
-        '(' => ('(', ')'),
-        '{' => ('{', '}'),
-        _ => return Err("Invalid quote character".to_string()),
-    };
-    let mut bytes = file.by_ref().bytes().map(|c| c.unwrap());
-    let mut buf = String::new();
+const BRACKETS: [(char, char); 3] = [('(', ')'), ('[', ']'), ('{', '}')];
 
-    loop {
+/// Reads the next list of comma-separated values in `()`, `[]`, or `{}`.
+/// The values can have white space between them.
+fn read_bracketed_list(file: &mut BufReader<File>) -> Result<Vec<String>, String> {
+    let mut bytes = file.by_ref().bytes().map(|c| c.unwrap());
+    let mut buf: String = read!("{}", bytes);
+
+    let Some(&(left, right)) = BRACKETS.iter().find(|(left, _)| buf.contains(*left)) else {
+        return Err(format!("Expected an opening bracket, found: {}", buf));
+    };
+
+    while !buf.contains(right) {
         let segment: String = read!("{}", bytes);
-        if buf.is_empty() {
-            if segment.contains(left) {
-                buf.push_str(&segment);
-            } else {
-                return Err(format!("Expected opening quote: {}", left));
-            }
-            if segment.contains(right) {
-                break;
-            }
-        } else {
-            buf.push_str(&segment);
-            if segment.contains(right) {
-                break;
-            }
+        if segment.is_empty() {
+            return Err(format!("Expected a closing bracket: {}", right));
         }
+        buf.push_str(&segment);
     }
 
     let lidx = buf.find(left).unwrap();
@@ -156,7 +148,7 @@ where
     // {0,...}
     fn read_from_text(&mut self, file: &mut BufReader<File>) {
         self.extend(
-            read_quoted(file, '{')
+            read_bracketed_list(file)
                 .unwrap()
                 .into_iter()
                 .map(|v| v.parse().unwrap()),
@@ -224,7 +216,7 @@ where
     // (0,0)
     // ...
     fn read_from_text(&mut self, file: &mut BufReader<File>) {
-        while let Ok(tmp) = read_quoted(file, '(') {
+        while let Ok(tmp) = read_bracketed_list(file) {
             if tmp.len() == 2 {
                 self.push([tmp[0].parse().unwrap(), tmp[1].parse().unwrap()])
             } else {
@@ -242,7 +234,7 @@ where
     // (0,0,0)
     // ...
     fn read_from_text(&mut self, file: &mut BufReader<File>) {
-        while let Ok(tmp) = read_quoted(file, '(') {
+        while let Ok(tmp) = read_bracketed_list(file) {
             if tmp.len() == 3 {
                 self.push([
                     tmp[0].parse().unwrap(),
@@ -280,6 +272,40 @@ impl InputReader {
 
     pub fn read_value<T: ReadFromTextFile + std::fmt::Debug>(&mut self, label: &str, buf: &mut T) {
         read_labeled(&mut self.file, label, buf);
+    }
+
+    /// Reads `group_count` groups of `group_size` values after `label`.
+    ///
+    /// Each group is a bracketed list on its own, as pydfnworks writes layers
+    /// and regions. One list with all values is also accepted.
+    pub fn read_value_groups(
+        &mut self,
+        label: &str,
+        group_count: usize,
+        group_size: usize,
+    ) -> Vec<f64> {
+        search_var(&mut self.file, label);
+
+        let mut values: Vec<f64> = Vec::with_capacity(group_count * group_size);
+        while values.len() < group_count * group_size {
+            match read_bracketed_list(&mut self.file) {
+                Ok(group) => values.extend(group.iter().map(|v| v.parse::<f64>().unwrap())),
+                Err(_) => break,
+            }
+        }
+
+        if values.len() != group_count * group_size {
+            panic!(
+                "Expected {} groups of {} values for {} but found {} values",
+                group_count,
+                group_size,
+                label.strip_suffix(':').unwrap_or(label),
+                values.len()
+            );
+        }
+
+        debug!("{} {:?}", label, values);
+        values
     }
 
     /// Reads the file path at `path_label` if the on/off flag at `flag_label` is set.
