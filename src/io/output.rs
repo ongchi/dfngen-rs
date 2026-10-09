@@ -881,15 +881,12 @@ fn write_user_rejected_fracture_information(pstats: &Stats, output: &str) -> io:
     file.flush()
 }
 
-/// Returns true if the output has a family for this kind of user-defined fracture.
-///
-/// Rectangles and ellipses count only if they are defined by parameters.
-/// Polygons are always defined by vertices.
+/// Returns true if the input has a user-defined fracture of this family.
 fn has_user_family(input: &Input, family_num: isize) -> bool {
-    input.user_fractures.iter().any(|fracture| {
-        fracture.family_num() == family_num
-            && (family_num == USER_POLYGON_FAMILY || fracture.is_defined_by_parameters())
-    })
+    input
+        .user_fractures
+        .iter()
+        .any(|fracture| fracture.family_num() == family_num)
 }
 
 /// Writes families.dat, Shape families definition file

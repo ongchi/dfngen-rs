@@ -32,10 +32,6 @@ impl UserFracture {
             Self::ByVertices(fracture) => fracture.family_num(),
         }
     }
-
-    pub fn is_defined_by_parameters(&self) -> bool {
-        matches!(self, Self::ByParameters(_))
-    }
 }
 
 /// Inserts the user-defined fractures. Returns the number of them.
