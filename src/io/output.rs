@@ -411,15 +411,14 @@ fn write_intersection_files(
                 // Division by six was determined through testing.
                 pstats.triple_node_count += triple_pts_size;
                 // Order the triple points by distances to know to discretize from point to next closest point
-                let mut distances = Vec::with_capacity(triple_pts_size);
                 let mut pt1 = temp_intersection.p1;
                 temp_point1 = intersection.p1;
 
-                // Create array of distances first end point to triple points
-                for k in 0..triple_pts_size {
-                    //loop through triple points on  intersection i
-                    distances[k] = distance(&pt1, &temp_trip_pts[k]); //create array of distances
-                }
+                // Distances from the first end point to the triple points
+                let distances: Vec<f64> = temp_trip_pts
+                    .iter()
+                    .map(|triple_point| distance(&pt1, triple_point))
+                    .collect();
 
                 // Order the indices of the distances array shortest to largest distance
                 // this lets us know which point to discritize to next
