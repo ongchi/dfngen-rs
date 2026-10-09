@@ -152,7 +152,7 @@ The log of the run goes to the console (stdout), not to a file. The level is
 | `rejections.dat` | Number of rejected fractures for each rejection reason. |
 | `rejectsPerAttempt.dat` | Line N: number of rejected attempts before accepted fracture N. |
 | `userFractureRejections.dat` | Number of each rejected user-defined fracture (its position in the input file). Written only if a user-defined fracture was rejected. |
-| `rejected_fractures.vtp` | The rejected fractures as polygons with their properties (VTK PolyData). Written only if `rejected_fractures = true`. See below. |
+| `fractures_rejected.vtp` | The rejected fractures as polygons with their properties (VTK PolyData). Written only if `rejected_fractures = true`. See below. |
 
 ### Cell data of `fractures.vtp`
 
@@ -179,7 +179,7 @@ The file has one polygon cell for each accepted fracture which is not a final
 fracture (isolated fracture, or not in a kept cluster), in the order of
 acceptance. The arrays are those of `fractures.vtp` without `fracture_id`.
 
-### Cell data of `rejected_fractures.vtp`
+### Cell data of `fractures_rejected.vtp`
 
 The file has one polygon cell for each rejected fracture, at the position of
 its last attempt. A stochastic fracture is rejected when FRAM rejects it and
@@ -210,7 +210,7 @@ then has no valid polygon.
 | -13 | Triple intersection point too near to an end point of an intersection. |
 | -14 | Triple intersection point too near to another triple intersection point. |
 
-`fractures.vtp`, `fractures_removed.vtp` and `rejected_fractures.vtp` together
+`fractures.vtp`, `fractures_removed.vtp` and `fractures_rejected.vtp` together
 do not have all generated fractures. An accepted fracture which is removed later because it
 is smaller than `remove_fractures_less_than`, or outside the polygon boundary,
 is in none of these files.

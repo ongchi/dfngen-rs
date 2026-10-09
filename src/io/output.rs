@@ -81,7 +81,7 @@ pub fn write_output(
     }
 
     if input.output_rejected_fractures {
-        let mut rejected_file = create_file(format!("{}/rejected_fractures.vtp", output))?;
+        let mut rejected_file = create_file(format!("{}/fractures_rejected.vtp", output))?;
         write_rejected_fractures_vtk(rejected_poly, &mut rejected_file)?;
         rejected_file.flush()?;
     }

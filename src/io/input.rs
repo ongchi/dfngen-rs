@@ -110,7 +110,7 @@ pub struct Input {
     pub remove_fractures_less_than: f64,
 
     /// Caution: Can create a very large file.
-    /// True: Write the rejected fractures to rejected_fractures.vtp.
+    /// True: Write the rejected fractures to fractures_rejected.vtp.
     pub output_rejected_fractures: bool,
 
     /// If a fracture is rejected, it will be re-translated
