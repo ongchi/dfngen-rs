@@ -20,10 +20,10 @@ use crate::structures::RadiusDistribution;
 ///
 /// * `file` - File object
 /// * `search` - Word to search for
-pub fn search_var(file: &mut File, search: &str) {
+pub fn search_var(file: &mut BufReader<File>, search: &str) {
     file.seek(SeekFrom::Start(0)).unwrap();
 
-    let mut bytes = BufReader::new(file.by_ref()).bytes().map(|ch| ch.unwrap());
+    let mut bytes = file.by_ref().bytes().map(|ch| ch.unwrap());
 
     loop {
         let word: String = read!("{}", &mut bytes);
@@ -71,7 +71,7 @@ pub fn read_domain_vertices(global: &mut Input, filename: &str) {
 }
 
 pub trait ReadFromTextFile {
-    fn read_from_text(&mut self, file: &mut File);
+    fn read_from_text(&mut self, file: &mut BufReader<File>);
 }
 
 trait NotBool {}
@@ -82,8 +82,8 @@ impl NotBool for isize {}
 impl NotBool for f64 {}
 
 impl ReadFromTextFile for String {
-    fn read_from_text(&mut self, file: &mut File) {
-        let mut bytes = BufReader::new(file.by_ref()).bytes().map(|ch| ch.unwrap());
+    fn read_from_text(&mut self, file: &mut BufReader<File>) {
+        let mut bytes = file.by_ref().bytes().map(|ch| ch.unwrap());
         *self = read!("{}", bytes);
     }
 }
@@ -93,28 +93,28 @@ where
     T: FromStr + NotBool,
     <T as FromStr>::Err: std::fmt::Debug,
 {
-    fn read_from_text(&mut self, file: &mut File) {
-        let mut bytes = BufReader::new(file.by_ref()).bytes().map(|ch| ch.unwrap());
+    fn read_from_text(&mut self, file: &mut BufReader<File>) {
+        let mut bytes = file.by_ref().bytes().map(|ch| ch.unwrap());
         let tmp: String = read!("{}", bytes);
         *self = tmp.parse::<T>().unwrap()
     }
 }
 
 impl ReadFromTextFile for bool {
-    fn read_from_text(&mut self, file: &mut File) {
+    fn read_from_text(&mut self, file: &mut BufReader<File>) {
         let mut tmp: u8 = 0;
         tmp.read_from_text(file);
         *self = tmp != 0;
     }
 }
 
-fn read_quoted(file: &mut File, quote: char) -> Result<Vec<String>, String> {
+fn read_quoted(file: &mut BufReader<File>, quote: char) -> Result<Vec<String>, String> {
     let (left, right) = match quote {
         '(' => ('(', ')'),
         '{' => ('{', '}'),
         _ => return Err("Invalid quote character".to_string()),
     };
-    let mut bytes = BufReader::new(file.by_ref()).bytes().map(|c| c.unwrap());
+    let mut bytes = file.by_ref().bytes().map(|c| c.unwrap());
     let mut buf = String::new();
 
     loop {
@@ -155,7 +155,7 @@ where
     <T as FromStr>::Err: std::fmt::Debug,
 {
     // {0,...}
-    fn read_from_text(&mut self, file: &mut File) {
+    fn read_from_text(&mut self, file: &mut BufReader<File>) {
         self.extend(
             read_quoted(file, '{')
                 .unwrap()
@@ -171,7 +171,7 @@ where
     <T as FromStr>::Err: std::fmt::Debug,
 {
     // {0,0,0}
-    fn read_from_text(&mut self, file: &mut File) {
+    fn read_from_text(&mut self, file: &mut BufReader<File>) {
         let mut tmp: Vec<T> = Vec::new();
         tmp.read_from_text(file);
         if tmp.len() == 3 {
@@ -184,7 +184,7 @@ where
 
 impl ReadFromTextFile for Vec<bool> {
     // {0,...}
-    fn read_from_text(&mut self, file: &mut File) {
+    fn read_from_text(&mut self, file: &mut BufReader<File>) {
         let mut tmp: Vec<u8> = Vec::new();
         tmp.read_from_text(file);
         self.extend(tmp.into_iter().map(|v| v != 0))
@@ -193,7 +193,7 @@ impl ReadFromTextFile for Vec<bool> {
 
 impl ReadFromTextFile for [bool; 6] {
     // {0,0,0,0,0,0}
-    fn read_from_text(&mut self, file: &mut File) {
+    fn read_from_text(&mut self, file: &mut BufReader<File>) {
         let mut tmp: Vec<u8> = Vec::new();
         tmp.read_from_text(file);
         for (t, s) in zip_eq(self, tmp) {
@@ -210,7 +210,7 @@ where
     // 0
     // 0
     // 0
-    fn read_from_text(&mut self, file: &mut File) {
+    fn read_from_text(&mut self, file: &mut BufReader<File>) {
         for v in self.iter_mut() {
             v.read_from_text(file);
         }
@@ -224,7 +224,7 @@ where
 {
     // (0,0)
     // ...
-    fn read_from_text(&mut self, file: &mut File) {
+    fn read_from_text(&mut self, file: &mut BufReader<File>) {
         while let Ok(tmp) = read_quoted(file, '(') {
             if tmp.len() == 2 {
                 self.push([tmp[0].parse().unwrap(), tmp[1].parse().unwrap()])
@@ -242,7 +242,7 @@ where
 {
     // (0,0,0)
     // ...
-    fn read_from_text(&mut self, file: &mut File) {
+    fn read_from_text(&mut self, file: &mut BufReader<File>) {
         while let Ok(tmp) = read_quoted(file, '(') {
             if tmp.len() == 3 {
                 self.push([
@@ -258,12 +258,12 @@ where
 }
 
 pub struct InputReader {
-    file: File,
+    file: BufReader<File>,
 }
 
 impl InputReader {
     pub fn new(filename: &str) -> Self {
-        let file = File::open(filename).unwrap();
+        let file = BufReader::new(File::open(filename).unwrap());
         Self { file }
     }
     pub fn read_value<T: ReadFromTextFile + std::fmt::Debug>(&mut self, label: &str, buf: &mut T) {
@@ -564,14 +564,14 @@ impl InputReader {
 }
 
 pub struct UserFractureReader {
-    file: File,
+    file: BufReader<File>,
     // number of fractures in file
     pub n_frac: usize,
 }
 
 impl UserFractureReader {
     pub fn new(filename: &str, n_frac_label: &str) -> Self {
-        let mut file = File::open(filename).unwrap();
+        let mut file = BufReader::new(File::open(filename).unwrap());
 
         search_var(&mut file, n_frac_label);
         let mut n_frac: usize = 0;

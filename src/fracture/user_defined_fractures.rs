@@ -114,7 +114,7 @@ impl FractureNodesDef {
 
     /// Reads a file containing user-defined fractures defined by ellipse vertices.
     pub fn from_ell_file(path: &str) -> Vec<Self> {
-        let mut file = File::open(path).unwrap();
+        let mut file = BufReader::new(File::open(path).unwrap());
 
         search_var(&mut file, "nEllipses:");
         let mut n_frac: usize = 0;
@@ -125,7 +125,7 @@ impl FractureNodesDef {
         num_points.read_from_text(&mut file);
 
         search_var(&mut file, "Coordinates:");
-        let mut bytes = BufReader::new(file).bytes().map(|ch| ch.unwrap());
+        let mut bytes = file.bytes().map(|ch| ch.unwrap());
 
         let mut fractures = Vec::new();
 
@@ -146,7 +146,7 @@ impl FractureNodesDef {
 
     /// Reads a file containing user-defined fractures defined by rectangle vertices.
     pub fn from_rect_file(path: &str) -> Vec<Self> {
-        let mut file = File::open(path).unwrap();
+        let mut file = BufReader::new(File::open(path).unwrap());
 
         search_var(&mut file, "nRectangles:");
         let mut n_frac: usize = 0;
@@ -154,7 +154,7 @@ impl FractureNodesDef {
 
         search_var(&mut file, "Coordinates:");
 
-        let mut bytes = BufReader::new(file).bytes().map(|ch| ch.unwrap());
+        let mut bytes = file.bytes().map(|ch| ch.unwrap());
 
         let mut fractures = Vec::new();
 
@@ -175,7 +175,7 @@ impl FractureNodesDef {
 
     /// Reads a file containing user-defined fractures defined by polygon vertices.
     pub fn from_poly_file(path: &str) -> Vec<Self> {
-        let mut file = File::open(path).unwrap();
+        let mut file = BufReader::new(File::open(path).unwrap());
 
         search_var(&mut file, "nPolygons:");
         let mut n_frac: usize = 0;
