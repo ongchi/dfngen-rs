@@ -1,5 +1,6 @@
 use parry3d_f64::bounding_volume::BoundingVolume;
-use parry3d_f64::na::{distance, Point3, Rotation3, Translation3, Unit, Vector3};
+use parry3d_f64::na::{distance, Point3, Rotation3, Unit, Vector3};
+use parry3d_f64::query::details::closest_points_segment_segment_with_locations_nD;
 use parry3d_f64::query::PointQuery;
 use parry3d_f64::shape::Segment;
 
@@ -359,14 +360,13 @@ fn check_dist_to_old_intersections(
     eps: f64,
 ) -> bool {
     let intersection = [int_pts.p1, int_pts.p2];
-    let mut pt = Point3::default();
 
     for i in 0..poly2.intersection_index.len() {
         let int2 = [
             int_pts_list[poly2.intersection_index[i]].p1,
             int_pts_list[poly2.intersection_index[i]].p2,
         ];
-        let dist = line_seg_to_line_seg(&intersection, &int2, &mut pt, eps);
+        let (dist, _) = line_seg_to_line_seg(&intersection, &int2);
 
         if dist < (min_distance - eps) && dist > eps {
             return true;
@@ -408,11 +408,10 @@ fn check_dist_to_new_intersections(
     eps: f64,
 ) -> bool {
     let intersection = [int_pts.p1, int_pts.p2];
-    let mut pt = Point3::default(); // Pt of intersection if lines intersect
 
     for tmp_int in temp_int_pts {
         let int2 = [tmp_int.p1, tmp_int.p2];
-        let dist = line_seg_to_line_seg(&intersection, &int2, &mut pt, eps);
+        let (dist, pt) = line_seg_to_line_seg(&intersection, &int2);
 
         if dist < min_distance && dist > eps {
             return true;
@@ -789,32 +788,6 @@ fn point_to_line_seg(point: &Point3<f64>, line: &[Point3<f64>; 2], eps: f64) -> 
     Segment::new(line[0], line[1]).distance_to_local_point(point, true)
 }
 
-/// Is Point On Line Segment
-///
-/// # Arguments
-///
-/// * `pt` - Point in 3D space
-/// * `line - Line defined by two end points
-///
-/// # Returns
-///
-/// * `bool` - True if point lies on line segment, false otherwise
-fn point_on_line_seg(pt: &Point3<f64>, line: &[Point3<f64>; 2], eps: f64) -> bool {
-    // pt is point we are checking if on line between A and B
-    // If mag(A to Pt) + mag(pt to B) = mag(A to B), pt is on line
-    // end point A to end point B
-    let end_ptto_end_pt_dist = (line[1] - line[0]).magnitude();
-    // end point A to pt
-    let end_pt_to_pt_dist = (pt - line[0]).magnitude();
-    // pt to end pt B
-    let pt_to_end_pt_dist = (line[1] - pt).magnitude();
-    // (end pt A to pt) + (pt to end pt B) - (end pt to end pt)
-    // If zero, pt is between endpoints, and on line
-    let result = end_pt_to_pt_dist + pt_to_end_pt_dist - end_ptto_end_pt_dist;
-
-    -eps < result && result < eps
-}
-
 /// Check if nodes are too close to edge
 ///
 /// Checks distances from intersection to poly edges. If the distance is less than
@@ -869,12 +842,8 @@ fn check_close_edge(
             return true;
         }
 
-        // 'pt' is point of intersection, set in lineSegToLineSeg()
-        // Get distances of each point to line
         // Minimum dist from poly edge segment to intersection segment
-        let mut pt = Point3::default();
-
-        let dist = line_seg_to_line_seg(&edge, &line, &mut pt, eps);
+        let (dist, _) = line_seg_to_line_seg(&edge, &line);
 
         if dist < min_dist && dist > eps {
             // Try to shrink the intersection slightly in order to
@@ -922,88 +891,24 @@ fn check_close_edge(
 
 /// Closest Distance from Line Seg to Line Seg
 ///
-/// Calculates the distance between two line segments.
-/// Also calculates the point of intersection if the lines overlap.
-///
 /// # Arguments
 ///
 /// * `line1` - Line 1 defined by two end points
 /// * `line2` - Line 2 defined by two end points
-/// * `pt` - Point structure object. If lines intersect, pt will contain the intersection point
 ///
 /// # Returns
 ///
-/// * `f64` - Minimum distance between line 1 and line 2
-fn line_seg_to_line_seg(
-    line1: &[Point3<f64>; 2],
-    line2: &[Point3<f64>; 2],
-    pt: &mut Point3<f64>,
-    eps: f64,
-) -> f64 {
-    // Check if line 1 and line 2 intersect
-    let p1 = &line1[0];
-    let p2 = &line2[0];
-    let v1 = (line1[0] - line1[1]).normalize();
-    let v2 = (line2[0] - line2[1]).normalize();
-    let p1p2 = (p1 - p2).normalize();
-
-    if is_parallel(&v1, &v2, eps) {
-        if p1p2.magnitude() < eps || is_parallel(&p1p2, &v1, eps) {
-            // If 2 line segs overlap
-            if point_on_line_seg(&line1[0], line2, eps) || point_on_line_seg(&line1[1], line2, eps)
-            {
-                0.
-            } else {
-                // Line segs are colinear but not overlapping
-                line_seg_to_line_seg_sep(line1, line2, eps)
-            }
-        } else {
-            // Line segs are parallel but not overlapping
-            line_seg_to_line_seg_sep(line1, line2, eps)
-        }
-    } else {
-        // Lines are not parallel
-        *pt = {
-            let v1 = v1.normalize();
-            let v2 = v2.normalize();
-            let v1xv2 = v1.cross(&v2);
-            let denom = v1xv2.dot(&v1xv2);
-            let v21 = p2 - p1;
-            let v21xv2 = v21.cross(&v2);
-            let temp2 = v21xv2.dot(&v1xv2);
-            let temp3 = temp2 / denom;
-            let temp = Translation3::from(v1.scale(temp3));
-
-            temp.transform_point(p1)
-        }; // Point of intersection if lines intersect
-        if point_on_line_seg(pt, line1, eps) && point_on_line_seg(pt, line2, eps) {
-            // Case 1: Lines Intersection occurs on the lines
-            0.
-        } else {
-            // Case 2: Line Intersection does not occur on both lines, find min distance from 4 endpoints to other line seg
-            line_seg_to_line_seg_sep(line1, line2, eps)
-        }
-    }
-}
-
-/// Dist. from line seg to line seg (seperated lines)
-///
-/// Calculates the minimum distance between two seperated line segments.
-///
-/// # Returns
-///
-/// * `f64` - Minimum distance between line 1 and line 2
-fn line_seg_to_line_seg_sep(line1: &[Point3<f64>; 2], line2: &[Point3<f64>; 2], eps: f64) -> f64 {
-    let dist = f64::min(
-        point_to_line_seg(&line1[0], line2, eps),
-        point_to_line_seg(&line1[1], line2, eps),
+/// The minimum distance between line 1 and line 2, and the point on line 1
+/// which is closest to line 2. If the lines intersect, this is the intersection point.
+fn line_seg_to_line_seg(line1: &[Point3<f64>; 2], line2: &[Point3<f64>; 2]) -> (f64, Point3<f64>) {
+    let (location1, location2) = closest_points_segment_segment_with_locations_nD(
+        (&line1[0], &line1[1]),
+        (&line2[0], &line2[1]),
     );
-    let temp = f64::min(
-        point_to_line_seg(&line2[0], line1, eps),
-        point_to_line_seg(&line2[1], line1, eps),
-    );
+    let point1 = Segment::new(line1[0], line1[1]).point_at(&location1);
+    let point2 = Segment::new(line2[0], line2[1]).point_at(&location2);
 
-    f64::min(dist, temp)
+    (distance(&point1, &point2), point1)
 }
 
 /// Check for Triple Intersection , get int. point
@@ -1031,7 +936,6 @@ fn check_for_triple_intersections(
     temp_data: &mut Vec<TriplePtTempData>,
     triple_points: &[Point3<f64>],
 ) -> i32 {
-    let mut pt = Point3::default();
     let min_dist = 1.5 * h;
     let int_end_pts = [int_pts.p1, int_pts.p2]; //newest intersection
                                                 // Number of intersections already on poly2
@@ -1045,7 +949,7 @@ fn check_for_triple_intersections(
             int_pts_list[intersection_index].p1,
             int_pts_list[intersection_index].p2,
         ];
-        let mut dist1 = line_seg_to_line_seg(&int_end_pts, &line, &mut pt, eps); //get distance and pt of intersection
+        let (mut dist1, pt) = line_seg_to_line_seg(&int_end_pts, &line); // distance and pt of intersection
 
         if dist1 >= h {
             continue;
