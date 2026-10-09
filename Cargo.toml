@@ -1,6 +1,6 @@
 [package]
 name = "dfngen-rs"
-version = "0.2.0"
+version = "0.3.0"
 description = "dfngen: Discrete Fracture Networks (DFN) generator"
 edition = "2021"
 license = "LGPL-3.0"
