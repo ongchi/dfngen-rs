@@ -1,5 +1,7 @@
 use parry3d_f64::bounding_volume::BoundingVolume;
 use parry3d_f64::na::{distance, Point3, Rotation3, Translation3, Unit, Vector3};
+use parry3d_f64::query::PointQuery;
+use parry3d_f64::shape::Segment;
 
 use crate::{
     fracture::{
@@ -779,22 +781,12 @@ fn check_distance_from_nodes(
 ///
 /// * `f64` - Shortest distance between point and line segment
 fn point_to_line_seg(point: &Point3<f64>, line: &[Point3<f64>; 2], eps: f64) -> f64 {
-    let sqr_line_len = (line[0] - line[1]).magnitude_squared();
-
-    if sqr_line_len < eps {
+    if (line[0] - line[1]).magnitude_squared() < eps {
         // Line endpoints are equal to each other
-        return (point - line[0]).magnitude();
+        return distance(point, &line[0]);
     }
 
-    let p_l1 = point - line[0];
-    let l1l2 = line[1] - line[0];
-    // Find parameterization for line projection on [0, 1]
-    let t = (p_l1.dot(&l1l2) / sqr_line_len).clamp(0.0, 1.0);
-
-    let t = Translation3::from(l1l2.scale(t));
-    let projection = t.transform_point(&line[0]);
-
-    (projection - point).magnitude()
+    Segment::new(line[0], line[1]).distance_to_local_point(point, true)
 }
 
 /// Is Point On Line Segment
