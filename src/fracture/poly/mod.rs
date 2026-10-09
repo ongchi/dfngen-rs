@@ -1,7 +1,8 @@
 mod domain_truncation;
 
 use parry3d_f64::bounding_volume::Aabb;
-use parry3d_f64::na::{Point3, Rotation3, Vector3};
+use parry3d_f64::na::{center, Point3, Rotation3, Vector3};
+use parry3d_f64::shape::Triangle;
 
 use crate::{
     cg::{is_parallel, rotation_between},
@@ -161,28 +162,21 @@ impl Poly {
     ///
     /// Calculate exact area of polygon (after truncation)
     ///
-    /// Summary of algorithm:
-    /// 1: Creates a point on the inside of the polygon (insidePt)
-    /// 2: Uses 'insidePt' to create vectors to all outside vertices, breaking the polygon into triangles
-    /// 3: Uses .5 * (magnitude of cross product) for each triangle for area calculation
-    /// 4: Sums the areas for each trianlge for total area of polygon
+    /// Splits the polygon into triangles around a point inside of it,
+    /// and sums the areas of the triangles.
     pub fn assign_area(&mut self) {
         let vertices = &self.vertices;
         let number_of_nodes = vertices.len();
-        let first = vertices[0];
 
         self.area = if number_of_nodes == 3 {
-            0.5 * (vertices[1] - first)
-                .cross(&(vertices[2] - first))
-                .magnitude()
+            Triangle::new(vertices[0], vertices[1], vertices[2]).area()
         } else {
-            let inside_pt = first + 0.5 * (vertices[number_of_nodes / 2] - first);
+            let inside_pt = center(&vertices[0], &vertices[number_of_nodes / 2]);
 
             (0..number_of_nodes)
                 .map(|i| {
-                    let v1 = vertices[i] - inside_pt;
-                    let v2 = vertices[(i + 1) % number_of_nodes] - inside_pt;
-                    0.5 * v1.cross(&v2).magnitude()
+                    Triangle::new(inside_pt, vertices[i], vertices[(i + 1) % number_of_nodes])
+                        .area()
                 })
                 .sum()
         };
