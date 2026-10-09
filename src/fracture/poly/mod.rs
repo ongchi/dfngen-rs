@@ -1,5 +1,6 @@
 mod domain_truncation;
 
+use parry3d_f64::bounding_volume::Aabb;
 use parry3d_f64::na::{Point3, Vector3};
 
 use crate::{
@@ -7,12 +8,9 @@ use crate::{
     distribution::generating_points::generate_theta,
 };
 
-#[derive(Clone, Default)]
+#[derive(Clone)]
 /// The Poly structre is used to create and store fracrures/polygons.
 pub struct Poly {
-    /// Number of nodes/vertices in the polygon.
-    pub number_of_nodes: isize,
-
     /// Contains the index of the 'shapeFamilies' array in main() from which the fracture was
     /// created from. If the polygon was created from user defined input, it will be marked
     /// (-2 for user-rect, and -1 for user ell.
@@ -53,15 +51,10 @@ pub struct Poly {
     pub normal: Vector3<f64>,
 
     /// The bounding box of the polygon. Set with assign_bounding_box().
-    /// Index Key:
-    /// [0]: x minimum, [1]: x maximum
-    /// [2]: y minimum, [3]: y maximum
-    /// [4]: z minimum, [5]: z maximum
-    pub bounding_box: [f64; 6],
+    pub bounding_box: Aabb,
 
-    /// Double array for which hold the polygon's vertices. Vertices are stored in a 1-D array.
-    /// e.g For n number of vertices, array will be: {x1, y1, z1, x2, y2, z2, ... , xn, yn, zn}
-    pub vertices: Vec<f64>,
+    /// Vertices of the polygon, in order around its boundary.
+    pub vertices: Vec<Point3<f64>>,
 
     /// The faces array contains flags (true/false) which denote which sides, if any, the polygon is touching.
     /// True (not zero) - Polygon is touching a domain boundary.
@@ -88,17 +81,29 @@ pub struct Poly {
     pub intersection_index: Vec<usize>,
 }
 
-impl Poly {
-    /// Coordinates of the vertex at `index`.
-    pub fn vertex(&self, index: usize) -> Point3<f64> {
-        let idx = index * 3;
-        Point3::new(
-            self.vertices[idx],
-            self.vertices[idx + 1],
-            self.vertices[idx + 2],
-        )
+impl Default for Poly {
+    fn default() -> Self {
+        Self {
+            family_num: 0,
+            group_num: 0,
+            area: 0.,
+            xradius: 0.,
+            yradius: 0.,
+            aspect_ratio: 0.,
+            translation: Vector3::zeros(),
+            normal: Vector3::zeros(),
+            // Intersects nothing until assign_bounding_box() sets it
+            bounding_box: Aabb::new_invalid(),
+            vertices: Vec::new(),
+            faces: [false; 6],
+            xyplane: false,
+            truncated: false,
+            intersection_index: Vec::new(),
+        }
     }
+}
 
+impl Poly {
     /// Create a Rectangular
     ///
     /// # Arguments
@@ -110,13 +115,17 @@ impl Poly {
         let y = radius * aspect_ratio;
 
         Self {
-            number_of_nodes: 4,
             normal: Vector3::new(0., 0., 1.),
             xradius: x,
             yradius: y,
             aspect_ratio,
             // Poly is on x-y plane
-            vertices: vec![x, y, 0., -x, y, 0., -x, -y, 0., x, -y, 0.],
+            vertices: vec![
+                Point3::new(x, y, 0.),
+                Point3::new(-x, y, 0.),
+                Point3::new(-x, -y, 0.),
+                Point3::new(x, -y, 0.),
+            ],
             ..Default::default()
         }
     }
@@ -128,28 +137,24 @@ impl Poly {
     /// * `radius` - Radius (xradius = radius. yradius = radius * aspectRatio)
     /// * `aspect_ratio` - Aspect ratio
     pub fn new_ell(num_nodes: usize, radius: f64, aspect_ratio: f64) -> Self {
-        let mut new_poly = Self {
-            number_of_nodes: num_nodes as isize,
+        Self {
             normal: Vector3::new(0., 0., 1.),
-            vertices: Vec::with_capacity(3 * num_nodes),
+            xradius: radius,
+            yradius: radius * aspect_ratio,
+            aspect_ratio,
+            // Ellipse vertices on x-y plane
+            vertices: generate_theta(aspect_ratio, num_nodes)
+                .into_iter()
+                .map(|theta| {
+                    Point3::new(
+                        radius * theta.cos(),
+                        radius * aspect_ratio * theta.sin(),
+                        0.,
+                    )
+                })
+                .collect(),
             ..Default::default()
-        };
-
-        new_poly.xradius = radius;
-        new_poly.yradius = radius * aspect_ratio;
-        new_poly.aspect_ratio = aspect_ratio;
-
-        // Generate theta array used to place vertices
-        let theta_list = generate_theta(aspect_ratio, num_nodes);
-
-        // Initializes ellipse vertices on x-y plane
-        for theta in theta_list {
-            new_poly.vertices.push(radius * theta.cos());
-            new_poly.vertices.push(radius * aspect_ratio * theta.sin());
-            new_poly.vertices.push(0.);
         }
-
-        new_poly
     }
 
     /// Assign Poly's Area
@@ -162,20 +167,21 @@ impl Poly {
     /// 3: Uses .5 * (magnitude of cross product) for each triangle for area calculation
     /// 4: Sums the areas for each trianlge for total area of polygon
     pub fn assign_area(&mut self) {
-        let number_of_nodes = self.number_of_nodes as usize;
-        let first = self.vertex(0);
+        let vertices = &self.vertices;
+        let number_of_nodes = vertices.len();
+        let first = vertices[0];
 
         self.area = if number_of_nodes == 3 {
-            0.5 * (self.vertex(1) - first)
-                .cross(&(self.vertex(2) - first))
+            0.5 * (vertices[1] - first)
+                .cross(&(vertices[2] - first))
                 .magnitude()
         } else {
-            let inside_pt = first + 0.5 * (self.vertex(number_of_nodes / 2) - first);
+            let inside_pt = first + 0.5 * (vertices[number_of_nodes / 2] - first);
 
             (0..number_of_nodes)
                 .map(|i| {
-                    let v1 = self.vertex(i) - inside_pt;
-                    let v2 = self.vertex((i + 1) % number_of_nodes) - inside_pt;
+                    let v1 = vertices[i] - inside_pt;
+                    let v2 = vertices[(i + 1) % number_of_nodes] - inside_pt;
                     0.5 * v1.cross(&v2).magnitude()
                 })
                 .sum()
@@ -189,32 +195,13 @@ impl Poly {
     ///
     /// # Arguments
     pub fn assign_bounding_box(&mut self) {
-        // Initialize mins and maxs
-        let mut min_x = self.vertices[0]; // x1
-        let mut max_x = min_x;
-        let mut min_y = self.vertices[1]; // y1
-        let mut max_y = min_y;
-        let mut min_z = self.vertices[2]; // z1
-        let mut max_z = min_z;
-
-        for i in 1..self.number_of_nodes {
-            let idx = (i * 3) as usize;
-            max_x = f64::max(max_x, self.vertices[idx]);
-            min_x = f64::min(min_x, self.vertices[idx]);
-            max_y = f64::max(max_y, self.vertices[idx + 1]);
-            min_y = f64::min(min_y, self.vertices[idx + 1]);
-            max_z = f64::max(max_z, self.vertices[idx + 2]);
-            min_z = f64::min(min_z, self.vertices[idx + 2]);
-        }
-
-        self.bounding_box = [min_x, max_x, min_y, max_y, min_z, max_z];
+        self.bounding_box = Aabb::from_points(&self.vertices);
     }
 
     /// 2D rotation matrix
     ///
     /// Rotates poly around its normal vecotor on x-y plane
     /// Assumes poly is on x-y plane
-    /// Assumes poly.number_of_nodes is set
     /// Angle must be in radians
     ///
     /// # Arguments
@@ -225,13 +212,12 @@ impl Poly {
         let cos_calc = angle.cos();
 
         // Rotates polygon on x-y plane counter-clockwise
-        for i in 0..self.number_of_nodes {
-            let idx = (i * 3) as usize;
-            let x = self.vertices[idx];
-            let y = self.vertices[idx + 1];
-            self.vertices[idx] = (x * cos_calc) + (y * sin_calc); // x
-            self.vertices[idx + 1] = (x * -sin_calc) + (y * cos_calc); // y
-            self.vertices[idx + 2] = 0.; // z
+        for vertex in &mut self.vertices {
+            *vertex = Point3::new(
+                (vertex.x * cos_calc) + (vertex.y * sin_calc),
+                (vertex.x * -sin_calc) + (vertex.y * cos_calc),
+                0.,
+            );
         }
     }
 
@@ -258,18 +244,12 @@ impl Poly {
 
     /// Applies the row-major rotation matrix `r` to all vertices.
     pub fn rotate(&mut self, r: &[f64; 9]) {
-        let number_of_nodes = self.number_of_nodes as usize;
-
-        let (vertices, _) = self.vertices.as_chunks_mut::<3>();
-
-        for vertex in vertices.iter_mut().take(number_of_nodes) {
-            *vertex = rotate(r, vertex[0], vertex[1], vertex[2]);
+        for vertex in &mut self.vertices {
+            *vertex = Point3::from(rotate(r, vertex.x, vertex.y, vertex.z));
         }
     }
 
     /// Translate the poly by vector
-    ///
-    /// Assumes newPoly.number_of_nodes is initialized
     ///
     /// # Arguments
     ///
@@ -277,11 +257,8 @@ impl Poly {
     pub fn translate(&mut self, translation: Vector3<f64>) {
         self.translation = translation;
 
-        for i in 0..self.number_of_nodes {
-            let idx = (i * 3) as usize;
-            self.vertices[idx] += translation.x;
-            self.vertices[idx + 1] += translation.y;
-            self.vertices[idx + 2] += translation.z;
+        for vertex in &mut self.vertices {
+            *vertex += translation;
         }
     }
 }

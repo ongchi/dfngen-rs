@@ -2,7 +2,7 @@ use std::io::BufReader;
 use std::{fs::File, io::Read};
 
 use itertools::zip_eq;
-use parry3d_f64::na::{distance, Point3, Vector3};
+use parry3d_f64::na::{center, distance, Point3, Vector3};
 use text_io::read;
 
 use crate::error::DfngenError;
@@ -206,8 +206,6 @@ impl FractureNodesDef {
             }
         };
 
-        poly.number_of_nodes = nodes.len() as isize;
-
         // Get a normal vector
         // Vector from fist node to node accross middle of polygon
         let pt_idx_12 = nodes.len() / 2;
@@ -225,7 +223,7 @@ impl FractureNodesDef {
         // Note: For polygons defined by coordinates, the coordinates
         // themselves provide the translation. We need to estimate the center
         // of the polygon and init. the translation array
-        poly.translation = 0.5 * Vector3::new(p1.x + p_12.x, p1.y + p_12.y, p1.z + p_12.z);
+        poly.translation = center(&p1, &p_12).coords;
 
         // Estimate radius
         // across middle if even number of nodes
@@ -253,7 +251,7 @@ impl FractureNodesDef {
         }
 
         poly.aspect_ratio = poly.yradius / poly.xradius;
-        poly.vertices = nodes.iter().flat_map(|&node| node.to_vec()).collect();
+        poly.vertices = nodes.iter().map(|node| Point3::from_slice(node)).collect();
 
         poly
     }

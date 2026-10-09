@@ -38,11 +38,8 @@ pub fn re_translate_poly(
         new_poly.intersection_index.clear(); // Clear any saved intersections
 
         // Move poly back to origin
-        for i in 0..new_poly.number_of_nodes {
-            let idx = (3 * i) as usize;
-            new_poly.vertices[idx] -= new_poly.translation[0]; // x
-            new_poly.vertices[idx + 1] -= new_poly.translation[1]; // y
-            new_poly.vertices[idx + 2] -= new_poly.translation[2]; // z
+        for vertex in &mut new_poly.vertices {
+            *vertex -= new_poly.translation;
         }
 
         // Translate to new position
@@ -56,14 +53,12 @@ pub fn re_translate_poly(
         new_poly.truncated = false; // Set to 0 to mean not truncated
         new_poly.group_num = 0; // Clear cluster group information
         new_poly.intersection_index.clear(); // Clear any saved intersections
-        new_poly.number_of_nodes = frac_fam.shape.number_of_nodes() as isize;
 
-        new_poly.vertices.clear();
         let tmp = match frac_fam.shape {
             Shape::Ellipse(n) => Poly::new_ell(n as usize, new_poly.xradius, frac_fam.aspect_ratio),
             Shape::Rectangle => Poly::new_rect(new_poly.xradius, new_poly.aspect_ratio),
         };
-        new_poly.vertices.extend(tmp.vertices);
+        new_poly.vertices = tmp.vertices;
 
         // Save newPoly's previous normal vector and then reset poly normal to {0,0,1} for applyRotation3D function
         let normal_b = new_poly.normal;

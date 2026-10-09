@@ -20,34 +20,9 @@ pub fn or(dest: &mut [bool; 6], src: &[bool; 6]) {
 /// To increase performance, the standard deviation is now calculated without
 /// the square root and division by N elements.
 /// Return: The sum-deviation of array 'vec'
-fn sum_deviation(vec: &[f64]) -> f64 {
+pub fn sum_deviation(vec: &[f64]) -> f64 {
     let mean = vec.iter().sum::<f64>() / (vec.len() as f64);
     vec.iter().map(|&v| (v - mean).powi(2)).sum()
-}
-
-/// Sum deviaiton array X 3
-///
-/// Used in intersectionChecking()
-///
-/// How function is used:
-/// v is a pointer to an array of 4 points, each point
-/// contains x, y, and z coordinates
-/// The 4 sumDeviation is computed on all points' x, y, and z coord.
-/// An array of three elements is returned containing the sum deviation
-/// of all x's, all y's, and all z's
-///
-/// # Arguments
-///
-/// * `v` - Array of 12 elements: 4 points, {x1, y1, z1, ... , x4, y4, z4}
-///
-/// # Returns
-///
-/// Array of 3 elements x,y,z with each stdDev, respectively
-pub fn sum_dev_ary3(v: &[f64; 12]) -> [f64; 3] {
-    let x = [v[0], v[3], v[6], v[9]];
-    let y = [v[1], v[4], v[7], v[10]];
-    let z = [v[2], v[5], v[8], v[11]];
-    [sum_deviation(&x), sum_deviation(&y), sum_deviation(&z)]
 }
 
 /// Get Max Element's Index

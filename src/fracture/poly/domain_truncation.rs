@@ -1,4 +1,4 @@
-use parry3d_f64::na::Vector3;
+use parry3d_f64::na::{Point3, Vector3};
 
 use crate::fracture::poly::Poly;
 
@@ -24,234 +24,112 @@ use crate::fracture::poly::Poly;
 ///     less than 3 vertices
 impl Poly {
     pub fn domain_truncation(&mut self, h: f64, eps: f64, domain_size: &Vector3<f64>) -> bool {
-        let mut points = Vec::with_capacity(18);
-        let mut n_nodes = 0;
-        let domain_x = domain_size[0] * 0.5;
-        let domain_y = domain_size[1] * 0.5;
-        let domain_z = domain_size[2] * 0.5;
-        let stop = self.number_of_nodes;
+        let half_domain = domain_size * 0.5;
+        let is_inside_domain = |vertex: &Point3<f64>| {
+            (0..3)
+                .all(|axis| vertex[axis] <= half_domain[axis] && vertex[axis] >= -half_domain[axis])
+        };
 
-        // Check if truncation is necessay:
-        for k in 0..stop {
-            let idx = (k * 3) as usize;
-
-            if self.vertices[idx] > domain_x || self.vertices[idx] < -domain_x {
-                break;
-            }
-
-            if self.vertices[idx + 1] > domain_y || self.vertices[idx + 1] < -domain_y {
-                break;
-            }
-
-            if self.vertices[idx + 2] > domain_z || self.vertices[idx + 2] < -domain_z {
-                break;
-            }
-
-            // If finished checking last node and code still hasn't broke
-            // from the for loop, then all nodes are inside domain
-            if k + 1 == stop {
-                return false;
-            }
+        if self.vertices.iter().all(is_inside_domain) {
+            // Truncation is not necessary
+            return false;
         }
 
-        // If code does not return above, truncation is needed/
-        self.truncated = true; // Mark poly as truncated
+        self.truncated = true;
 
         // Outward normal of each side of the domain, and the center point of the side
         let domain_sides = [
-            (Vector3::new(0., 0., 1.), Vector3::new(0., 0., domain_z)),
-            (Vector3::new(0., 0., -1.), Vector3::new(0., 0., -domain_z)),
-            (Vector3::new(0., 1., 0.), Vector3::new(0., domain_y, 0.)),
-            (Vector3::new(0., -1., 0.), Vector3::new(0., -domain_y, 0.)),
-            (Vector3::new(1., 0., 0.), Vector3::new(domain_x, 0., 0.)),
-            (Vector3::new(-1., 0., 0.), Vector3::new(-domain_x, 0., 0.)),
+            (
+                Vector3::new(0., 0., 1.),
+                Vector3::new(0., 0., half_domain.z),
+            ),
+            (
+                Vector3::new(0., 0., -1.),
+                Vector3::new(0., 0., -half_domain.z),
+            ),
+            (
+                Vector3::new(0., 1., 0.),
+                Vector3::new(0., half_domain.y, 0.),
+            ),
+            (
+                Vector3::new(0., -1., 0.),
+                Vector3::new(0., -half_domain.y, 0.),
+            ),
+            (
+                Vector3::new(1., 0., 0.),
+                Vector3::new(half_domain.x, 0., 0.),
+            ),
+            (
+                Vector3::new(-1., 0., 0.),
+                Vector3::new(-half_domain.x, 0., 0.),
+            ),
         ];
 
-        // Check against the all the walls of the domain
-        for (ntmp, pttmp) in domain_sides {
-            let n_vertices = self.number_of_nodes;
-
-            if n_vertices <= 0 {
+        // Cut the polygon with each side of the domain
+        for (side_normal, side_center) in domain_sides {
+            let Some(last) = self.vertices.last() else {
                 return true; // Reject
-            }
+            };
 
-            n_nodes = 0; // Counter for final number of nodes
-            points.clear(); // Clear any points from last iteration
-            let last = ((n_vertices - 1) * 3) as usize; // Index to last node starting position in array
-            let mut temp = Vector3::new(
-                self.vertices[last] - pttmp[0],
-                self.vertices[last + 1] - pttmp[1],
-                self.vertices[last + 2] - pttmp[2],
-            );
-            // Previous distance - the dot product of the domain side normal
-            // and the distance between vertex number nVertices and the temp point on the
-            // domain side.
-            let mut prevdist = temp.dot(&ntmp);
+            let mut points = Vec::with_capacity(self.vertices.len() + 1);
+            // Signed distance from the domain side to the previous vertex,
+            // negative towards the inside of the domain
+            let mut prevdist = (last.coords - side_center).dot(&side_normal);
+            let mut previous = last;
 
-            for i in 0..n_vertices {
-                let index = (i * 3) as usize;
-                temp.x = self.vertices[index] - pttmp.x;
-                temp.y = self.vertices[index + 1] - pttmp.y;
-                temp.z = self.vertices[index + 2] - pttmp.z;
-                // Current distance, the dot product of domain side normal and
-                // the distance between the ii'th vertex and the temporary point
-                let currdist = temp.dot(&ntmp);
-
-                if currdist <= 0. {
-                    // if vertex is towards the domain relative to the domain side
-                    // Save vertex
-                    points.push(self.vertices[index]); // x
-                    points.push(self.vertices[index + 1]); // y
-                    points.push(self.vertices[index + 2]); // z
-                    n_nodes += 1;
-                }
+            for vertex in &self.vertices {
+                let currdist = (vertex.coords - side_center).dot(&side_normal);
 
                 if currdist * prevdist < 0. {
-                    //if crosses boundary
-                    n_nodes += 1;
+                    // The edge crosses the domain side, save the point on the side
+                    points.push(
+                        previous
+                            + (vertex - previous) * prevdist.abs()
+                                / (currdist.abs() + prevdist.abs()),
+                    );
+                }
 
-                    if i == 0 {
-                        // Store point on boundary
-                        // 'last' is index to last vertice
-                        temp[0] = self.vertices[last]
-                            + (self.vertices[0] - self.vertices[last]) * prevdist.abs()
-                                / (currdist.abs() + prevdist.abs());
-                        temp[1] = self.vertices[last + 1]
-                            + (self.vertices[1] - self.vertices[last + 1]) * prevdist.abs()
-                                / (currdist.abs() + prevdist.abs());
-                        temp[2] = self.vertices[last + 2]
-                            + (self.vertices[2] - self.vertices[last + 2]) * prevdist.abs()
-                                / (currdist.abs() + prevdist.abs());
-                        points.push(temp[0]);
-                        points.push(temp[1]);
-                        points.push(temp[2]);
-                    } else {
-                        // If from outside to inside
-                        temp[0] = self.vertices[index - 3]
-                            + (self.vertices[index] - self.vertices[index - 3]) * prevdist.abs()
-                                / (currdist.abs() + prevdist.abs());
-                        temp[1] = self.vertices[index - 2]
-                            + (self.vertices[index + 1] - self.vertices[index - 2])
-                                * prevdist.abs()
-                                / (currdist.abs() + prevdist.abs());
-                        temp[2] = self.vertices[index - 1]
-                            + (self.vertices[index + 2] - self.vertices[index - 1])
-                                * prevdist.abs()
-                                / (currdist.abs() + prevdist.abs());
-                        points.reserve(points.len() + 3); // Resize vector if needed
-                        points.push(temp[0]);
-                        points.push(temp[1]);
-                        points.push(temp[2]);
-                    }
-
-                    if currdist < 0. {
-                        // If from outside to inside - swap order
-                        let tmp_index = (n_nodes - 1) * 3; // Index to last saved point
-                        points[tmp_index] = points[tmp_index - 3];
-                        points[tmp_index + 1] = points[tmp_index - 2];
-                        points[tmp_index + 2] = points[tmp_index - 1];
-                        points[tmp_index - 3] = temp[0];
-                        points[tmp_index - 2] = temp[1];
-                        points[tmp_index - 1] = temp[2];
-                    }
+                if currdist <= 0. {
+                    points.push(*vertex);
                 }
 
                 prevdist = currdist;
-            } // End vertice loops
-
-            self.number_of_nodes = n_nodes as isize;
-
-            if n_nodes > 0 {
-                self.vertices = Vec::with_capacity(3 * n_nodes);
-
-                // Copy new nodes back to newPoly
-                for k in 0..n_nodes {
-                    let idxx = k * 3;
-                    self.vertices.push(points[idxx]);
-                    self.vertices.push(points[idxx + 1]);
-                    self.vertices.push(points[idxx + 2]);
-                }
+                previous = vertex;
             }
-        } // End main loop
 
+            self.vertices = points;
+        }
+
+        // Remove a vertex of each edge which is shorter than 2h
         let mut i = 0;
 
-        while i < n_nodes {
-            let idx = i * 3;
+        while i < self.vertices.len() {
+            let vertex = self.vertices[i];
+            let next = (i + 1) % self.vertices.len();
 
-            let next = if i == n_nodes - 1 {
-                // If last node
-                0
-            } else {
-                (i + 1) * 3
-            };
-
-            let temp = Vector3::new(
-                self.vertices[idx] - self.vertices[next],
-                self.vertices[idx + 1] - self.vertices[next + 1],
-                self.vertices[idx + 2] - self.vertices[next + 2],
-            );
-
-            if temp.magnitude() < (2. * h) {
-                // If distance between current and next vertex < h
+            if (vertex - self.vertices[next]).magnitude() < (2. * h) {
                 // If point is NOT on a boundary, delete current indexed point, ELSE delete next point
-                if (self.vertices[idx].abs() - domain_x).abs() > eps
-                    && (self.vertices[idx + 1].abs() - domain_y).abs() > eps
-                    && (self.vertices[idx + 2].abs() - domain_z).abs() > eps
-                {
-                    // Loop deletes a vertice by shifting elements to the right of the element, to the left
-                    for j in i..n_nodes - 1 {
-                        let idx = j * 3;
-                        self.vertices[idx] = self.vertices[idx + 3]; // Shift x coordinate left
-                        self.vertices[idx + 1] = self.vertices[idx + 4]; // Shift y coordinate left
-                        self.vertices[idx + 2] = self.vertices[idx + 5];
-                        // Shift z coordinate left
-                    }
-                } else {
-                    // Loop deletes a vertice by shifting elements to the right of the element to the left
-                    let end = (n_nodes - 1) * 3;
+                let is_on_boundary =
+                    (0..3).any(|axis| (vertex[axis].abs() - half_domain[axis]).abs() <= eps);
 
-                    for j in (next..end).step_by(3) {
-                        self.vertices[j] = self.vertices[j + 3]; // Shift x coordinate left
-                        self.vertices[j + 1] = self.vertices[j + 4]; // Shift y coordinate left
-                        self.vertices[j + 2] = self.vertices[j + 5]; // Shift z coordinate left
-                    }
-                }
-
-                n_nodes -= 1; // Update node counter
+                self.vertices.remove(if is_on_boundary { next } else { i });
             } else {
                 i += 1;
             }
-        } // End while loop
+        }
 
-        if n_nodes < 3 {
+        if self.vertices.len() < 3 {
             return true; // Reject
         }
 
-        self.number_of_nodes = n_nodes as isize;
-        let temp = self.number_of_nodes;
-
-        for k in 0..temp {
-            // Check boundary faces
-            // Update which boundaries newPoly touches
-            let idx = (k * 3) as usize;
-
-            if self.vertices[idx] >= domain_x - eps {
-                self.faces[0] = true;
-            } else if self.vertices[idx] <= -domain_x + eps {
-                self.faces[1] = true;
-            }
-
-            if self.vertices[idx + 1] >= domain_y - eps {
-                self.faces[2] = true;
-            } else if self.vertices[idx + 1] <= -domain_y + eps {
-                self.faces[3] = true;
-            }
-
-            if self.vertices[idx + 2] >= domain_z - eps {
-                self.faces[4] = true;
-            } else if self.vertices[idx + 2] <= -domain_z + eps {
-                self.faces[5] = true;
+        // Update which boundaries the polygon touches
+        for vertex in &self.vertices {
+            for axis in 0..3 {
+                if vertex[axis] >= half_domain[axis] - eps {
+                    self.faces[2 * axis] = true;
+                } else if vertex[axis] <= -half_domain[axis] + eps {
+                    self.faces[2 * axis + 1] = true;
+                }
             }
         }
 

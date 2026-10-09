@@ -1,12 +1,12 @@
+use parry3d_f64::bounding_volume::BoundingVolume;
 use parry3d_f64::na::{distance, Point3, Translation3, Vector3};
 
 use crate::{
-    error,
     fracture::{
         cluster_groups::{assign_group, update_groups},
         poly::Poly,
     },
-    math_functions::{max_elmt_idx, sorted_index, sum_dev_ary3},
+    math_functions::{max_elmt_idx, sorted_index, sum_deviation},
     structures::{IntersectionPoints, PolyOptions, Stats, TriplePtTempData},
 };
 
@@ -139,12 +139,7 @@ pub fn poly_and_intersection_rotation_to_xy(
 ///
 /// * `bool` - True if bounding boxes intersect, false otherwise
 fn check_bounding_box(poly1: &Poly, poly2: &Poly) -> bool {
-    // Boxes intersect if their ranges overlap on each axis
-    (0..3).all(|axis| {
-        let (min, max) = (2 * axis, 2 * axis + 1);
-        !(poly1.bounding_box[max] < poly2.bounding_box[min]
-            || poly1.bounding_box[min] > poly2.bounding_box[max])
-    })
+    poly1.bounding_box.intersects(&poly2.bounding_box)
 }
 
 /// Find Intersections
@@ -167,60 +162,26 @@ fn find_intersections(flag: &mut i32, poly1: &Poly, poly2: &Poly, eps: f64) -> I
     // Re-write may be worth doing for increased performance and code clarity
     *flag = 0;
 
-    let mut int_pts = IntersectionPoints::new(); // Final intersection points
-    let mut count = 0;
-    let mut f1; // Fracture 1
-    let mut f2; // Fracture 2
-    let mut inters2 = [0., 0., 0., 0., 0., 0.]; // Temporary intersection points of F2 and P1
-    let mut inters = [0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0.]; // Stores 4 possible intersection points {x,y,z} * 3
-    let mut temp = Vector3::new(0., 0., 0.);
+    let mut int_pts = IntersectionPoints::new();
+    // The 2 points where the boundary of poly2 crosses the plane of poly1,
+    // then the 2 points where the boundary of poly1 crosses the plane of poly2
+    let mut inters = [Point3::origin(); 4];
 
-    // Get intersecction points
-    for jj in 0..2 {
-        count = 0; // Intersection point number
+    for (jj, (f1, f2)) in [(poly1, poly2), (poly2, poly1)].into_iter().enumerate() {
+        let mut crossings = [Point3::origin(); 2];
+        let mut count = 0;
+        let plane_point = f1.vertices[0];
+        let mut previous = &f2.vertices[f2.vertices.len() - 1];
+        // Signed distance from the plane of F1 to the previous vertex of F2
+        let mut prevdist = (previous - plane_point).dot(&f1.normal);
 
-        if jj == 0 {
-            f1 = poly1;
-            f2 = poly2;
-        } else {
-            f1 = poly2;
-            f2 = poly1;
-        }
-
-        let n_vertices2 = f2.number_of_nodes;
-        let index = ((n_vertices2 - 1) * 3) as usize; // Index to last vertice
-        let vertex1 = [f1.vertices[0], f1.vertices[1], f1.vertices[2]];
-        temp.x = f2.vertices[index] - vertex1[0]; // x1 -x2
-        temp.y = f2.vertices[index + 1] - vertex1[1]; // y1 - y2
-        temp.z = f2.vertices[index + 2] - vertex1[2]; // z1 - z2
-        let mut prevdist = temp.dot(&Vector3::from_iterator(f1.normal.iter().cloned()));
-        let mut currdist;
-
-        for i in 0..n_vertices2 {
-            // i: current point
-            let idx = (i * 3) as usize;
-            /* vector of vertex1 to a vertex on F2 dot normal vector of F1
-            it's absolute value is the distance */
-            temp.x = f2.vertices[idx] - vertex1[0];
-            temp.y = f2.vertices[idx + 1] - vertex1[1];
-            temp.z = f2.vertices[idx + 2] - vertex1[2];
-            currdist = temp.dot(&Vector3::from_iterator(f1.normal.iter().cloned()));
+        for vertex in &f2.vertices {
+            let currdist = (vertex - plane_point).dot(&f1.normal);
 
             if prevdist.abs() < eps {
-                if i == 0 {
-                    // Previous point is intersection point
-                    inters2[0] = f2.vertices[index]; // x
-                    inters2[1] = f2.vertices[index + 1]; // y
-                    inters2[2] = f2.vertices[index + 2]; // z
-                    count += 1;
-                } else {
-                    let idx = ((i - 1) * 3) as usize;
-                    let countidx = count * 3;
-                    inters2[countidx] = f2.vertices[idx]; // x
-                    inters2[countidx + 1] = f2.vertices[idx + 1]; // y
-                    inters2[countidx + 2] = f2.vertices[idx + 2]; // z
-                    count += 1;
-                }
+                // Previous vertex is on the plane
+                crossings[count] = *previous;
+                count += 1;
             } else {
                 let mut curr_times_prev = currdist * prevdist;
 
@@ -229,106 +190,62 @@ fn find_intersections(flag: &mut i32, poly1: &Poly, poly2: &Poly, eps: f64) -> I
                 }
 
                 if curr_times_prev < 0. {
-                    // If consecutive vertices of F2 are at opposide sides of P1,
-                    // computes intersection point of F2 and P1
+                    // Consecutive vertices of F2 are at opposide sides of the plane,
+                    // compute the point where the edge crosses the plane
                     let c = prevdist.abs() / (currdist.abs() + prevdist.abs());
-                    let countidx = count * 3;
-
-                    if i == 0 {
-                        inters2[countidx] =
-                            f2.vertices[index] + (f2.vertices[0] - f2.vertices[index]) * c;
-                        inters2[countidx + 1] =
-                            f2.vertices[index + 1] + (f2.vertices[1] - f2.vertices[index + 1]) * c;
-                        inters2[countidx + 2] =
-                            f2.vertices[index + 2] + (f2.vertices[2] - f2.vertices[index + 2]) * c;
-                        count += 1;
-                    } else {
-                        let idx = ((i - 1) * 3) as usize;
-                        let x = (i * 3) as usize;
-                        inters2[countidx] =
-                            f2.vertices[idx] + (f2.vertices[x] - f2.vertices[idx]) * c;
-                        inters2[countidx + 1] =
-                            f2.vertices[idx + 1] + (f2.vertices[x + 1] - f2.vertices[idx + 1]) * c;
-                        inters2[countidx + 2] =
-                            f2.vertices[idx + 2] + (f2.vertices[x + 2] - f2.vertices[idx + 2]) * c;
-                        count += 1;
-                    }
+                    crossings[count] = previous + (vertex - previous) * c;
+                    count += 1;
                 }
             }
 
             prevdist = currdist;
+            previous = vertex;
 
             if count == 2 {
                 break;
             }
-        } // End vertice loop
-
-        if count == 1 {
-            // If only one intersection point, happens only when a vertex of F2 is on P1
-            count = 2;
-            inters2[3] = inters2[0];
-            inters2[4] = inters2[1];
-            inters2[5] = inters2[2];
         }
 
-        for inter2 in inters2.iter_mut() {
-            if inter2.abs() < eps {
-                *inter2 = 0.;
+        match count {
+            // No intersection
+            0 => return int_pts,
+            // Happens only when a single vertex of F2 is on the plane
+            1 => crossings[1] = crossings[0],
+            _ => {}
+        }
+
+        for crossing in &mut crossings {
+            for coordinate in crossing.iter_mut() {
+                if coordinate.abs() < eps {
+                    *coordinate = 0.;
+                }
             }
         }
 
-        // copy to inters array
-        let jindx = 6 * jj;
-        inters[jindx] = inters2[0];
-        inters[jindx + 1] = inters2[1];
-        inters[jindx + 2] = inters2[2];
-        inters[jindx + 3] = inters2[3];
-        inters[jindx + 4] = inters2[4];
-        inters[jindx + 5] = inters2[5];
+        inters[2 * jj] = crossings[0];
+        inters[2 * jj + 1] = crossings[1];
+    }
 
-        if count == 0 {
-            break;
-        } // No intersection
-    } // End loop for jj, loop for getting intersections for fracture i and newPoly
+    // Sort the 4 points along the axis on which they are spread the most
+    let coordinates = |axis: usize| inters.map(|point| point[axis]);
+    let stdev = [0, 1, 2].map(|axis| sum_deviation(&coordinates(axis)));
+    let s = sorted_index(&coordinates(max_elmt_idx(&stdev)));
 
-    if count == 0 {
-        *flag = 0;
-    } else {
-        // Intersection points exist
-        if count > 2 {
-            error!("Error in findIntersections()");
-        }
+    // Points 0 and 1 are on the boundary of poly2, points 2 and 3 on the boundary of poly1.
+    // If the smallest two points are on the boundary of the same poly, there is no intersection.
+    if s[0] + s[1] == 1 || s[0] + s[1] == 5 {
+        return int_pts;
+    }
 
-        let stdev = sum_dev_ary3(&inters);
-        let o = max_elmt_idx(&stdev);
-        let temp_ary = [inters[o], inters[o + 3], inters[o + 6], inters[o + 9]];
-        let s = sorted_index(&temp_ary);
+    // The polygons intersect. The middle two points form the intersection.
+    int_pts.p1 = inters[s[1]];
+    int_pts.p2 = inters[s[2]];
 
-        if !(s[0] + s[1] == 1 || s[0] + s[1] == 5) {
-            // If the smallest two points are not on the bdy of the same poly,
-            // the polygons intersect. middle two points form intersetion
-            let idx1 = s[1] * 3;
-            let idx2 = s[2] * 3;
-            int_pts.p1 = Point3::from(<[f64; 3]>::try_from(&inters[idx1..idx1 + 3]).unwrap());
-            int_pts.p2 = Point3::from(<[f64; 3]>::try_from(&inters[idx2..idx2 + 3]).unwrap());
-
-            // Assign flag (definitions at top of funciton)
-            if s[1] + s[2] == 1 {
-                *flag = 1;
-            }
-            // Intersection inside poly1
-            else if s[1] + s[2] == 5 {
-                *flag = 2;
-            }
-            // Intersection inside poly2
-            else {
-                *flag = 3;
-            } // Intersection on edges
-        } else {
-            // Intersection doesn't exist
-            *flag = 0; // No intersection
-        }
-    } // End  intersection points exist
+    *flag = match s[1] + s[2] {
+        1 => 1, // Intersection inside poly1
+        5 => 2, // Intersection inside poly2
+        _ => 3, // Intersection on edges
+    };
 
     int_pts
 }
@@ -869,10 +786,10 @@ fn check_distance_from_nodes(
 ) -> bool {
     // Intersection dist to poly vertices
     let line = [int_pts.p1, int_pts.p2];
-    let mut dist = point_to_line_seg(&poly.vertex(0), &line, eps);
+    let mut dist = point_to_line_seg(&poly.vertices[0], &line, eps);
 
-    for i in 1..poly.number_of_nodes as usize {
-        let temp = point_to_line_seg(&poly.vertex(i), &line, eps);
+    for vertex in &poly.vertices[1..] {
+        let temp = point_to_line_seg(vertex, &line, eps);
 
         // If new distance is less than the last calculated distance...
         if temp < dist {
@@ -976,11 +893,11 @@ fn check_close_edge(
     // vertices
     let mut on_edge_count = 0;
 
-    let number_of_nodes = poly1.number_of_nodes as usize;
+    let number_of_nodes = poly1.vertices.len();
 
     for i in 0..number_of_nodes {
         // Edge from the vertex to the next one. The last edge closes the polygon.
-        let edge = [poly1.vertex(i), poly1.vertex((i + 1) % number_of_nodes)];
+        let edge = [poly1.vertices[i], poly1.vertices[(i + 1) % number_of_nodes]];
         let mut end_pts_to_edge = [
             point_to_line_seg(&line[0], &edge, eps),
             point_to_line_seg(&line[1], &edge, eps),

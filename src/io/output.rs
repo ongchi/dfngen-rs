@@ -3,7 +3,7 @@ use std::{
     io::{self, BufWriter, Seek, Write},
 };
 
-use parry3d_f64::na::{distance, Point3, Vector3};
+use parry3d_f64::na::{center, distance, Point3, Vector3};
 use tracing::info;
 
 use crate::distribution::generating_points::discretize_line_of_intersection;
@@ -522,10 +522,9 @@ fn write_polys(final_fractures: &[usize], accepted_poly: &[Poly], output: &str) 
     writeln!(poly_output, "nPolygons: {}", final_fractures.len())?;
 
     for poly in final_polys(final_fractures, accepted_poly) {
-        write!(poly_output, "{} ", poly.number_of_nodes)?;
+        write!(poly_output, "{} ", poly.vertices.len())?;
 
-        for i in 0..poly.number_of_nodes as usize {
-            let vertex = poly.vertex(i);
+        for vertex in &poly.vertices {
             write!(
                 poly_output,
                 "{{{:.12}, {:.12}, {:.12}}} ",
@@ -556,7 +555,7 @@ fn write_polys_inp(
 
     for (j, poly) in final_polys(final_fractures, accepted_poly).enumerate() {
         let mut poly_output = create_file(format!("{}/poly_{}.inp", output, j + 1))?;
-        let number_of_nodes = poly.number_of_nodes;
+        let number_of_nodes = poly.vertices.len();
 
         // Write header
         writeln!(
@@ -567,8 +566,7 @@ fn write_polys_inp(
         )?;
 
         // Write vertices
-        for i in 0..number_of_nodes {
-            let vertex = poly.vertex(i as usize);
+        for (i, vertex) in poly.vertices.iter().enumerate() {
             writeln!(
                 poly_output,
                 "{:.12} {:.12} {:.12} {:.12}",
@@ -1217,15 +1215,15 @@ fn write_graph_data(
         // Find intersections with domain boundaries.
         // A line of intersection is written only once per face: between the first
         // vertex found on the face and the first other vertex on the same face.
-        let number_of_nodes = poly.number_of_nodes as usize;
+        let number_of_nodes = poly.vertices.len();
         let mut is_face_written = [[false; 2]; 3];
 
         for k in 0..number_of_nodes {
             for (axis, plus_face_id, minus_face_id) in BOUNDARY_FACE_IDS {
                 let is_on_plus_face =
-                    |vertex: usize| poly.vertices[vertex * 3 + axis] >= half_domain[axis] - eps;
+                    |vertex: usize| poly.vertices[vertex][axis] >= half_domain[axis] - eps;
                 let is_on_minus_face =
-                    |vertex: usize| poly.vertices[vertex * 3 + axis] <= -half_domain[axis] + eps;
+                    |vertex: usize| poly.vertices[vertex][axis] <= -half_domain[axis] + eps;
 
                 let (side, face_id) = if is_on_plus_face(k) {
                     (0, plus_face_id)
@@ -1253,8 +1251,8 @@ fn write_graph_data(
                         &mut int_file,
                         fracture_id as isize,
                         face_id,
-                        &poly.vertex(k),
-                        &poly.vertex(kk),
+                        &poly.vertices[k],
+                        &poly.vertices[kk],
                     )?;
                     is_face_written[axis][side] = true;
                     num_conn += 1;
@@ -1285,14 +1283,16 @@ fn write_mid_point(
     point1: &Point3<f64>,
     point2: &Point3<f64>,
 ) -> io::Result<()> {
+    let mid_point = center(point1, point2);
+
     writeln!(
         fp,
         "{} {} {:.10} {:.10} {:.10} {:.10}",
         fract1,
         fract2,
-        0.5 * (point1.x + point2.x),
-        0.5 * (point1.y + point2.y),
-        0.5 * (point1.z + point2.z),
+        mid_point.x,
+        mid_point.y,
+        mid_point.z,
         distance(point1, point2)
     )
 }
