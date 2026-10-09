@@ -94,45 +94,37 @@ pub fn index_from_prob(cdf: &[f64], roll: f64) -> usize {
 ///
 /// # Arguments
 ///
-/// * `p32_status` - Array of bools, 1 to 1 with number of families
-/// * `cdf` - CDF of shape families based on famProb array in input file
+/// * `p32_status` - One element per family, true if the family has met its P32 target
+/// * `cdf` - CDF of the families which have not met their P32 target, in family order
 /// * `roll` - Random number between 0 and 1
-/// * `fam_size` - Number of stochastic families
-/// * `cdf_idx` - Index of CDF element which was chosen randomly
 ///
 /// # Returns
 ///
-/// Index of chosen family based on its family probability, and p32Status
-/// (avoids inserting a fracture from a family which has already met it's fracture intensity requrement)
+/// The index of the chosen family, and its index in `cdf`.
+/// A family which has already met its fracture intensity requirement is never chosen.
 pub fn index_from_prob_and_p32_status(
     p32_status: &[bool],
     cdf: &[f64],
     roll: f64,
-    fam_size: usize,
-    cdf_idx: &mut usize,
-) -> usize {
-    // The p32Status bool array stays 1 to 1 with the number of total families.
-    // The p32Status array with element = 1 means that family has reached its p32 requirement.
-    // The CDF contains an amount of elements equal to the number of families which has not met its intensity requirement.
-    // To get the correct familyShape[] index from cdf, me must ignore any families their p32 requirement alrady met
-    // Index we hit based on random roll,
-    *cdf_idx = index_from_prob(cdf, roll);
-    // If cdfIndex = 2 (thrid element including 0)
-    // we need to find the families with p32Status still 0, and choose the thrid one
-    // this family will be used to create the next polygon
-    let mut count = 0; // Count of families encountered with p32Status = 0
+) -> (usize, usize) {
+    let cdf_idx = index_from_prob(cdf, roll);
 
-    for (i, p32) in p32_status.iter().enumerate() {
-        if cdf_idx == &count {
-            return i; // Returns family index we need to build poly with.
-        } else if !p32 {
-            count += 1; // Count number of 0's ( number of families not having met their p32 req. )
+    // The CDF has no elements for completed families, so cdf_idx counts
+    // only the families which are not complete
+    let family_index = p32_status
+        .iter()
+        .enumerate()
+        .filter(|(_, is_complete)| !**is_complete)
+        .nth(cdf_idx)
+        .map(|(family_index, _)| family_index);
+
+    match family_index {
+        Some(family_index) => (family_index, cdf_idx),
+        None => {
+            error!("see indexFromProb_and_P32Status(), funct did not return anything");
+            (p32_status.len() - 1, cdf_idx)
         }
     }
-
-    error!("see indexFromProb_and_P32Status(), funct did not return anything");
-
-    fam_size - 1
 }
 
 /// Cumulative sum of the elements along a given axis
@@ -156,43 +148,71 @@ pub fn cumsum(fam_prob: &[f64]) -> Vec<f64> {
     cdf
 }
 
-/// FIXME: vector size changed, return new vector instead of change inplace.
+/// Removes a family from the family probabilities. Used with P32 stopping
+/// condition (see input file) when the P32 requirement of a family is met.
 ///
-/// Adjusts the CDF and the famProb array. Used with P32 stopping contdition (see input file)
-/// When a family's P32 requrement is met, the CDF is adjusted to remove that family from
-/// the array. The famProb is also adjusted in the same way.
+/// The probability of the removed family is divided equally among the
+/// remaining families.
 ///
 /// # Arguments
 ///
-/// * `cdf` - CDF array
-/// * `fam_probability` - Probability of each family
-/// * `cdf_size` - Number of elements in CDF array
-/// * `idx2remove` - Index to the element in the famProb array which is being removed
-pub fn adjust_cdf_and_fam_prob(
-    cdf: &mut [f64],
-    fam_probability: &mut [f64],
-    cdf_size: &mut usize,
-    idx2remove: usize,
-) {
-    *cdf_size -= 1;
-    let mut new_probs = Vec::with_capacity(cdf.len());
-    // Adjust probabilities, remove element while keeping the rest of probabilities in proportion
-    // Take probability of the familiy being removed, and divide it equally among remaining probabilities
-    let add_to_remaining_elmts = fam_probability[idx2remove] / (*cdf_size as f64); // Distribute removed probability among leftore famillies probabilities
-                                                                                   // cdfIdx is index to that families cdf index AND familily probability index
-    for (i, prob) in fam_probability.iter().enumerate().take(*cdf_size + 1) {
-        // cdfSize+1 becuase of cdfSize-- at the beginning of function. This
-        // makes the loop cover the all probabilities in the ary before one is removed
-        // and distributed to the rest
-        if i != idx2remove {
-            new_probs.push(prob + add_to_remaining_elmts);
-        }
+/// * `fam_probability` - Probability of each family which is not complete
+/// * `idx2remove` - Index in `fam_probability` of the family to remove
+///
+/// # Returns
+///
+/// The CDF of the remaining families
+pub fn remove_family_probability(fam_probability: &mut Vec<f64>, idx2remove: usize) -> Vec<f64> {
+    let removed_probability = fam_probability.remove(idx2remove);
+    let add_to_remaining_elmts = removed_probability / fam_probability.len() as f64;
+
+    for probability in fam_probability.iter_mut() {
+        *probability += add_to_remaining_elmts;
     }
 
-    for (t, s) in fam_probability.iter_mut().zip(new_probs) {
-        *t = s;
+    cumsum(fam_probability)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_p32_selection_skips_completed_families() {
+        // Families 0 and 2 are complete. The CDF has families 1 and 3.
+        let p32_status = [true, false, true, false];
+        let cdf = [0.5, 1.0];
+
+        assert_eq!(
+            index_from_prob_and_p32_status(&p32_status, &cdf, 0.2),
+            (1, 0)
+        );
+        assert_eq!(
+            index_from_prob_and_p32_status(&p32_status, &cdf, 0.9),
+            (3, 1)
+        );
     }
-    for (t, s) in cdf.iter_mut().zip(cumsum(fam_probability)) {
-        *t = s;
+
+    #[test]
+    fn test_p32_selection_with_no_completed_family_follows_cdf() {
+        let p32_status = [false, false, false];
+        let cdf = [0.2, 0.5, 1.0];
+
+        assert_eq!(
+            index_from_prob_and_p32_status(&p32_status, &cdf, 0.4),
+            (1, 1)
+        );
+    }
+
+    #[test]
+    fn test_removed_family_probability_is_shared_equally() {
+        let mut probabilities = vec![0.5, 0.3, 0.2];
+
+        let cdf = remove_family_probability(&mut probabilities, 1);
+
+        assert_eq!(probabilities.len(), 2);
+        assert!((probabilities[0] - 0.65).abs() < 1e-12);
+        assert!((probabilities[1] - 0.35).abs() < 1e-12);
+        assert!((cdf[1] - 1.0).abs() < 1e-12);
     }
 }

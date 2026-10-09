@@ -7,7 +7,7 @@ use tracing::info;
 use crate::fracture::fracture_family::{FractureFamilyCollection, RadiusOption};
 use crate::fracture::insert_shape::re_translate_poly;
 use crate::io::input::Input;
-use crate::math_functions::{adjust_cdf_and_fam_prob, cumsum, index_from_prob_and_p32_status};
+use crate::math_functions::{cumsum, index_from_prob_and_p32_status, remove_family_probability};
 
 /// Estimate Number of Fractures When P32 Option is Used
 ///
@@ -29,32 +29,26 @@ pub fn dry_run(
 ) {
     info!("Estimating number of fractures per family for defined fracture intensities (P32)...");
     let dom_vol = input.domainSize[0] * input.domainSize[1] * input.domainSize[2];
-    let total_families = frac_families.families.len();
-    let mut cdf_size = total_families; // This variable shrinks along with CDF when used with fracture intensity (P32) option
-                                       // Create a copy of the family probablity
-                                       // Algoithms used in this function modify this array,
-                                       // we need to keep the original in its original state
-                                       // std::copy(shapeProb, shapeProb + totalFamilies, famProbability);
-                                       // Init uniform dist on [0,1)
+    // Probabilities of the families which have not met their P32 target.
+    // This is a copy: the family probabilities must stay in their original state.
+    let mut probabilities = frac_families.probabilities.clone();
     let uniform_dist = Uniform::new(0., 1.).unwrap();
-    /******  Convert famProb to CDF  *****/
-    let mut cdf = cumsum(&frac_families.probabilities);
+    let mut cdf = cumsum(&probabilities);
     let mut family_index; // Holds index to shape family of fracture being generated
     let mut force_large_fract_count = 0;
     let mut p32_status = vec![false; frac_families.families.len()];
 
     while p32_status.iter().any(|p| !p) {
         // Index to CDF array of current family being inserted
-        let mut cdf_idx = 0;
+        let cdf_idx;
         let mut reject_counter = 0;
         let mut new_poly = if (force_large_fract_count < frac_families.families.len())
             && input.forceLargeFractures
         {
-            // Choose CDF randomly by family
+            // The CDF has no elements for completed families
             cdf_idx = (0..force_large_fract_count)
                 .filter(|i| !p32_status[*i])
-                .count()
-                - 1;
+                .count();
 
             family_index = force_large_fract_count;
             force_large_fract_count += 1;
@@ -68,12 +62,10 @@ pub fn dry_run(
         } else {
             // Choose a family based on probabiliyis AND their target p32 completion status
             // if a family has already met is fracture intinisty reqirement (p32) dont choose that family anymore
-            family_index = index_from_prob_and_p32_status(
+            (family_index, cdf_idx) = index_from_prob_and_p32_status(
                 &p32_status,
                 &cdf,
                 generator.clone().borrow_mut().sample(uniform_dist),
-                total_families,
-                &mut cdf_idx,
             );
 
             frac_families.families[family_index].create_poly(
@@ -137,19 +129,10 @@ pub fn dry_run(
         {
             p32_status[family_index] = true; //mark family as having its p32 requirement met
 
-            // Adjust CDF, PDF, and reduce their size by 1. Keep probabilities proportional.
-            // Remove the completed families element in the CDF and famProb[]
-            // Distribute the removed family probability evenly among the others and rebuild the CDF
-            // familyIndex = index of family's probability
-            // cdfIdx = index of the family's correspongding cdf, (index to elmt to remove)
-            if cdf_size > 1 {
-                // If there are still more families to insert ( cdfSize = 0 means no more families to insert)
-                adjust_cdf_and_fam_prob(
-                    &mut cdf,
-                    &mut frac_families.probabilities,
-                    &mut cdf_size,
-                    cdf_idx,
-                );
+            // Remove the completed family from the probabilities and rebuild the CDF,
+            // if there are still more families to insert
+            if probabilities.len() > 1 {
+                cdf = remove_family_probability(&mut probabilities, cdf_idx);
             }
         }
 

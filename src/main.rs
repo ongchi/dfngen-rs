@@ -22,7 +22,7 @@ use crate::fracture::poly::Poly;
 use crate::io::input::{read_input, Input};
 use crate::io::output::write_output;
 use crate::math_functions::{
-    adjust_cdf_and_fam_prob, cumsum, index_from_prob, index_from_prob_and_p32_status,
+    cumsum, index_from_prob, index_from_prob_and_p32_status, remove_family_probability,
 };
 use crate::structures::{DFNGen, PolyOptions, RadiusFunction, Stats};
 
@@ -356,9 +356,10 @@ fn insert_stochastic_fractures(
     let total_families = frac_fam_col.families.len();
     let dom_vol = domain_volume(input);
 
-    // 'cdf' size will shrink along when used with fracture intensity (P32) option
-    let mut cdf = cumsum(&frac_fam_col.probabilities);
-    let mut cdf_size = total_families;
+    // Probabilities of the families which have not met their P32 target (P32 option).
+    // This is a copy: the family probabilities must stay in their original state.
+    let mut probabilities = frac_fam_col.probabilities.clone();
+    let mut cdf = cumsum(&probabilities);
 
     // Initialize uniform distribution on [0,1]
     let uniform_dist = Uniform::new(0., 1.)?;
@@ -381,18 +382,19 @@ fn insert_stochastic_fractures(
         || (input.stopCondition == 1 && p32_status.iter().any(|p| !p))
     {
         // cdfIdx holds the index to the CDF array for the current shape family being inserted
-        let mut cdf_idx = 0;
         let roll = generator.borrow_mut().sample(uniform_dist);
 
-        let family_index = if input.stopCondition == 0 {
+        // cdf_idx is the index to the CDF array of the family being inserted
+        let (family_index, cdf_idx) = if input.stopCondition == 0 {
             // nPoly Option
             // Choose a family based purely on famProb probabilities
-            index_from_prob(&cdf, roll)
+            let family_index = index_from_prob(&cdf, roll);
+            (family_index, family_index)
         } else {
             // P32 Option
             // Choose a family based on probabiliyis AND their target p32 completion status.
             // If a family has already met is fracture intinisty req. (p32) don't choose that family anymore
-            index_from_prob_and_p32_status(&p32_status, &cdf, roll, total_families, &mut cdf_idx)
+            index_from_prob_and_p32_status(&p32_status, &cdf, roll)
         };
 
         let mut new_poly = frac_fam_col.families[family_index].create_poly(
@@ -471,13 +473,8 @@ fn insert_stochastic_fractures(
 
                     // Remove the completed family's element in 'CDF[]' and 'famProb[]'
                     // Distribute the removed family probability evenly among the others and rebuild the CDF
-                    if cdf_size > 1 {
-                        adjust_cdf_and_fam_prob(
-                            &mut cdf,
-                            &mut frac_fam_col.probabilities,
-                            &mut cdf_size,
-                            cdf_idx,
-                        );
+                    if probabilities.len() > 1 {
+                        cdf = remove_family_probability(&mut probabilities, cdf_idx);
                     }
                 }
 
