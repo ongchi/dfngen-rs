@@ -56,70 +56,20 @@ impl Poly {
 
         // If code does not return above, truncation is needed/
         self.truncated = true; // Mark poly as truncated
-        let mut n_vertices; // Same as newPoly.numberOfNodes;
-        let mut ntmp = Vector3::new(0., 0., 0.); // Normal of domain side
-        let mut pttmp = Vector3::new(0., 0., 0.); // Center point on domain side
+
+        // Outward normal of each side of the domain, and the center point of the side
+        let domain_sides = [
+            (Vector3::new(0., 0., 1.), Vector3::new(0., 0., domain_z)),
+            (Vector3::new(0., 0., -1.), Vector3::new(0., 0., -domain_z)),
+            (Vector3::new(0., 1., 0.), Vector3::new(0., domain_y, 0.)),
+            (Vector3::new(0., -1., 0.), Vector3::new(0., -domain_y, 0.)),
+            (Vector3::new(1., 0., 0.), Vector3::new(domain_x, 0., 0.)),
+            (Vector3::new(-1., 0., 0.), Vector3::new(-domain_x, 0., 0.)),
+        ];
 
         // Check against the all the walls of the domain
-        for j in 0..6 {
-            match j {
-                0 => {
-                    ntmp[0] = 0.;
-                    ntmp[1] = 0.;
-                    ntmp[2] = 1.;
-                    pttmp[0] = 0.;
-                    pttmp[1] = 0.;
-                    pttmp[2] = domain_z;
-                }
-
-                1 => {
-                    ntmp[0] = 0.;
-                    ntmp[1] = 0.;
-                    ntmp[2] = -1.;
-                    pttmp[0] = 0.;
-                    pttmp[1] = 0.;
-                    pttmp[2] = -domain_z;
-                }
-
-                2 => {
-                    ntmp[0] = 0.;
-                    ntmp[1] = 1.;
-                    ntmp[2] = 0.;
-                    pttmp[0] = 0.;
-                    pttmp[1] = domain_y;
-                    pttmp[2] = 0.;
-                }
-
-                3 => {
-                    ntmp[0] = 0.;
-                    ntmp[1] = -1.;
-                    ntmp[2] = 0.;
-                    pttmp[0] = 0.;
-                    pttmp[1] = -domain_y;
-                    pttmp[2] = 0.;
-                }
-
-                4 => {
-                    ntmp[0] = 1.;
-                    ntmp[1] = 0.;
-                    ntmp[2] = 0.;
-                    pttmp[0] = domain_x;
-                    pttmp[1] = 0.;
-                    pttmp[2] = 0.;
-                }
-
-                5 => {
-                    ntmp[0] = -1.;
-                    ntmp[1] = 0.;
-                    ntmp[2] = 0.;
-                    pttmp[0] = -domain_x;
-                    pttmp[1] = 0.;
-                    pttmp[2] = 0.;
-                }
-                _ => unreachable!(),
-            }
-
-            n_vertices = self.number_of_nodes;
+        for (ntmp, pttmp) in domain_sides {
+            let n_vertices = self.number_of_nodes;
 
             if n_vertices <= 0 {
                 return true; // Reject

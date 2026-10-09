@@ -3,7 +3,7 @@ mod domain_truncation;
 use parry3d_f64::na::{Point3, Vector3};
 
 use crate::{
-    cg::{is_parallel, rotation_matrix},
+    cg::{is_parallel, rotate, rotation_matrix},
     distribution::generating_points::generate_theta,
 };
 
@@ -106,36 +106,19 @@ impl Poly {
     /// * `radius` - Radius (1/2 x dimension length)
     /// * `aspect_ratio` - Aspect ratio
     pub fn new_rect(radius: f64, aspect_ratio: f64) -> Self {
-        let mut new_poly = Self {
-            number_of_nodes: 4,
-            normal: Vector3::new(0., 0., 1.),
-            vertices: Vec::with_capacity(3 * 4),
-            ..Default::default()
-        };
-
-        // Initializes vertices for rectangular poly using radius (1/2 x length)
-        // and aspcet ratio. (xradius = radius, yradius = radius * aspectRatio)
-        // Poly will be on x-y plane
         let x = radius;
         let y = radius * aspect_ratio;
-        new_poly.xradius = x;
-        new_poly.yradius = y;
-        new_poly.aspect_ratio = aspect_ratio;
-        // Initialize vertices
-        new_poly.vertices.push(x);
-        new_poly.vertices.push(y);
-        new_poly.vertices.push(0.);
-        new_poly.vertices.push(-x);
-        new_poly.vertices.push(y);
-        new_poly.vertices.push(0.);
-        new_poly.vertices.push(-x);
-        new_poly.vertices.push(-y);
-        new_poly.vertices.push(0.);
-        new_poly.vertices.push(x);
-        new_poly.vertices.push(-y);
-        new_poly.vertices.push(0.);
 
-        new_poly
+        Self {
+            number_of_nodes: 4,
+            normal: Vector3::new(0., 0., 1.),
+            xradius: x,
+            yradius: y,
+            aspect_ratio,
+            // Poly is on x-y plane
+            vertices: vec![x, y, 0., -x, y, 0., -x, -y, 0., x, -y, 0.],
+            ..Default::default()
+        }
     }
 
     /// Create a Ellipse
@@ -179,69 +162,24 @@ impl Poly {
     /// 3: Uses .5 * (magnitude of cross product) for each triangle for area calculation
     /// 4: Sums the areas for each trianlge for total area of polygon
     pub fn assign_area(&mut self) {
-        let area = if self.number_of_nodes == 3 {
-            //area = 1/2 mag of xProd
-            let v1 = Vector3::new(
-                self.vertices[3] - self.vertices[0],
-                self.vertices[4] - self.vertices[1],
-                self.vertices[5] - self.vertices[2],
-            );
-            let v2 = Vector3::new(
-                self.vertices[6] - self.vertices[0],
-                self.vertices[7] - self.vertices[1],
-                self.vertices[8] - self.vertices[2],
-            );
-            let x_prod = v1.cross(&v2);
+        let number_of_nodes = self.number_of_nodes as usize;
+        let first = self.vertex(0);
 
-            0.5 * x_prod.magnitude()
+        self.area = if number_of_nodes == 3 {
+            0.5 * (self.vertex(1) - first)
+                .cross(&(self.vertex(2) - first))
+                .magnitude()
         } else {
-            // More than 3 vertices
-            let mut poly_area = 0.; // For summing area over trianlges of polygon
-                                    // Get coordinate within polygon
-            let idx_across = (self.number_of_nodes / 2 * 3) as usize;
-            let inside_pt = [
-                self.vertices[0] + (0.5 * (self.vertices[idx_across] - self.vertices[0])),
-                self.vertices[1] + (0.5 * (self.vertices[idx_across + 1] - self.vertices[1])),
-                self.vertices[2] + (0.5 * (self.vertices[idx_across + 2] - self.vertices[2])),
-            ];
+            let inside_pt = first + 0.5 * (self.vertex(number_of_nodes / 2) - first);
 
-            for i in 0..self.number_of_nodes - 1 {
-                let idx = (i * 3) as usize;
-                let v1 = Vector3::new(
-                    self.vertices[idx] - inside_pt[0],
-                    self.vertices[idx + 1] - inside_pt[1],
-                    self.vertices[idx + 2] - inside_pt[2],
-                );
-                let v2 = Vector3::new(
-                    self.vertices[idx + 3] - inside_pt[0],
-                    self.vertices[idx + 4] - inside_pt[1],
-                    self.vertices[idx + 5] - inside_pt[2],
-                );
-                let x_prod = v1.cross(&v2);
-                let area = 0.5 * x_prod.magnitude();
-                poly_area += area; // Accumulate area
-            }
-
-            // Last portion of polygon, insidePt to first vertice and insidePt to last vertice
-            let last = (3 * (self.number_of_nodes - 1)) as usize;
-            let v1 = Vector3::new(
-                self.vertices[0] - inside_pt[0],
-                self.vertices[1] - inside_pt[1],
-                self.vertices[2] - inside_pt[2],
-            );
-            let v2 = Vector3::new(
-                self.vertices[last] - inside_pt[0],
-                self.vertices[last + 1] - inside_pt[1],
-                self.vertices[last + 2] - inside_pt[2],
-            );
-            let x_prod = v1.cross(&v2);
-            let area = 0.5 * x_prod.magnitude();
-            poly_area += area; // Accumulate area
-
-            poly_area
+            (0..number_of_nodes)
+                .map(|i| {
+                    let v1 = self.vertex(i) - inside_pt;
+                    let v2 = self.vertex((i + 1) % number_of_nodes) - inside_pt;
+                    0.5 * v1.cross(&v2).magnitude()
+                })
+                .sum()
         };
-
-        self.area = area;
     }
 
     /// Assign Bounding box
@@ -312,30 +250,20 @@ impl Poly {
     /// * `eps` - Epsilon value for floating point comparisons
     pub fn rotation_3d(&mut self, normal_b: &Vector3<f64>, eps: f64) {
         // Normals should already be normalized by this point!!!
-        let normal_a = self.normal;
+        if !is_parallel(&self.normal, normal_b, eps) {
+            let r = rotation_matrix(&self.normal, normal_b);
+            self.rotate(&r);
+        }
+    }
 
-        if !is_parallel(&normal_a, normal_b, eps) {
-            // NOTE: rotationMatrix() requires normals to be normalized
-            let r = rotation_matrix(&normal_a, normal_b, eps);
+    /// Applies the row-major rotation matrix `r` to all vertices.
+    pub fn rotate(&mut self, r: &[f64; 9]) {
+        let number_of_nodes = self.number_of_nodes as usize;
 
-            // Apply rotation to all vertices
-            for i in 0..self.number_of_nodes {
-                let idx = (i * 3) as usize;
+        let (vertices, _) = self.vertices.as_chunks_mut::<3>();
 
-                let x = self.vertices[idx] * r[0]
-                    + self.vertices[idx + 1] * r[1]
-                    + self.vertices[idx + 2] * r[2];
-                let y = self.vertices[idx] * r[3]
-                    + self.vertices[idx + 1] * r[4]
-                    + self.vertices[idx + 2] * r[5];
-                let z = self.vertices[idx] * r[6]
-                    + self.vertices[idx + 1] * r[7]
-                    + self.vertices[idx + 2] * r[8];
-
-                self.vertices[idx] = x;
-                self.vertices[idx + 1] = y;
-                self.vertices[idx + 2] = z;
-            }
+        for vertex in vertices.iter_mut().take(number_of_nodes) {
+            *vertex = rotate(r, vertex[0], vertex[1], vertex[2]);
         }
     }
 

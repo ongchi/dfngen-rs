@@ -3,6 +3,8 @@ use std::fmt::{Display, Formatter};
 use parry3d_f64::na::Vector3;
 use rand::distr::{Distribution, Uniform};
 
+use crate::cg::{rotate, rotation_matrix};
+
 #[derive(Debug)]
 enum AngleOption {
     ThetaPhi(f64, f64),
@@ -116,37 +118,7 @@ impl Distribution<Vector3<f64>> for Fisher {
 
         // Get rotation matrix if normal vectors are not the same (if xProd is not zero vector)
         let r = if x_prod.magnitude() > self.eps {
-            // Since vectors are normalized, sin = magnitude(AxB) and cos = A . B
-            let sin =
-                (x_prod[0] * x_prod[0] + x_prod[1] * x_prod[1] + x_prod[2] * x_prod[2]).sqrt();
-            let cos = u.dot(&self.orientation);
-            let v = [
-                0., -x_prod[2], x_prod[1], x_prod[2], 0., -x_prod[0], -x_prod[1], x_prod[0], 0.,
-            ];
-            let scalar = (1.0 - cos) / (sin * sin);
-            let v_squared = [
-                (v[0] * v[0] + v[1] * v[3] + v[2] * v[6]) * scalar,
-                (v[0] * v[1] + v[1] * v[4] + v[2] * v[7]) * scalar,
-                (v[0] * v[2] + v[1] * v[5] + v[2] * v[8]) * scalar,
-                (v[3] * v[0] + v[4] * v[3] + v[5] * v[6]) * scalar,
-                (v[3] * v[1] + v[4] * v[4] + v[5] * v[7]) * scalar,
-                (v[3] * v[2] + v[4] * v[5] + v[5] * v[8]) * scalar,
-                (v[6] * v[0] + v[7] * v[3] + v[8] * v[6]) * scalar,
-                (v[6] * v[1] + v[7] * v[4] + v[8] * v[7]) * scalar,
-                (v[6] * v[2] + v[7] * v[5] + v[8] * v[8]) * scalar,
-            ];
-
-            [
-                1. + v[0] + v_squared[0],
-                0. + v[1] + v_squared[1],
-                0. + v[2] + v_squared[2],
-                0. + v[3] + v_squared[3],
-                1. + v[4] + v_squared[4],
-                0. + v[5] + v_squared[5],
-                0. + v[6] + v_squared[6],
-                0. + v[7] + v_squared[7],
-                1. + v[8] + v_squared[8],
-            ]
+            rotation_matrix(&u, &self.orientation)
         } else {
             // Identity Matrix
             [1., 0., 0., 0., 1., 0., 0., 0., 1.]
@@ -160,10 +132,6 @@ impl Distribution<Vector3<f64>> for Fisher {
         let v = [temp * theta_random.cos(), temp * theta_random.sin()];
 
         // Matrix multiply with R
-        Vector3::new(
-            v[0] * r[0] + v[1] * r[1] + w * r[2],
-            v[0] * r[3] + v[1] * r[4] + w * r[5],
-            v[0] * r[6] + v[1] * r[7] + w * r[8],
-        )
+        Vector3::from(rotate(&r, v[0], v[1], w))
     }
 }

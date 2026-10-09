@@ -16,63 +16,65 @@ pub fn is_parallel(v1: &Vector3<f64>, v2: &Vector3<f64>, eps: f64) -> bool {
     1. - eps < dot_prod && dot_prod < 1. + eps
 }
 
-pub fn rotation_matrix(normal_a: &Vector3<f64>, normal_b: &Vector3<f64>, eps: f64) -> [f64; 9] {
-    //***************************************************
-    // Note: Normals must be normalized by this point!!!!!!
-    // Since vectors are normalized, sin = magnitude(AxB) and cos = A dot B
-    //***************************************************
-    // normalA is current normal
-    // nNormalB is target normal
-    let x_prod = normal_a.cross(normal_b);
-
-    if !is_parallel(normal_a, normal_b, eps) {
-        // sin = magnitude(AxB) and cos = A . B
-        let sin = x_prod.magnitude();
-        let cos = normal_a.dot(normal_b);
-        let v = [
-            0., -x_prod[2], x_prod[1], x_prod[2], 0., -x_prod[0], -x_prod[1], x_prod[0], 0.,
-        ];
-        let scalar = (1.0 - cos) / (sin * sin);
-        let v_squared = [
-            (v[0] * v[0] + v[1] * v[3] + v[2] * v[6]) * scalar,
-            (v[0] * v[1] + v[1] * v[4] + v[2] * v[7]) * scalar,
-            (v[0] * v[2] + v[1] * v[5] + v[2] * v[8]) * scalar,
-            (v[3] * v[0] + v[4] * v[3] + v[5] * v[6]) * scalar,
-            (v[3] * v[1] + v[4] * v[4] + v[5] * v[7]) * scalar,
-            (v[3] * v[2] + v[4] * v[5] + v[5] * v[8]) * scalar,
-            (v[6] * v[0] + v[7] * v[3] + v[8] * v[6]) * scalar,
-            (v[6] * v[1] + v[7] * v[4] + v[8] * v[7]) * scalar,
-            (v[6] * v[2] + v[7] * v[5] + v[8] * v[8]) * scalar,
-        ];
-        [
-            1. + v[0] + v_squared[0],
-            0. + v[1] + v_squared[1],
-            0. + v[2] + v_squared[2],
-            0. + v[3] + v_squared[3],
-            1. + v[4] + v_squared[4],
-            0. + v[5] + v_squared[5],
-            0. + v[6] + v_squared[6],
-            0. + v[7] + v_squared[7],
-            1. + v[8] + v_squared[8],
-        ]
-    } else {
-        // normalA and normalB are parallel, return identity matrix
-        [1., 0., 0., 0., 1., 0., 0., 0., 1.]
-    }
-}
-
-///
-/// 3D Rotation Matrix for intersection, trip. points, and  polygpons
+/// Rotation matrix (row-major) which rotates `normal_a` to `normal_b`
 ///
 /// RotMatrix = I + V + V^2((1-cos)/sin^2))
 ///
-/// Rotates intersections to x-y plane, including triple intersection points.
-/// While doing this, if poly is not already on x-y plane, poly will
-/// also be rotated to x-y plane.
+/// Normals must be normalized and must not be parallel: the result is not
+/// finite for parallel normals. No rotation is necessary in that case.
+pub fn rotation_matrix(normal_a: &Vector3<f64>, normal_b: &Vector3<f64>) -> [f64; 9] {
+    // Since vectors are normalized, sin = magnitude(AxB) and cos = A dot B
+    let x_prod = normal_a.cross(normal_b);
+    let sin = x_prod.magnitude();
+    let cos = normal_a.dot(normal_b);
+    let v = [
+        0., -x_prod[2], x_prod[1], x_prod[2], 0., -x_prod[0], -x_prod[1], x_prod[0], 0.,
+    ];
+    let scalar = (1.0 - cos) / (sin * sin);
+    let v_squared = [
+        (v[0] * v[0] + v[1] * v[3] + v[2] * v[6]) * scalar,
+        (v[0] * v[1] + v[1] * v[4] + v[2] * v[7]) * scalar,
+        (v[0] * v[2] + v[1] * v[5] + v[2] * v[8]) * scalar,
+        (v[3] * v[0] + v[4] * v[3] + v[5] * v[6]) * scalar,
+        (v[3] * v[1] + v[4] * v[4] + v[5] * v[7]) * scalar,
+        (v[3] * v[2] + v[4] * v[5] + v[5] * v[8]) * scalar,
+        (v[6] * v[0] + v[7] * v[3] + v[8] * v[6]) * scalar,
+        (v[6] * v[1] + v[7] * v[4] + v[8] * v[7]) * scalar,
+        (v[6] * v[2] + v[7] * v[5] + v[8] * v[8]) * scalar,
+    ];
+    [
+        1. + v[0] + v_squared[0],
+        0. + v[1] + v_squared[1],
+        0. + v[2] + v_squared[2],
+        0. + v[3] + v_squared[3],
+        1. + v[4] + v_squared[4],
+        0. + v[5] + v_squared[5],
+        0. + v[6] + v_squared[6],
+        0. + v[7] + v_squared[7],
+        1. + v[8] + v_squared[8],
+    ]
+}
+
+/// Applies the row-major rotation matrix `r` to the coordinates x, y, z.
+pub fn rotate(r: &[f64; 9], x: f64, y: f64, z: f64) -> [f64; 3] {
+    [
+        x * r[0] + y * r[1] + z * r[2],
+        x * r[3] + y * r[4] + z * r[5],
+        x * r[6] + y * r[7] + z * r[8],
+    ]
+}
+
+fn rotate_point(r: &[f64; 9], point: &Point3<f64>) -> Point3<f64> {
+    Point3::from(rotate(r, point.x, point.y, point.z))
+}
+
+/// Rotates an intersection, its triple intersection points, and its polygon to the x-y plane
+///
+/// The poly is rotated in place, unless it is already on the x-y plane.
 /// Doing these all at once keeps us from having to re-calulate rotation
 /// matricies, or cary them in memory, increasing performance
-/// Return rotated intersectoins - don't change original intersections
-/// Original, non-rotated intersections are need to rotate to the other intersecting polys
+/// The original intersection and triple points do not change: they are needed
+/// again to rotate to the other intersecting polys.
 /// Function is used to wrtie intersection.inp output files
 ///
 /// # Arguments
@@ -82,6 +84,10 @@ pub fn rotation_matrix(normal_a: &Vector3<f64>, normal_b: &Vector3<f64>, eps: f6
 /// * `triple_points` - Vecor array of all triple intersection points in DFN
 /// * `temp_trip_pts` - OUTPUT, Array to place rotated triple intersection points
 /// * `eps` - Epsilon value for floating point comparisons
+///
+/// # Returns
+///
+/// The rotated intersection
 pub fn poly_and_intersection_rotation_to_xy(
     intersection: &IntersectionPoints,
     new_poly: &mut Poly,
@@ -89,84 +95,31 @@ pub fn poly_and_intersection_rotation_to_xy(
     temp_trip_pts: &mut Vec<Point3<f64>>,
     eps: f64,
 ) -> IntersectionPoints {
-    // newPoly.normal = newPoly's current normal, should already be normalized
-    // normalB = target normal
-    let normal_a = new_poly.normal;
-    let normal_b = Vector3::new(0., 0., 1.);
+    let z_axis = Vector3::new(0., 0., 1.);
     let mut temp_intpts = IntersectionPoints::new();
+    let intersection_triple_points = intersection
+        .triple_points_idx
+        .iter()
+        .map(|&idx| &triple_points[idx]);
 
-    if !is_parallel(&normal_a, &normal_b, eps) {
-        // rotationMatrix() requires normals to be normalized
-        let r = rotation_matrix(&new_poly.normal, &normal_b, eps);
-
-        // Because the normal's in the polygon structure don't change (we need them to
-        // write params.txt), the xProd check at the top of the function may not work.
-        // Poly vertices may have already been rotated to XY plane but the normal
-        // was unchanged. newPoly.XYPlane resolves this issue. It will tell us if
-        // the polyon has already been rotated to xy plane
-
-        // Check if nodes are not already on x-y plane:
-        if !new_poly.xyplane {
-            // If not on x-y plane:
-            for i in 0..new_poly.number_of_nodes {
-                let idx = (i * 3) as usize;
-                // Apply rotation matrix R to each vertice
-                let x = new_poly.vertices[idx] * r[0]
-                    + new_poly.vertices[idx + 1] * r[1]
-                    + new_poly.vertices[idx + 2] * r[2];
-                let y = new_poly.vertices[idx] * r[3]
-                    + new_poly.vertices[idx + 1] * r[4]
-                    + new_poly.vertices[idx + 2] * r[5];
-                let z = new_poly.vertices[idx] * r[6]
-                    + new_poly.vertices[idx + 1] * r[7]
-                    + new_poly.vertices[idx + 2] * r[8];
-
-                // Save vertices back to poly struct, now on x-y plane
-                new_poly.vertices[idx] = x;
-                new_poly.vertices[idx + 1] = y;
-                new_poly.vertices[idx + 2] = z;
-            }
-        }
-
-        // Rotate intersection endpoints
-        temp_intpts.p1.x =
-            intersection.p1.x * r[0] + intersection.p1.y * r[1] + intersection.p1.z * r[2];
-        temp_intpts.p1.y =
-            intersection.p1.x * r[3] + intersection.p1.y * r[4] + intersection.p1.z * r[5];
-        temp_intpts.p1.z =
-            intersection.p1.x * r[6] + intersection.p1.y * r[7] + intersection.p1.z * r[8];
-        temp_intpts.p2.x =
-            intersection.p2.x * r[0] + intersection.p2.y * r[1] + intersection.p2.z * r[2];
-        temp_intpts.p2.y =
-            intersection.p2.x * r[3] + intersection.p2.y * r[4] + intersection.p2.z * r[5];
-        temp_intpts.p2.z =
-            intersection.p2.x * r[6] + intersection.p2.y * r[7] + intersection.p2.z * r[8];
-        // Rotate any existing triple intersection pts to xy plane
-
-        for i in 0..intersection.triple_points_idx.len() {
-            let tmp_pt = Point3::new(
-                triple_points[intersection.triple_points_idx[i]].x * r[0]
-                    + triple_points[intersection.triple_points_idx[i]].y * r[1]
-                    + triple_points[intersection.triple_points_idx[i]].z * r[2],
-                triple_points[intersection.triple_points_idx[i]].x * r[3]
-                    + triple_points[intersection.triple_points_idx[i]].y * r[4]
-                    + triple_points[intersection.triple_points_idx[i]].z * r[5],
-                triple_points[intersection.triple_points_idx[i]].x * r[6]
-                    + triple_points[intersection.triple_points_idx[i]].y * r[7]
-                    + triple_points[intersection.triple_points_idx[i]].z * r[8],
-            );
-            temp_trip_pts.push(tmp_pt);
-        }
-    } else {
+    if is_parallel(&new_poly.normal, &z_axis, eps) {
         // Already on xy plane (normal = {0,0,1}), no rotation required
-        // Copy triple points to tempIntpts
-        for i in 0..intersection.triple_points_idx.len() {
-            let idx = intersection.triple_points_idx[i];
-            temp_trip_pts.push(triple_points[idx]);
-        }
-
+        temp_trip_pts.extend(intersection_triple_points);
         temp_intpts.p1 = intersection.p1;
         temp_intpts.p2 = intersection.p2;
+    } else {
+        let r = rotation_matrix(&new_poly.normal, &z_axis);
+
+        // The normal in the polygon structure does not change (we need it to
+        // write params.txt), so it does not tell if the vertices are already
+        // rotated to the x-y plane. new_poly.xyplane does.
+        if !new_poly.xyplane {
+            new_poly.rotate(&r);
+        }
+
+        temp_intpts.p1 = rotate_point(&r, &intersection.p1);
+        temp_intpts.p2 = rotate_point(&r, &intersection.p2);
+        temp_trip_pts.extend(intersection_triple_points.map(|point| rotate_point(&r, point)));
     }
 
     new_poly.xyplane = true; // Mark poly being rotated to xy plane
@@ -186,31 +139,12 @@ pub fn poly_and_intersection_rotation_to_xy(
 ///
 /// * `bool` - True if bounding boxes intersect, false otherwise
 fn check_bounding_box(poly1: &Poly, poly2: &Poly) -> bool {
-    if poly1.bounding_box[1] < poly2.bounding_box[0] {
-        return false;
-    }
-
-    if poly1.bounding_box[0] > poly2.bounding_box[1] {
-        return false;
-    }
-
-    if poly1.bounding_box[3] < poly2.bounding_box[2] {
-        return false;
-    }
-
-    if poly1.bounding_box[2] > poly2.bounding_box[3] {
-        return false;
-    }
-
-    if poly1.bounding_box[5] < poly2.bounding_box[4] {
-        return false;
-    }
-
-    if poly1.bounding_box[4] > poly2.bounding_box[5] {
-        return false;
-    }
-
-    true
+    // Boxes intersect if their ranges overlap on each axis
+    (0..3).all(|axis| {
+        let (min, max) = (2 * axis, 2 * axis + 1);
+        !(poly1.bounding_box[max] < poly2.bounding_box[min]
+            || poly1.bounding_box[min] > poly2.bounding_box[max])
+    })
 }
 
 /// Find Intersections
@@ -933,20 +867,12 @@ fn check_distance_from_nodes(
     pstats: &mut Stats,
     eps: f64,
 ) -> bool {
-    let n_nodes = poly.number_of_nodes;
     // Intersection dist to poly vertices
     let line = [int_pts.p1, int_pts.p2];
-    let mut poly_vertices = Point3::new(poly.vertices[0], poly.vertices[1], poly.vertices[2]);
-    let mut dist = point_to_line_seg(&poly_vertices, &line, eps);
+    let mut dist = point_to_line_seg(&poly.vertex(0), &line, eps);
 
-    for i in 1..n_nodes {
-        let idx = (3 * i) as usize;
-        poly_vertices = Point3::new(
-            poly.vertices[idx],
-            poly.vertices[idx + 1],
-            poly.vertices[idx + 2],
-        );
-        let temp = point_to_line_seg(&poly_vertices, &line, eps);
+    for i in 1..poly.number_of_nodes as usize {
+        let temp = point_to_line_seg(&poly.vertex(i), &line, eps);
 
         // If new distance is less than the last calculated distance...
         if temp < dist {
@@ -1050,29 +976,11 @@ fn check_close_edge(
     // vertices
     let mut on_edge_count = 0;
 
-    for i in 0..poly1.number_of_nodes {
-        let idx = (3 * i) as usize;
+    let number_of_nodes = poly1.number_of_nodes as usize;
 
-        let next = if i != poly1.number_of_nodes - 1 {
-            ((i + 1) * 3) as usize
-        } else {
-            // If last edge on polygon
-            0
-        };
-
-        // Edge is two points, x y and z coords of poly vertices
-        let edge = [
-            Point3::new(
-                poly1.vertices[idx],
-                poly1.vertices[idx + 1],
-                poly1.vertices[idx + 2],
-            ),
-            Point3::new(
-                poly1.vertices[next],
-                poly1.vertices[next + 1],
-                poly1.vertices[next + 2],
-            ),
-        ];
+    for i in 0..number_of_nodes {
+        // Edge from the vertex to the next one. The last edge closes the polygon.
+        let edge = [poly1.vertex(i), poly1.vertex((i + 1) % number_of_nodes)];
         let mut end_pts_to_edge = [
             point_to_line_seg(&line[0], &edge, eps),
             point_to_line_seg(&line[1], &edge, eps),
