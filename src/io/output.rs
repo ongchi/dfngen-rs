@@ -9,6 +9,7 @@ use tracing::info;
 use crate::distribution::generating_points::discretize_line_of_intersection;
 use crate::fracture::fracture_family::FractureFamilyCollection;
 use crate::io::input::Input;
+use crate::io::vtk::write_fractures_vtk;
 use crate::math_functions::sorted_index;
 use crate::structures::{IntersectionPoints, Stats};
 use crate::{cg::poly_and_intersection_rotation_to_xy, fracture::poly::Poly};
@@ -66,6 +67,11 @@ pub fn write_output(
     if input.outputAcceptedRadiiPerFamily || input.outputFinalRadiiPerFamily {
         std::fs::create_dir_all(&radii_folder)?;
     }
+
+    // Must come before write_intersection_files(), which rotates the polygons to the x-y plane
+    let mut vtk_file = create_file(format!("{}/fractures.vtp", output))?;
+    write_fractures_vtk(final_fractures, accepted_poly, &mut vtk_file)?;
+    vtk_file.flush()?;
 
     adjust_int_fract_ids(final_fractures, accepted_poly, int_pts);
     write_graph_data(input, final_fractures, accepted_poly, int_pts, &output)?;
