@@ -102,24 +102,22 @@ pub fn write_output(
     write_boundary_files(final_fractures, accepted_poly, &output)?;
 
     let user_files = &input.ext_fracture_files;
-    let stochastic_family_nums = 0..frac_families.families.len() as isize;
+    // Fractures are marked -2 for user rects, -1 for user ellipses, -3 for user polygons
+    let mut family_nums: Vec<isize> = (0..frac_families.families.len() as isize).collect();
+    if user_files.user_rect_file.is_some() {
+        family_nums.push(-2);
+    }
+    if user_files.user_ell_file.is_some() {
+        family_nums.push(-1);
+    }
+    if user_files.user_poly_by_coord_file.is_some() {
+        family_nums.push(-3);
+    }
 
     if input.outputAcceptedRadiiPerFamily {
         info!("Writing Accepted Radii Files Per Family");
 
-        let mut family_nums: Vec<isize> = stochastic_family_nums.clone().collect();
-        // Fractures are marked -2 for user rects, -1 for user ellipses, -3 for user polygons
-        if user_files.user_rect_file.is_some() {
-            family_nums.push(-2);
-        }
-        if user_files.user_ell_file.is_some() {
-            family_nums.push(-1);
-        }
-        if user_files.user_poly_by_coord_file.is_some() {
-            family_nums.push(-3);
-        }
-
-        for family_num in family_nums {
+        for &family_num in &family_nums {
             write_family_radii(
                 format!(
                     "{}/radii_AllAccepted_Fam_{}.dat",
@@ -135,17 +133,6 @@ pub fn write_output(
 
     if input.outputFinalRadiiPerFamily {
         info!("Writing Final Radii Files Per Family");
-
-        let mut family_nums: Vec<isize> = stochastic_family_nums.collect();
-        if user_files.user_rect_file.is_some() {
-            family_nums.push(-1);
-        }
-        if user_files.user_ell_file.is_some() {
-            family_nums.push(-2);
-        }
-        if user_files.user_poly_by_coord_file.is_some() {
-            family_nums.push(-3);
-        }
 
         for family_num in family_nums {
             write_family_radii(
