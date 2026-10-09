@@ -57,10 +57,12 @@ impl FractureNodesDef {
         let p2 = Point3::from_slice(&nodes[1]);
         let p_12 = Point3::from_slice(&nodes[pt_idx_12]);
 
-        let v1 = p_12 - p1;
         let v2 = p2 - p1;
 
-        poly.normal = v2.cross(&v1).normalize();
+        // For 3 nodes, the node accross the middle is the second node.
+        // Then the third node gives the normal vector.
+        let p_normal = Point3::from_slice(&nodes[pt_idx_12.max(2)]);
+        poly.normal = v2.cross(&(p_normal - p1)).normalize();
 
         // Estimate translation (middle node)
         // Use midpoint between 1st and and half way around polygon
@@ -126,5 +128,19 @@ impl FractureDef {
         new_poly.translate(Vector3::from_row_slice(&self.translation));
 
         new_poly
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_triangle_by_vertices_has_its_normal() {
+        let triangle = FractureNodesDef {
+            vertices: vec![[0., 0., 0.], [1., 0., 0.], [1., 1., 0.]],
+        };
+
+        assert_eq!(triangle.to_poly().normal, Vector3::new(0., 0., 1.));
     }
 }
