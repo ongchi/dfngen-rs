@@ -13,7 +13,7 @@ enum AngleOption {
 /// The fisher distribution of polygon normal vector generation
 #[derive(Debug)]
 pub struct Fisher {
-    angle_option: Option<AngleOption>,
+    angle_option: AngleOption,
     orientation: Vector3<f64>,
     kappa: f64,
     eps: f64,
@@ -34,7 +34,7 @@ impl Fisher {
             eps,
             uniform: Uniform::new(0., 1.).unwrap(),
             theta_uniform: Uniform::new(0., 2. * std::f64::consts::PI).unwrap(),
-            angle_option: Some(angle_option),
+            angle_option,
         }
     }
 
@@ -83,25 +83,24 @@ impl Display for Fisher {
         let rad_to_deg = 180. / std::f64::consts::PI;
 
         match self.angle_option {
-            Some(AngleOption::ThetaPhi(theta, phi)) => {
+            AngleOption::ThetaPhi(theta, phi) => {
                 writeln!(f, "Theta-rad: {}", theta)?;
                 writeln!(f, "Theta-deg: {}", theta * rad_to_deg)?;
                 writeln!(f, "Phi-rad: {}", phi)?;
                 writeln!(f, "Phi-deg: {}", phi * rad_to_deg)?;
             }
-            Some(AngleOption::TrendPlunge(trend, plunge)) => {
+            AngleOption::TrendPlunge(trend, plunge) => {
                 writeln!(f, "Trend-rad: {}", trend)?;
                 writeln!(f, "Trend-deg: {}", trend * rad_to_deg)?;
                 writeln!(f, "Plunge-rad: {}", plunge)?;
                 writeln!(f, "Plunge-deg: {}", plunge * rad_to_deg)?;
             }
-            Some(AngleOption::DipStrike(dip, strike)) => {
+            AngleOption::DipStrike(dip, strike) => {
                 writeln!(f, "Dip-rad: {}", dip)?;
                 writeln!(f, "Dip-deg: {}", dip * rad_to_deg)?;
                 writeln!(f, "Strike-rad: {}", strike)?;
                 writeln!(f, "Strike-deg: {}", strike * rad_to_deg)?;
             }
-            None => unreachable!(),
         }
 
         writeln!(f, "Kappa: {}", self.kappa)
@@ -116,8 +115,7 @@ impl Distribution<Vector3<f64>> for Fisher {
         let x_prod = u.cross(&self.orientation);
 
         // Get rotation matrix if normal vectors are not the same (if xProd is not zero vector)
-        let r = if x_prod.magnitude() > self.eps
-        {
+        let r = if x_prod.magnitude() > self.eps {
             // Since vectors are normalized, sin = magnitude(AxB) and cos = A . B
             let sin =
                 (x_prod[0] * x_prod[0] + x_prod[1] * x_prod[1] + x_prod[2] * x_prod[2]).sqrt();

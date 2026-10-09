@@ -269,9 +269,6 @@ fn main() -> Result<(), DfngenError> {
 
                     // Test if newPoly has reached its limit of insertion attempts
                     if reject_counter >= input.rejectsPerFracture {
-                        // Created with new, delete manually
-                        new_poly.vertices.clear();
-                        // reject_counter += 1;
                         // Reject poly, generate new polygon
                         break;
                     } else {
@@ -288,8 +285,6 @@ fn main() -> Result<(), DfngenError> {
 
                 // Create/assign bounding box
                 new_poly.assign_bounding_box();
-                // Find line of intersection and FRAM check
-                // rejectCode = intersectionChecking(newPoly, acceptedPoly, intPts, pstats, triplePoints);
                 // Find line of intersection and FRAM check
                 reject_code = intersection_checking(
                     &poly_opts,
@@ -408,7 +403,6 @@ fn main() -> Result<(), DfngenError> {
                     }
 
                     if reject_counter >= input.rejectsPerFracture {
-                        new_poly.vertices.clear(); // Delete manually, created with new[]
                         dfngen.pstats.rejected_poly_count += 1;
                         dfngen.pstats.rejected_from_fam[family_index] += 1;
                         // Stop retranslating polygon if its reached its reject limit
@@ -435,9 +429,7 @@ fn main() -> Result<(), DfngenError> {
 
         // Remove last element off the rejects per attempt counter.
         // It will have one extra item due to how each element is initialized.
-        if !dfngen.pstats.rejects_per_attempt.is_empty() {
-            let _ = dfngen.pstats.rejects_per_attempt.pop();
-        }
+        dfngen.pstats.rejects_per_attempt.pop();
     }
 
     // The close to node check is inside of the close to edge check function
@@ -447,12 +439,6 @@ fn main() -> Result<(), DfngenError> {
     // (they were counted in closeToEdge AND closeToNode)
     dfngen.pstats.rejection_reasons.close_to_edge -= dfngen.pstats.rejection_reasons.close_to_node;
 
-    // // Assign apertures and permiability to accepted polygons
-    // for (unsigned int i = 0; i < acceptedPoly.size(); i++) {
-    //     assignAperture(acceptedPoly[i], generator);
-    //     // NOTE: must assign aperture before permeability
-    //     assignPermeability(acceptedPoly[i]);
-    // }
     // Copy end of DFN generation stats to file, as well as print to screen
     info!("Network Generation Complete");
     info!("Version of dfngen-rs: {}", env!("CARGO_PKG_VERSION"));

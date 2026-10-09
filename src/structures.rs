@@ -423,9 +423,13 @@ impl DFNGen {
         }
     }
 
-    pub fn insert_poly(&mut self, poly: Poly, poly_id: usize, family_id: i32, opts: &PolyOptions) {
-        let mut new_poly = poly;
-
+    pub fn insert_poly(
+        &mut self,
+        mut new_poly: Poly,
+        poly_id: usize,
+        family_id: i32,
+        opts: &PolyOptions,
+    ) {
         if new_poly.domain_truncation(opts.h, opts.eps, &opts.domain_size) {
             // Poly completely outside domain
             self.pstats.rejection_reasons.outside += 1;
@@ -512,9 +516,8 @@ impl DFNGen {
         let mut final_poly_list = Vec::new();
         self.reset_state();
 
-        for poly in self.accepted_poly.iter_mut() {
+        for poly in self.accepted_poly.iter() {
             if poly.xradius < min_size {
-                poly.vertices.clear();
                 continue;
             }
 
@@ -543,8 +546,7 @@ impl DFNGen {
         }
 
         info!("Rebuilding DFN complete.");
-        self.accepted_poly.clear();
-        self.accepted_poly.extend(final_poly_list);
+        self.accepted_poly = final_poly_list;
     }
 
     /// Remove Fractures Outside 2D polygon domain
@@ -577,7 +579,6 @@ impl DFNGen {
             let x = self.accepted_poly[i].translation[0];
             let y = self.accepted_poly[i].translation[1];
 
-            // cout << "fracture " << i + 1 << " center " << x << "," << y << endl;
             if !is_in_boundary(num_of_domain_vertices, domain_vertices, x, y) {
                 self.accepted_poly.clear();
                 continue;
@@ -612,8 +613,7 @@ impl DFNGen {
         }
 
         info!("Rebuilding DFN complete.");
-        self.accepted_poly.clear();
-        self.accepted_poly.extend(final_poly_list);
+        self.accepted_poly = final_poly_list;
     }
 }
 

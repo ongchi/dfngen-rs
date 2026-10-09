@@ -67,8 +67,6 @@ pub fn dry_run(
             )
         } else {
             // Choose a family based on probabiliyis AND their target p32 completion status
-            // if a family has already met is fracture intinisty req. (p32) dont choose that family anymore
-            // Choose a family based on probabiliyis AND their target p32 completion status
             // if a family has already met is fracture intinisty reqirement (p32) dont choose that family anymore
             family_index = index_from_prob_and_p32_status(
                 &p32_status,
@@ -172,7 +170,6 @@ pub fn dry_run(
         // We are just simulating dfn with no rejections
         // to get an idea of how many fractures we will
         // need for each family
-        new_poly.vertices.clear();
     } // End while loop for inserting polyons
 
     // Reset p32 to 0

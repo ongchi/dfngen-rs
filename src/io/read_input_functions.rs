@@ -498,7 +498,6 @@ impl InputReader {
             let mut p32_target: Vec<f64> = Vec::new();
 
             read_var!("betaDistribution", beta_distribution);
-            read_var!("betaDistribution", beta_distribution);
             read_var!("Layer", layer);
             read_var!("Region", region);
             read_var!("aspect", aspect_ratio);
@@ -528,7 +527,7 @@ impl InputReader {
 
             // Create shape structures from data gathered above
             for ((i, orien), radius) in zip_eq(zip_eq(0..n_fam, orien_distr), radius_distr) {
-                let mut fracfam_builder = FractureFamilyBuilder::new();
+                let mut fracfam_builder = FractureFamilyBuilder::default();
 
                 if prefix == "e" {
                     fracfam_builder.number_of_nodes(num_points[i] as u8);

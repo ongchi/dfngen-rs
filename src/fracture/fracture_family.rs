@@ -159,12 +159,6 @@ pub struct FractureFamilyBuilder<'a> {
 }
 
 impl<'a> FractureFamilyBuilder<'a> {
-    pub fn new() -> Self {
-        Self {
-            ..Default::default()
-        }
-    }
-
     pub fn id(&mut self, id: usize) -> &mut Self {
         self.id = Some(id);
         self
@@ -325,10 +319,9 @@ impl FractureFamilyCollection {
     pub fn generate_radii(
         &mut self,
         force_large_fractures: bool,
-        n_poly: usize,
+        mut n_poly: usize,
         generator: Rc<RefCell<Mt64>>,
     ) -> Result<(), DfngenError> {
-        let mut n_poly = n_poly;
         if force_large_fractures {
             for shape in self.families.iter_mut() {
                 let radius = shape.radius.max;

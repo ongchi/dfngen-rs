@@ -94,10 +94,6 @@ pub enum FractureNodesDef {
 }
 
 impl FractureNodesDef {
-    pub fn new_ell(nodes: Vec<[f64; 3]>) -> Result<Self, DfngenError> {
-        Ok(Self::Ellipse(nodes))
-    }
-
     pub fn new_rect(nodes: Vec<[f64; 3]>) -> Result<Self, DfngenError> {
         if nodes.len() != 4 {
             Err(DfngenError::ValueError(
@@ -106,10 +102,6 @@ impl FractureNodesDef {
         } else {
             Ok(Self::Rectangle(nodes))
         }
-    }
-
-    pub fn new_poly(nodes: Vec<[f64; 3]>) -> Result<Self, DfngenError> {
-        Ok(Self::Polygon(nodes))
     }
 
     /// Reads a file containing user-defined fractures defined by ellipse vertices.
@@ -138,7 +130,7 @@ impl FractureNodesDef {
                 }
                 nodes.push(tmp);
             }
-            fractures.push(FractureNodesDef::new_ell(nodes).unwrap());
+            fractures.push(FractureNodesDef::Ellipse(nodes));
         }
 
         fractures
@@ -193,7 +185,7 @@ impl FractureNodesDef {
                 tmp.read_from_text(&mut file);
                 nodes.push(tmp);
             }
-            fractures.push(FractureNodesDef::new_poly(nodes).unwrap());
+            fractures.push(FractureNodesDef::Polygon(nodes));
         }
 
         fractures

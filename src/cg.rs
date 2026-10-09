@@ -769,9 +769,8 @@ pub fn intersection_checking(
     // Counts number of accepted intersections on newPoly.
     let mut count = 0;
     let mut temp_data = Vec::new();
-    let size = accepted_poly.len();
 
-    for (ii, poly) in accepted_poly.iter().enumerate().take(size) {
+    for (ii, poly) in accepted_poly.iter().enumerate() {
         let mut flag = 0;
         let mut intersection;
 
