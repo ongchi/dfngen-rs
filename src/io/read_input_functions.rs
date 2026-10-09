@@ -327,8 +327,8 @@ impl InputReader {
         self.read_value("angleOption:", &mut angle_option);
 
         if angle_option {
-            let _ = angle1.iter_mut().map(|v| *v = std::f64::consts::PI / 180.);
-            let _ = angle2.iter_mut().map(|v| *v = std::f64::consts::PI / 180.);
+            convert_degrees_to_radians(&mut angle1);
+            convert_degrees_to_radians(&mut angle2);
         }
 
         let mut kappa: Vec<f64> = Vec::new();
@@ -524,9 +524,8 @@ impl InputReader {
 
             read_var!("beta", beta);
 
-            // Convert from degrees to radians
             if angle_option {
-                let _ = beta.iter_mut().map(|v| *v *= std::f64::consts::PI / 180.);
+                convert_degrees_to_radians(&mut beta);
             }
 
             if stop_condition {
@@ -615,5 +614,28 @@ impl UserFractureReader {
             buf.push(tmp.clone());
         }
         debug!("value: {:?}", &buf);
+    }
+}
+
+fn convert_degrees_to_radians(angles: &mut [f64]) {
+    for angle in angles {
+        *angle = angle.to_radians();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_degrees_are_converted_to_radians() {
+        let mut angles = [0., 90., 180.];
+
+        convert_degrees_to_radians(&mut angles);
+
+        assert_eq!(
+            angles,
+            [0., std::f64::consts::FRAC_PI_2, std::f64::consts::PI]
+        );
     }
 }
