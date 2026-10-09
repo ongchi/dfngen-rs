@@ -1,6 +1,6 @@
 use std::{
     fs::File,
-    io::{Seek, Write},
+    io::{self, BufWriter, Seek, Write},
 };
 
 use parry3d_f64::na::{distance, Point3, Vector3};
@@ -10,8 +10,23 @@ use crate::distribution::generating_points::discretize_line_of_intersection;
 use crate::fracture::fracture_family::FractureFamilyCollection;
 use crate::io::input::Input;
 use crate::math_functions::sorted_index;
-use crate::structures::{IntersectionPoints, Shape, Stats};
+use crate::structures::{IntersectionPoints, Stats};
 use crate::{cg::poly_and_intersection_rotation_to_xy, fracture::poly::Poly};
+
+const RADII_FORMAT_HEADER: &str =
+    "(-2 = userPolygon, -1 = userRectangle, 0 = userEllipse, > 0 is family in order of famProb)";
+
+fn create_file(path: String) -> io::Result<BufWriter<File>> {
+    Ok(BufWriter::new(File::create(path)?))
+}
+
+/// Polygons which remain after isolated fracture removal, in output order.
+fn final_polys<'a>(
+    final_fractures: &'a [usize],
+    accepted_poly: &'a [Poly],
+) -> impl Iterator<Item = &'a Poly> {
+    final_fractures.iter().map(|&i| &accepted_poly[i])
+}
 
 /// Writes all output
 ///
@@ -23,7 +38,7 @@ use crate::{cg::poly_and_intersection_rotation_to_xy, fracture::poly::Poly};
 /// * `int_pts` - Vector of all intersections from accepted polygons
 /// * `triple_points` - Vector of all accepted triple intersection points
 /// * `pstats` - Stats structure, running program statistics
-/// * `final_fractures` - indices into the Poly array of accepted polgons
+/// * `final_fractures` - sorted indices into the Poly array of accepted polgons
 ///   which remain after isolated fractures (polys) were removed
 /// * `frac_families` - Family structure array of all stocastic families defined by user input
 #[allow(clippy::too_many_arguments)]
@@ -32,151 +47,113 @@ pub fn write_output(
     output_folder: &str,
     accepted_poly: &mut [Poly],
     int_pts: &mut [IntersectionPoints],
-    triple_points: &mut [Point3<f64>],
+    triple_points: &[Point3<f64>],
     pstats: &mut Stats,
     final_fractures: &[usize],
     frac_families: &FractureFamilyCollection,
-) {
+) -> io::Result<()> {
     let output = format!("{}/dfnGen_output", output_folder);
     info!("{}", output);
-    let _ = std::fs::create_dir_all(&output);
+    std::fs::create_dir_all(&output)?;
 
     let intersection_folder = format!("{}/intersections", output_folder);
-    let _ = std::fs::create_dir_all(&intersection_folder);
+    std::fs::create_dir_all(&intersection_folder)?;
 
     let poly_folder = format!("{}/polys", output_folder);
-    let _ = std::fs::create_dir_all(&poly_folder);
+    std::fs::create_dir_all(&poly_folder)?;
 
     let radii_folder = format!("{}/radii/", output);
 
-    // Adjust Fracture numbering
     adjust_int_fract_ids(final_fractures, accepted_poly, int_pts);
-    // Write out graph information
-    write_graph_data(
-        input.eps,
-        &input.domainSize,
-        final_fractures,
-        accepted_poly,
-        int_pts,
-        &output,
-    );
-    // Write polygon.dat file
-    write_polys(final_fractures, accepted_poly, &output);
-    // Write intersection files (must be first file written, rotates polys to x-y plane)
+    write_graph_data(input, final_fractures, accepted_poly, int_pts, &output)?;
+    write_polys(final_fractures, accepted_poly, &output)?;
+    // Rotates polys to x-y plane, must come before write_polys_inp()
     write_intersection_files(
-        input.h,
-        input.eps,
-        input.keepIsolatedFractures,
-        input.visualizationMode,
+        input,
         final_fractures,
         accepted_poly,
         int_pts,
         triple_points,
         &intersection_folder,
         pstats,
-    );
-    // Write polys.inp
-    write_polys_inp(final_fractures, accepted_poly, &poly_folder);
-    // Write params.txt
-    write_params_file(
-        input.h,
-        input.visualizationMode,
-        &input.domainSize,
-        final_fractures,
-        pstats,
-        &output,
-    );
-    // Write aperture file
-    // writeApertureFile(finalFractures, acceptedPoly, output);
-    // Write permability file
-    // writePermFile(finalFractures, acceptedPoly, output);
-    // Write radii file
-    write_radii_file(final_fractures, accepted_poly, &output);
-    // Write rejection stats file
-    write_rejection_stats(pstats, &output);
-    // write out userRejetedFracture information
-    write_user_rejected_fracture_information(pstats, &output);
-    // Write families to output Files
-    write_frac_fams(
-        input.ext_fracture_files.user_ell_file.is_some(),
-        input.ext_fracture_files.user_rect_file.is_some(),
-        input.ext_fracture_files.user_poly_by_coord_file.is_some(),
-        input.stopCondition,
-        &input.layers,
-        &input.regions,
-        frac_families,
-        &output,
-    );
-    // Write fracture translations file
-    write_fracture_translations(final_fractures, accepted_poly, &output);
-    // Write fracture connectivity (edge graph) file
-    write_connectivity(final_fractures, accepted_poly, int_pts, &output);
-    // Write rotation data
+    )?;
+    write_polys_inp(final_fractures, accepted_poly, &poly_folder)?;
+    write_params_file(input, final_fractures, pstats, &output)?;
+    write_radii_file(final_fractures, accepted_poly, &output)?;
+    write_rejection_stats(pstats, &output)?;
+    write_user_rejected_fracture_information(pstats, &output)?;
+    write_frac_fams(input, frac_families, &output)?;
+    write_fracture_translations(final_fractures, accepted_poly, &output)?;
+    write_connectivity(final_fractures, accepted_poly, int_pts, &output)?;
     write_rotation_data(
-        input.eps,
-        &input.domainSize,
+        input,
         accepted_poly,
         final_fractures,
         frac_families,
         &output,
-    );
-    // Write normal vectors
-    write_normal_vectors(accepted_poly, final_fractures, &output);
-    // Write rejects per fracture insertion attempt data
-    write_rejects_per_attempt(pstats, &output);
-    // Write all accepted radii
-    write_final_poly_radii(final_fractures, accepted_poly, &output);
-    // Write all accepted Surface Area
-    write_final_poly_area(final_fractures, accepted_poly, &output);
-    // Write out which fractures touch which boundaries
-    write_boundary_files(final_fractures, accepted_poly, &output);
+    )?;
+    write_normal_vectors(accepted_poly, final_fractures, &output)?;
+    write_rejects_per_attempt(pstats, &output)?;
+    write_final_poly_radii(final_fractures, accepted_poly, &output)?;
+    write_final_poly_area(final_fractures, accepted_poly, &output)?;
+    write_boundary_files(final_fractures, accepted_poly, &output)?;
+
+    let user_files = &input.ext_fracture_files;
+    let stochastic_family_nums = 0..frac_families.families.len() as isize;
+
     if input.outputAcceptedRadiiPerFamily {
         info!("Writing Accepted Radii Files Per Family");
-        // Creates radii files per family, before isolated fracture removal.
-        let size = frac_families.families.len();
 
-        for i in 0..size {
-            write_all_accepted_radii_of_family(i as isize, accepted_poly, &radii_folder);
+        let mut family_nums: Vec<isize> = stochastic_family_nums.clone().collect();
+        // Fractures are marked -2 for user rects, -1 for user ellipses, -3 for user polygons
+        if user_files.user_rect_file.is_some() {
+            family_nums.push(-2);
+        }
+        if user_files.user_ell_file.is_some() {
+            family_nums.push(-1);
+        }
+        if user_files.user_poly_by_coord_file.is_some() {
+            family_nums.push(-3);
         }
 
-        if input.ext_fracture_files.user_rect_file.is_some() {
-            // Fractures are marked -2 for user rects
-            write_all_accepted_radii_of_family(-2, accepted_poly, &radii_folder);
-        }
-
-        if input.ext_fracture_files.user_ell_file.is_some() {
-            // Fractures are marked -1 for user ellipses
-            write_all_accepted_radii_of_family(-1, accepted_poly, &radii_folder);
-        }
-
-        if input.ext_fracture_files.user_poly_by_coord_file.is_some() {
-            // Fractures are marked -3 for user user polygons
-            write_all_accepted_radii_of_family(-3, accepted_poly, &radii_folder);
+        for family_num in family_nums {
+            write_family_radii(
+                format!(
+                    "{}/radii_AllAccepted_Fam_{}.dat",
+                    radii_folder,
+                    family_num + 1
+                ),
+                "Fracture Radii List Before Isolated Fracture and Cluster Removal",
+                family_num,
+                accepted_poly.iter(),
+            )?;
         }
     }
 
     if input.outputFinalRadiiPerFamily {
         info!("Writing Final Radii Files Per Family");
-        let size = frac_families.families.len();
 
-        for i in 0..size {
-            write_final_radii_of_family(final_fractures, i as isize, accepted_poly, &radii_folder);
+        let mut family_nums: Vec<isize> = stochastic_family_nums.collect();
+        if user_files.user_rect_file.is_some() {
+            family_nums.push(-1);
+        }
+        if user_files.user_ell_file.is_some() {
+            family_nums.push(-2);
+        }
+        if user_files.user_poly_by_coord_file.is_some() {
+            family_nums.push(-3);
         }
 
-        if input.ext_fracture_files.user_rect_file.is_some() {
-            write_final_radii_of_family(final_fractures, -1, accepted_poly, &radii_folder);
-        }
-
-        if input.ext_fracture_files.user_ell_file.is_some() {
-            write_final_radii_of_family(final_fractures, -2, accepted_poly, &radii_folder);
-        }
-
-        if input.ext_fracture_files.user_poly_by_coord_file.is_some() {
-            write_final_radii_of_family(final_fractures, -3, accepted_poly, &radii_folder);
+        for family_num in family_nums {
+            write_family_radii(
+                format!("{}/radii_Final_Fam_{}.dat", radii_folder, family_num + 1),
+                "Fracture Radii List After Isolated Fracture and Cluster Removal",
+                family_num,
+                final_polys(final_fractures, accepted_poly),
+            )?;
         }
     }
 
-    // If triple intersections are on, write triple intersection points file
     if input.tripleIntersections {
         info!("Writing Triple Intersection Points File");
         write_triple_pts(
@@ -185,8 +162,10 @@ pub fn write_output(
             accepted_poly,
             int_pts,
             &output,
-        );
+        )?;
     }
+
+    Ok(())
 }
 
 /// Helper function for writing discretized intersections
@@ -204,21 +183,22 @@ pub fn write_output(
 ///   array will be the same as the first point in the second array. In this situation, you
 ///   would set start = 1 while writing the second array to avoid duplicate points in the output
 /// * `count` - Counter of poitns written. Used to rember at which node a new intersection starts
-fn write_points(output: &mut File, points: &[Point3<f64>], start: usize, count: &mut usize) {
-    let n = points.len();
-
-    for point in points.iter().take(n).skip(start) {
-        output
-            .write_all(
-                format!(
-                    "{:.12} {:.12} {:.12} {:.12}\n",
-                    count, point.x, point.y, point.z
-                )
-                .as_bytes(),
-            )
-            .unwrap();
+fn write_points(
+    output: &mut impl Write,
+    points: &[Point3<f64>],
+    start: usize,
+    count: &mut usize,
+) -> io::Result<()> {
+    for point in points.iter().skip(start) {
+        writeln!(
+            output,
+            "{:.12} {:.12} {:.12} {:.12}",
+            count, point.x, point.y, point.z
+        )?;
         *count += 1;
     }
+
+    Ok(())
 }
 
 /// Helper function for writing discretized intersection points
@@ -234,13 +214,13 @@ fn write_points(output: &mut File, points: &[Point3<f64>], start: usize, count: 
 ///   Used to generate "line" connections in intersection inp files
 /// * `intersecting_fractures` - Vector array of fracture id's (indices) who intersect fract1
 fn finish_writing_int_file(
-    fract_int_file: &mut File,
+    fract_int_file: &mut BufWriter<File>,
     fract1: usize,
     num_points: usize,
     num_intersections: usize,
     int_start: &[usize],
     intersecting_fractures: &[usize],
-) {
+) -> io::Result<()> {
     let mut count = 1;
     let mut idx = 0;
 
@@ -251,19 +231,20 @@ fn finish_writing_int_file(
             idx += 1;
         }
 
-        fract_int_file
-            .write_all(format!("{} {} line {} {}\n", i + 1, fract1, count, count + 1).as_bytes())
-            .unwrap();
+        writeln!(
+            fract_int_file,
+            "{} {} line {} {}",
+            i + 1,
+            fract1,
+            count,
+            count + 1
+        )?;
         count += 1;
     }
 
-    fract_int_file.write_all("2 1 1\n".as_bytes()).unwrap();
-    fract_int_file
-        .write_all("a_b, integer\n".as_bytes())
-        .unwrap();
-    fract_int_file
-        .write_all("b_a, integer\n".as_bytes())
-        .unwrap();
+    writeln!(fract_int_file, "2 1 1")?;
+    writeln!(fract_int_file, "a_b, integer")?;
+    writeln!(fract_int_file, "b_a, integer")?;
     idx = 0;
 
     for i in 0..num_points {
@@ -271,16 +252,24 @@ fn finish_writing_int_file(
             idx += 1;
         }
 
-        fract_int_file
-            .write_all(format!("{} {} {}\n", i + 1, fract1, intersecting_fractures[idx]).as_bytes())
-            .unwrap();
+        writeln!(
+            fract_int_file,
+            "{} {} {}",
+            i + 1,
+            fract1,
+            intersecting_fractures[idx]
+        )?;
     }
 
     // Move to header postion
-    fract_int_file.rewind().unwrap();
-    fract_int_file
-        .write_all(format!("{} {} 2 0 0", num_points, num_points - num_intersections).as_bytes())
-        .unwrap();
+    fract_int_file.rewind()?;
+    write!(
+        fract_int_file,
+        "{} {} 2 0 0",
+        num_points,
+        num_points - num_intersections
+    )?;
+    fract_int_file.flush()
 }
 
 /// Adjust the intersectins fracture numbers. The finalFracture list is the indexes of the final polygons.
@@ -305,63 +294,72 @@ fn adjust_int_fract_ids(
     all_polys: &[Poly],
     int_pts: &mut [IntersectionPoints],
 ) {
-    //go through all final fractures
-    for i in 0..final_fractures.len() {
-        //go through each final fractures intersections
-        for j in 0..all_polys[final_fractures[i]].intersection_index.len() {
-            //change matching fracture numbers to new number (order of finalFractures list) for output
-            let int_idx = all_polys[final_fractures[i]].intersection_index[j];
+    for (i, &poly_idx) in final_fractures.iter().enumerate() {
+        let new_id = -(i as isize + 1);
 
-            if int_pts[int_idx].fract1 == final_fractures[i] as isize {
-                int_pts[int_idx].fract1 = -(i as isize + 1);
-            } else if int_pts[int_idx].fract2 == final_fractures[i] as isize {
-                int_pts[int_idx].fract2 = -(i as isize + 1);
+        for &int_idx in &all_polys[poly_idx].intersection_index {
+            let intersection = &mut int_pts[int_idx];
+
+            if intersection.fract1 == poly_idx as isize {
+                intersection.fract1 = new_id;
+            } else if intersection.fract2 == poly_idx as isize {
+                intersection.fract2 = new_id;
             }
         }
     }
 }
 
-// Writes intersection inp files to output folder
-//
-// Rotates intersections, and triple intersection points to x-y plane
-// Also rotates polygons to x-y plane to save on computation during writePolysInp()
-// Rotating polygons here increases performance as we do not need to recalculate rotation matricies
-//
-// # Arguments
-//
-/// * `h` - Minimum feature size
-/// * `eps` - Epsilon value for floating point comparison
-/// * `keep_isolated_fractures` - Flag to keep isolated fractures
-/// * `visualization_mode` - If false, creates a fine mesh, according to h parameter.
-///   If true, produce only first round of triangulations. In this case no modeling of flow and transport is possible.
+/// Returns the output ids `(own, other)` of the two fractures of an intersection,
+/// where `own` is the fracture with output id `fracture_id`.
+///
+/// NOTE: At this stage in the program, the fracture ID's have been changed to
+/// negative. See adjust_int_fract_ids() for more details.
+fn intersecting_fracture_ids(
+    intersection: &IntersectionPoints,
+    fracture_id: usize,
+) -> (isize, isize) {
+    if -intersection.fract1 == fracture_id as isize {
+        (-intersection.fract1, -intersection.fract2)
+    } else {
+        (-intersection.fract2, -intersection.fract1)
+    }
+}
+
+/// Writes intersection inp files to output folder
+///
+/// Rotates intersections, and triple intersection points to x-y plane
+/// Also rotates polygons to x-y plane to save on computation during writePolysInp()
+/// Rotating polygons here increases performance as we do not need to recalculate rotation matricies
+///
+/// # Arguments
+///
+/// * `input` - Input structure, contains all user input
 /// * `final_fractures` - Vector array of indices of fractures left after isolated fracture removal
 /// * `accepted_poly` - Vector array of all accetped fractures (before isolated fracture removal)
 /// * `int_pts` - Vector array of all intersections
 /// * `triple_points` - Vector array of all triple intersection points
 /// * `intersection_folder` - Path to intersections folder
 /// * `pstats` - Stats structure, running program statistics
-#[allow(clippy::too_many_arguments)]
 fn write_intersection_files(
-    h: f64,
-    eps: f64,
-    keep_isolated_fractures: bool,
-    visualization_mode: bool,
+    input: &Input,
     final_fractures: &[usize],
     accepted_poly: &mut [Poly],
     int_pts: &[IntersectionPoints],
-    triple_points: &mut [Point3<f64>],
+    triple_points: &[Point3<f64>],
     intersection_folder: &str,
     pstats: &mut Stats,
-) {
+) -> io::Result<()> {
+    let h = input.h;
+    let visualization_mode = input.visualizationMode;
+
     // Keeps track of current un-rotated points we are working with
     let mut temp_point1;
     let mut temp_point2;
     info!("Writing Intersection Files");
-    // let mut fractIntFile = File::open();
 
     // Go through finalFractures. Rotate poly, intersections, and triple intersection points
     // to XY plane. Discretize and write to file
-    for i in 0..final_fractures.len() {
+    for (i, &poly_idx) in final_fractures.iter().enumerate() {
         // Starting positions for each intersection. Lets us know how to make the line connections
         let mut int_start = Vec::new();
         let mut count = 1;
@@ -369,167 +367,127 @@ fn write_intersection_files(
         let mut num_int_pts = 0;
         // Used in writing which nodes belong to which two fractures in finishWritingOutput()
         let mut intersecting_fractures = Vec::new();
-        // Make new intersection file in intersections folder
-        let file = format!("{}/intersections_{}.inp", intersection_folder, i + 1);
-        let mut fract_int_file = File::create(file).unwrap();
+        let mut fract_int_file = create_file(format!(
+            "{}/intersections_{}.inp",
+            intersection_folder,
+            i + 1
+        ))?;
         // Buffer first line to leave space to write header
-        fract_int_file
-            .write_all(
-                "                                                               \n".as_bytes(),
-            )
-            .unwrap();
+        writeln!(fract_int_file, "{:63}", "")?;
         // Go through each final fracture's intersections and write to output
-        let size = accepted_poly[final_fractures[i]].intersection_index.len();
+        let size = accepted_poly[poly_idx].intersection_index.len();
 
-        if size > 0 || !keep_isolated_fractures {
-            for j in 0..size {
-                // tempTripPts holds rotated triple points for an intersection. Triple pts must be rotated 3 different
-                // ways so we cannot change the original data
-                let mut temp_trip_pts = Vec::new();
-                // Used to measure current length before rotation (used to calculate number of points
-                // to discretize) based on original intersection. This fixes any precision errors we
-                // when calculating length after rotation, both rotations for the same intersection will
-                // always have the same step size and same number of discretized points.
-                let mut cur_length;
-                let poly_int_idx = accepted_poly[final_fractures[i]].intersection_index[j];
-                // Similarly to above, the intersection must be rotated two different ways,
-                // one for each intersecting poly. We can't change the original data so we must use temp data
-                let temp_intersection = poly_and_intersection_rotation_to_xy(
-                    &int_pts[poly_int_idx],
-                    &mut accepted_poly[final_fractures[i]],
-                    triple_points,
-                    &mut temp_trip_pts,
-                    eps,
+        for j in 0..size {
+            // tempTripPts holds rotated triple points for an intersection. Triple pts must be rotated 3 different
+            // ways so we cannot change the original data
+            let mut temp_trip_pts = Vec::new();
+            // Used to measure current length before rotation (used to calculate number of points
+            // to discretize) based on original intersection. This fixes any precision errors we
+            // when calculating length after rotation, both rotations for the same intersection will
+            // always have the same step size and same number of discretized points.
+            let mut cur_length;
+            let intersection = &int_pts[accepted_poly[poly_idx].intersection_index[j]];
+            // Similarly to above, the intersection must be rotated two different ways,
+            // one for each intersecting poly. We can't change the original data so we must use temp data
+            let temp_intersection = poly_and_intersection_rotation_to_xy(
+                intersection,
+                &mut accepted_poly[poly_idx],
+                triple_points,
+                &mut temp_trip_pts,
+                input.eps,
+            );
+            // poly and intersection now rotated
+            let triple_pts_size = temp_trip_pts.len();
+
+            let (_, fract2) = intersecting_fracture_ids(intersection, i + 1);
+            intersecting_fractures.push(fract2 as usize);
+
+            // If triple points exist on intersection, discretize from endpoint to closest triple point,
+            // from triple to next triple point, and finally to other end point
+            if triple_pts_size != 0 {
+                // Keep track of number of triple points which will be in the
+                // DFN (this is after isolated fracture removal)
+                // NOTE: This will need to be divided by six to get correct value.
+                // Division by six was determined through testing.
+                pstats.triple_node_count += triple_pts_size;
+                // Order the triple points by distances to know to discretize from point to next closest point
+                let mut distances = Vec::with_capacity(triple_pts_size);
+                let mut pt1 = temp_intersection.p1;
+                temp_point1 = intersection.p1;
+
+                // Create array of distances first end point to triple points
+                for k in 0..triple_pts_size {
+                    //loop through triple points on  intersection i
+                    distances[k] = distance(&pt1, &temp_trip_pts[k]); //create array of distances
+                }
+
+                // Order the indices of the distances array shortest to largest distance
+                // this lets us know which point to discritize to next
+                let s = sorted_index(&distances);
+                // Discretize from end point1 to first triple pt
+                // pt1 already = enpoint1
+                let mut pt2 = temp_trip_pts[s[0]];
+                temp_point2 = triple_points[intersection.triple_points_idx[s[0]]];
+                cur_length = distance(&temp_point1, &temp_point2);
+                let mut points =
+                    discretize_line_of_intersection(h, visualization_mode, &pt1, &pt2, cur_length);
+                // Write points to file
+                num_int_pts += points.len();
+                write_points(&mut fract_int_file, &points, 0, &mut count)?;
+
+                // If one trip pt, set up points to discretize from only triple pt to other end point
+                if triple_pts_size == 1 {
+                    pt1 = pt2;
+                    pt2 = temp_intersection.p2;
+                    temp_point1 = temp_point2;
+                    temp_point2 = intersection.p2;
+                } else {
+                    // More than 1 triple point
+                    for jj in 0..triple_pts_size - 1 {
+                        pt1 = temp_trip_pts[s[jj]];
+                        pt2 = temp_trip_pts[s[jj + 1]];
+                        temp_point1 = triple_points[intersection.triple_points_idx[s[jj]]];
+                        temp_point2 = triple_points[intersection.triple_points_idx[s[jj + 1]]];
+                        cur_length = distance(&temp_point1, &temp_point2);
+                        points = discretize_line_of_intersection(
+                            h,
+                            visualization_mode,
+                            &pt1,
+                            &pt2,
+                            cur_length,
+                        );
+                        // Write points for first fracture to file, save second set of points to temp
+                        num_int_pts += points.len() - 1;
+                        write_points(&mut fract_int_file, &points, 1, &mut count)?;
+                    }
+
+                    // Set up points to go from last triple point to last endpoint
+                    pt1 = pt2;
+                    pt2 = temp_intersection.p2;
+                    temp_point1 = temp_point2;
+                    temp_point2 = intersection.p2;
+                }
+
+                cur_length = distance(&temp_point1, &temp_point2);
+                points =
+                    discretize_line_of_intersection(h, visualization_mode, &pt1, &pt2, cur_length);
+                num_int_pts += points.len() - 1;
+                write_points(&mut fract_int_file, &points, 1, &mut count)?;
+            } else {
+                // No triple intersection points on intersection line
+                cur_length = distance(&intersection.p1, &intersection.p2);
+                let points = discretize_line_of_intersection(
+                    h,
+                    visualization_mode,
+                    &temp_intersection.p1,
+                    &temp_intersection.p2,
+                    cur_length,
                 );
-                // poly and intersection now rotated
-                let triple_pts_size = temp_trip_pts.len();
-                // fracture 1 is i
-                // fracture 2 is the other intersecting fracture
-                let fract2;
-
-                if -int_pts[poly_int_idx].fract1 == i as isize + 1 {
-                    fract2 = -int_pts[poly_int_idx].fract2;
-                    intersecting_fractures.push(fract2 as usize);
-                } else {
-                    fract2 = -int_pts[poly_int_idx].fract1;
-                    intersecting_fractures.push(fract2 as usize);
-                }
-
-                // If triple points exist on intersection, discretize from endpoint to closest triple point,
-                // from triple to next triple point, and finally to other end point
-                if triple_pts_size != 0 {
-                    // Keep track of number of triple points which will be in the
-                    // DFN (this is after isolated fracture removal)
-                    // NOTE: This will need to be divided by six to get correct value.
-                    // Division by six was determined through testing.
-                    pstats.triple_node_count += triple_pts_size;
-                    // Order the triple points by distances to know to discretize from point to next closest point
-                    let mut distances = Vec::with_capacity(triple_pts_size);
-                    let mut pt1 = temp_intersection.p1;
-                    temp_point1 = int_pts[poly_int_idx].p1;
-
-                    // Create array of distances first end point to triple points
-                    for k in 0..triple_pts_size {
-                        //loop through triple points on  intersection i
-                        distances[k] = distance(&pt1, &temp_trip_pts[k]); //create array of distances
-                    }
-
-                    // Order the indices of the distances array shortest to largest distance
-                    // this lets us know which point to discritize to next
-                    let s = sorted_index(&distances);
-                    // Discretize from end point1 to first triple pt
-                    // pt1 already = enpoint1
-                    let mut pt2 = temp_trip_pts[s[0]];
-                    temp_point2 = triple_points[int_pts[poly_int_idx].triple_points_idx[s[0]]];
-                    cur_length = distance(&temp_point1, &temp_point2);
-                    let mut points = discretize_line_of_intersection(
-                        h,
-                        visualization_mode,
-                        &pt1,
-                        &pt2,
-                        cur_length,
-                    );
-                    // Write points to file
-                    num_int_pts += points.len();
-                    write_points(&mut fract_int_file, &points, 0, &mut count);
-
-                    // If one trip pt, set up points to discretize from only triple pt to other end point
-                    if triple_pts_size == 1 {
-                        pt1 = pt2;
-                        pt2 = temp_intersection.p2;
-                        temp_point1 = temp_point2;
-                        temp_point2 = int_pts[poly_int_idx].p2;
-                    } else {
-                        // More than 1 triple point
-                        for jj in 0..triple_pts_size - 1 {
-                            pt1[0] = temp_trip_pts[s[jj]].x;
-                            pt1[1] = temp_trip_pts[s[jj]].y;
-                            pt1[2] = temp_trip_pts[s[jj]].z;
-                            pt2[0] = temp_trip_pts[s[jj + 1]].x;
-                            pt2[1] = temp_trip_pts[s[jj + 1]].y;
-                            pt2[2] = temp_trip_pts[s[jj + 1]].z;
-                            temp_point1 =
-                                triple_points[int_pts[poly_int_idx].triple_points_idx[s[jj]]];
-                            temp_point2 =
-                                triple_points[int_pts[poly_int_idx].triple_points_idx[s[jj + 1]]];
-                            cur_length = distance(&temp_point1, &temp_point2);
-                            points = discretize_line_of_intersection(
-                                h,
-                                visualization_mode,
-                                &pt1,
-                                &pt2,
-                                cur_length,
-                            );
-                            // Write points for first fracture to file, save second set of points to temp
-                            num_int_pts += points.len() - 1;
-                            write_points(&mut fract_int_file, &points, 1, &mut count);
-                        }
-
-                        // Set up points to go from last triple point to last endpoint
-                        pt1 = pt2;
-                        pt2 = temp_intersection.p2;
-                        temp_point1 = temp_point2;
-                        temp_point2 = int_pts[poly_int_idx].p2;
-                    }
-
-                    cur_length = distance(&temp_point1, &temp_point2);
-                    points = discretize_line_of_intersection(
-                        h,
-                        visualization_mode,
-                        &pt1,
-                        &pt2,
-                        cur_length,
-                    );
-                    num_int_pts += points.len() - 1;
-                    write_points(&mut fract_int_file, &points, 1, &mut count);
-                } else {
-                    // No triple intersection points on intersection line
-                    let pt1 = temp_intersection.p1;
-                    let pt2 = temp_intersection.p2;
-                    temp_point1 = int_pts[poly_int_idx].p1;
-                    temp_point2 = int_pts[poly_int_idx].p2;
-                    cur_length = distance(&temp_point1, &temp_point2);
-                    let points = discretize_line_of_intersection(
-                        h,
-                        visualization_mode,
-                        &pt1,
-                        &pt2,
-                        cur_length,
-                    );
-                    num_int_pts += points.len();
-                    write_points(&mut fract_int_file, &points, 0, &mut count);
-                }
-
-                int_start.push(count);
+                num_int_pts += points.len();
+                write_points(&mut fract_int_file, &points, 0, &mut count)?;
             }
-        } else {
-            // let mut tempTripPts = Vec::new();
-            // let temp_intersection = polyAndIntersection_RotationToXY(
-            //     &intPts[0],
-            //     &mut acceptedPoly[finalFractures[i]],
-            //     triplePoints,
-            //     &mut tempTripPts,
-            // );
+
+            int_start.push(count);
         }
 
         // Done with fracture and intersections
@@ -542,58 +500,44 @@ fn write_intersection_files(
             size,
             &int_start,
             &intersecting_fractures,
-        );
-        intersecting_fractures.clear();
-        int_start.clear();
+        )?;
     }
 
     //Divide by 6 to remove the duplicate counts
     pstats.triple_node_count /= 6;
+
+    Ok(())
 }
 
-/// Parses and writes all poly_x.inp files containing polygon (fracture) vertice and connectivity data
+/// Writes polygons.dat, the vertices of all final polygons
 ///
 /// # Arguments
 ///
 /// * `final_fractures` - Vector array of indices of fractures left after isolated fracture removal
 /// * `accepted_poly` - Vector array of all accetped fractures
 /// * `output` - Path to output folder
-fn write_polys(final_fractures: &[usize], accepted_poly: &[Poly], output: &str) {
+fn write_polys(final_fractures: &[usize], accepted_poly: &[Poly], output: &str) -> io::Result<()> {
     info!("Writing Polygon Files");
-    let poly_count = final_fractures.len();
-    let poly_output_file = format!("{}/polygons.dat", output);
-    let mut poly_output = File::create(poly_output_file).unwrap();
-    poly_output
-        .write_all(format!("nPolygons: {}\n", poly_count).as_bytes())
-        .unwrap();
+    let mut poly_output = create_file(format!("{}/polygons.dat", output))?;
+    writeln!(poly_output, "nPolygons: {}", final_fractures.len())?;
 
-    for j in 0..poly_count {
-        // Write vertices
-        let number_of_nodes = accepted_poly[final_fractures[j]].number_of_nodes;
-        //polyOutput << acceptedPoly[finalFractures[j]].familyNum << " ";
-        poly_output
-            .write_all(format!("{} ", number_of_nodes).as_bytes())
-            .unwrap();
+    for poly in final_polys(final_fractures, accepted_poly) {
+        write!(poly_output, "{} ", poly.number_of_nodes)?;
 
-        for i in 0..number_of_nodes {
-            let idx = i as usize * 3;
-            poly_output
-                .write_all(
-                    format!(
-                        "{{{:.12}, {:.12}, {:.12}}} ",
-                        accepted_poly[final_fractures[j]].vertices[idx],
-                        accepted_poly[final_fractures[j]].vertices[idx + 1],
-                        accepted_poly[final_fractures[j]].vertices[idx + 2],
-                    )
-                    .as_bytes(),
-                )
-                .unwrap();
+        for i in 0..poly.number_of_nodes as usize {
+            let vertex = poly.vertex(i);
+            write!(
+                poly_output,
+                "{{{:.12}, {:.12}, {:.12}}} ",
+                vertex.x, vertex.y, vertex.z
+            )?;
         }
 
-        poly_output.write_all("\n".as_bytes()).unwrap();
+        writeln!(poly_output)?;
     }
 
     info!("Writing Polygon Files Complete");
+    poly_output.flush()
 }
 
 /// Parses and writes all poly_x.inp files containing polygon (fracture) vertice and connectivity data
@@ -603,99 +547,91 @@ fn write_polys(final_fractures: &[usize], accepted_poly: &[Poly], output: &str) 
 /// * `final_fractures` - Vector array of indices of fractures left after isolated fracture removal
 /// * `accepted_poly` - Vector array of all accetped fractures
 /// * `output` - Path to output folder
-fn write_polys_inp(final_fractures: &[usize], accepted_poly: &[Poly], output: &str) {
+fn write_polys_inp(
+    final_fractures: &[usize],
+    accepted_poly: &[Poly],
+    output: &str,
+) -> io::Result<()> {
     info!("Writing poly inp files");
-    let poly_count = final_fractures.len();
 
-    for j in 0..poly_count {
-        let poly_output_file = format!("{}/poly_{}.inp", output, j + 1);
-        let mut poly_output = File::create(poly_output_file).unwrap();
+    for (j, poly) in final_polys(final_fractures, accepted_poly).enumerate() {
+        let mut poly_output = create_file(format!("{}/poly_{}.inp", output, j + 1))?;
+        let number_of_nodes = poly.number_of_nodes;
+
         // Write header
-        poly_output
-            .write_all(
-                format!(
-                    "{} {} 0 0 0\n",
-                    accepted_poly[final_fractures[j]].number_of_nodes,
-                    accepted_poly[final_fractures[j]].number_of_nodes - 1,
-                )
-                .as_bytes(),
-            )
-            .unwrap();
-        // Write vertices
-        let number_of_nodes = accepted_poly[final_fractures[j]].number_of_nodes;
+        writeln!(
+            poly_output,
+            "{} {} 0 0 0",
+            number_of_nodes,
+            number_of_nodes - 1
+        )?;
 
+        // Write vertices
         for i in 0..number_of_nodes {
-            let idx = i as usize * 3;
-            poly_output
-                .write_all(
-                    format!(
-                        "{:.12} {:.12} {:.12} {:.12}\n",
-                        i + 1,
-                        accepted_poly[final_fractures[j]].vertices[idx],
-                        accepted_poly[final_fractures[j]].vertices[idx + 1],
-                        accepted_poly[final_fractures[j]].vertices[idx + 2]
-                    )
-                    .as_bytes(),
-                )
-                .unwrap();
+            let vertex = poly.vertex(i as usize);
+            writeln!(
+                poly_output,
+                "{:.12} {:.12} {:.12} {:.12}",
+                i + 1,
+                vertex.x,
+                vertex.y,
+                vertex.z
+            )?;
         }
 
         // Write line connectivity
         for i in 1..number_of_nodes {
-            poly_output
-                .write_all(format!("{} {} line {} {}\n", i, j + 1, i, i + 1).as_bytes())
-                .unwrap();
+            writeln!(poly_output, "{} {} line {} {}", i, j + 1, i, i + 1)?;
         }
+
+        poly_output.flush()?;
     }
+
+    Ok(())
 }
 
-// Writes params.txt
-//
-// # Arguments
-//
-/// * `h` - Minimum feature size
-/// * `visualization_mode` - If false, creates a fine mesh, according to h parameter.
-///   If true, produce only first round of triangulations. In this case no modeling of flow and transport is possible.
-/// * `domain_size` - Vector3<f64> of domain size
+/// Writes params.txt
+///
+/// # Arguments
+///
+/// * `input` - Input structure, contains all user input
 /// * `final_fractures` - Vector array of indices of fractures left after isolated fracture removal
 /// * `pstats` - Stats structure, running program statistics
 /// * `output` - Path to output folder
 fn write_params_file(
-    h: f64,
-    visualization_mode: bool,
-    domain_size: &Vector3<f64>,
+    input: &Input,
     final_fractures: &[usize],
     pstats: &Stats,
     output: &str,
-) {
+) -> io::Result<()> {
     let params_output_file = format!("{}/../params.txt", output);
-    let mut params = File::create(&params_output_file).unwrap();
+    let mut params = create_file(params_output_file.clone())?;
     info!("Writing {}", &params_output_file);
-    params
-        .write_all(format!("{}\n", final_fractures.len()).as_bytes())
-        .unwrap();
-    params.write_all(format!("{}\n", h).as_bytes()).unwrap();
-    params
-        .write_all(format!("{}\n", visualization_mode as u8).as_bytes())
-        .unwrap(); // Production mode
-    params
-        .write_all(
-            format!(
-                "{}\n",
-                pstats.intersection_node_count / 2 - pstats.triple_node_count
-            )
-            .as_bytes(),
-        )
-        .unwrap();
-    params
-        .write_all(format!("{}\n", domain_size[0]).as_bytes())
-        .unwrap();
-    params
-        .write_all(format!("{}\n", domain_size[1]).as_bytes())
-        .unwrap();
-    params
-        .write_all(format!("{}\n", domain_size[2]).as_bytes())
-        .unwrap();
+
+    writeln!(params, "{}", final_fractures.len())?;
+    writeln!(params, "{}", input.h)?;
+    writeln!(params, "{}", input.visualizationMode as u8)?; // Production mode
+    writeln!(
+        params,
+        "{}",
+        pstats.intersection_node_count / 2 - pstats.triple_node_count
+    )?;
+    writeln!(params, "{}", input.domainSize[0])?;
+    writeln!(params, "{}", input.domainSize[1])?;
+    writeln!(params, "{}", input.domainSize[2])?;
+    params.flush()
+}
+
+/// Line ending for a row of an all-accepted-fractures file.
+/// Fractures removed due to isolation are marked with `R`.
+///
+/// `final_fractures` must be sorted.
+fn removed_marker(final_fractures: &[usize], poly_index: usize) -> &'static str {
+    if final_fractures.binary_search(&poly_index).is_ok() {
+        ""
+    } else {
+        " R"
+    }
 }
 
 /// Writes radii.dat (Radii Data)
@@ -705,40 +641,31 @@ fn write_params_file(
 /// * `final_fractures` - Vector array of indices of fractures left after isolated fracture removal
 /// * `accepted_poly` - Vector array of all accetped fractures
 /// * `output` - Path to output folder
-fn write_radii_file(final_fractures: &[usize], accepted_poly: &[Poly], output: &str) {
+fn write_radii_file(
+    final_fractures: &[usize],
+    accepted_poly: &[Poly],
+    output: &str,
+) -> io::Result<()> {
     info!("Writing Radii File (radii.dat)");
-    let file = format!("{}/radii.dat", output);
-    let mut radii = File::create(file).unwrap();
-    radii.write_all("Format: xRadius yRadius Family# Removed (-2 = userPolygon, -1 = userRectangle, 0 = userEllipse, > 0 is family in order of famProb)\n".as_bytes()).unwrap();
-    let final_fract_limit = final_fractures.len() - 1;
-    let size = accepted_poly.len();
-    let mut cur_final_idx = 0;
+    let mut radii = create_file(format!("{}/radii.dat", output))?;
+    writeln!(
+        radii,
+        "Format: xRadius yRadius Family# Removed {}",
+        RADII_FORMAT_HEADER
+    )?;
 
-    for (i, poly) in accepted_poly.iter().enumerate().take(size) {
-        radii
-            .write_all(
-                format!(
-                    "{:.8} {:.8} {:.8}",
-                    poly.xradius,
-                    poly.yradius,
-                    poly.family_num + 1
-                )
-                .as_bytes(),
-            )
-            .unwrap();
-
-        // If poly is not in finalFractures list
-        // mark that is was removed
-        if i != final_fractures[cur_final_idx] {
-            radii.write_all(" R\n".as_bytes()).unwrap();
-        } else {
-            if cur_final_idx < final_fract_limit {
-                cur_final_idx += 1;
-            }
-
-            radii.write_all("\n".as_bytes()).unwrap();
-        }
+    for (i, poly) in accepted_poly.iter().enumerate() {
+        writeln!(
+            radii,
+            "{:.8} {:.8} {:.8}{}",
+            poly.xradius,
+            poly.yradius,
+            poly.family_num + 1,
+            removed_marker(final_fractures, i)
+        )?;
     }
+
+    radii.flush()
 }
 
 /// Wrtes translations file (translations.dat)
@@ -748,179 +675,129 @@ fn write_radii_file(final_fractures: &[usize], accepted_poly: &[Poly], output: &
 /// * `final_fractures` - Vector array of indices of fractures left after isolated fracture removal
 /// * `accepted_poly` - Vector array of all accetped fractures
 /// * `output` - Path to output folder
-fn write_fracture_translations(final_fractures: &[usize], accepted_poly: &[Poly], output: &str) {
-    info!("Writing Fracture Translations File (translations.dat)");
-    let file_path = format!("{}/translations.dat", output);
-    let mut file = File::create(file_path).unwrap();
-    file.write_all(
-        "Format: x y z  (R = removed from domain due to fracture isolation)\n".as_bytes(),
-    )
-    .unwrap();
-    let final_fract_limit = final_fractures.len() - 1;
-    let size = accepted_poly.len();
-    let mut cur_final_idx = 0;
-
-    for (i, poly) in accepted_poly.iter().enumerate().take(size) {
-        file.write_all(
-            format!(
-                "{:.10} {:.10} {:.10}",
-                poly.translation[0], poly.translation[1], poly.translation[2]
-            )
-            .as_bytes(),
-        )
-        .unwrap();
-
-        // If poly is not in finalFractures list
-        // mark that is was removed
-        if i != final_fractures[cur_final_idx] {
-            file.write_all(" R\n".as_bytes()).unwrap();
-        } else {
-            if cur_final_idx < final_fract_limit {
-                cur_final_idx += 1;
-            }
-
-            file.write_all("\n".as_bytes()).unwrap();
-        }
-    }
-}
-
-/// Deprecated Function
-/// Writes final radii file (after isoloated fractures have been removed)
-///
-/// # Arguments
-///
-/// * `final_fractures` - Vector array of indices of fractures left after isolated fracture removal
-/// * `accepted_poly` - Vector array of all accetped fractures
-/// * `output` - Path to output folder
-fn write_final_poly_radii(final_fractures: &[usize], accepted_poly: &[Poly], output: &str) {
-    let file = format!("{}/radii_Final.dat", output);
-    let mut radii_final = File::create(file).unwrap();
-    radii_final
-        .write_all("Fracture Radii List After Isolated Fracture and Cluster Removal\n".as_bytes())
-        .unwrap();
-    radii_final.write_all("Format: xRadius yRadius Family# (-2 = userPolygon, -1 = userRectangle, 0 = userEllipse, > 0 is family in order of famProb)\n".as_bytes()).unwrap();
-    let size = final_fractures.len();
-
-    for i in 0..size {
-        radii_final
-            .write_all(
-                format!(
-                    "{} {} {}\n",
-                    accepted_poly[final_fractures[i]].xradius,
-                    accepted_poly[final_fractures[i]].yradius,
-                    accepted_poly[final_fractures[i]].family_num + 1
-                )
-                .as_bytes(),
-            )
-            .unwrap();
-    }
-}
-
-/// Deprecated Function
-/// Writes final radii file (after isoloated fractures have been removed)
-///
-/// # Arguments
-///
-/// * `final_fractures` - Vector array of indices of fractures left after isolated fracture removal
-/// * `accepted_poly` - Vector array of all accetped fractures
-/// * `output` - Path to output folder
-fn write_final_poly_area(final_fractures: &[usize], accepted_poly: &[Poly], output: &str) {
-    let file = format!("{}/surface_area_Final.dat", output);
-    let mut area_final = File::create(file).unwrap();
-    area_final
-        .write_all("Fracture Surface Area After Isolated Fracture and Cluster Removal\n".as_bytes())
-        .unwrap();
-    let size = final_fractures.len();
-
-    for i in 0..size {
-        area_final
-            .write_all(format!("{}\n", accepted_poly[final_fractures[i]].area).as_bytes())
-            .unwrap();
-    }
-}
-
-/// Writes radii file (radii_AllAccepted_Fam_#.dat) for all accepted
-/// fractures BEFORE isolated fracture removal (one file per family)
-///
-/// # Arguments
-///
-/// * `family_num` - Family number for which radii file will be written for
-///   -2 - User Rectangles, -1 - User Ellipses, Family# >= 0 - Family in order of 'FamProb' in input file
-/// * `accepted_poly` - Vector array of all accetped fractures
-/// * `output` - Path to output folder
-fn write_all_accepted_radii_of_family(family_num: isize, accepted_poly: &[Poly], output: &str) {
-    let file_name = format!("{}/radii_AllAccepted_Fam_{}.dat", output, family_num + 1);
-    let mut file = File::create(file_name).unwrap();
-    file.write_all(
-        format!(
-            "Fracture Radii List Before Isolated Fracture and Cluster Removal (Family {})\n",
-            family_num + 1
-        )
-        .as_bytes(),
-    )
-    .unwrap();
-    file.write_all("Format: xRadius yRadius Distrubution# (-2 = userPolygon, -1 = userRectangle, 0 = userEllipse, > 0 is family in order of famProb)\n".to_string().as_bytes()).unwrap();
-    let size = accepted_poly.len();
-
-    for poly in accepted_poly.iter().take(size) {
-        if poly.family_num == family_num {
-            file.write_all(
-                format!(
-                    "{} {} {}\n",
-                    poly.xradius,
-                    poly.yradius,
-                    poly.family_num + 1
-                )
-                .as_bytes(),
-            )
-            .unwrap();
-        }
-    }
-}
-
-/// Writes radii file (radii_AllAccepted_Fam_#.dat) for all accepted
-/// fractures AFTER isolated fracture removal (one file per family)
-///
-/// # Arguments
-///
-/// * `final_fractures` - Vector array of indices of fractures left after isolated fracture removal
-/// * `family_num` - Family number for which radii file will be written for
-///   -2 - User Rectangles, -1 - User Ellipses, Family# >= 0 - Family in order of 'FamProb' in input file
-/// * `accepted_poly` - Vector array of all accetped fractures
-/// * `output` - Path to output folder
-fn write_final_radii_of_family(
+fn write_fracture_translations(
     final_fractures: &[usize],
-    family_num: isize,
     accepted_poly: &[Poly],
     output: &str,
-) {
-    let file_name = format!("{}/radii_Final_Fam_{}.dat", output, family_num + 1);
-    let mut file = File::create(file_name).unwrap();
-    file.write_all(
-        format!(
-            "Fracture Radii List After Isolated Fracture and Cluster Removal (Family {})\n",
-            family_num + 1
-        )
-        .as_bytes(),
-    )
-    .unwrap();
-    file.write_all("Format: xRadius yRadius Distrubution# (-2 = userPolygon, -1 = userRectangle, 0 = userEllipse, > 0 is family in order of famProb)\n".to_string().as_bytes()).unwrap();
-    let size = final_fractures.len();
+) -> io::Result<()> {
+    info!("Writing Fracture Translations File (translations.dat)");
+    let mut file = create_file(format!("{}/translations.dat", output))?;
+    writeln!(
+        file,
+        "Format: x y z  (R = removed from domain due to fracture isolation)"
+    )?;
 
-    for i in 0..size {
-        if accepted_poly[final_fractures[i]].family_num == family_num {
-            file.write_all(
-                format!(
-                    "{} {} {}\n",
-                    accepted_poly[final_fractures[i]].xradius,
-                    accepted_poly[final_fractures[i]].yradius,
-                    accepted_poly[final_fractures[i]].family_num + 1
-                )
-                .as_bytes(),
-            )
-            .unwrap();
-        }
+    for (i, poly) in accepted_poly.iter().enumerate() {
+        writeln!(
+            file,
+            "{:.10} {:.10} {:.10}{}",
+            poly.translation[0],
+            poly.translation[1],
+            poly.translation[2],
+            removed_marker(final_fractures, i)
+        )?;
     }
+
+    file.flush()
+}
+
+/// Deprecated Function
+/// Writes final radii file (after isoloated fractures have been removed)
+///
+/// # Arguments
+///
+/// * `final_fractures` - Vector array of indices of fractures left after isolated fracture removal
+/// * `accepted_poly` - Vector array of all accetped fractures
+/// * `output` - Path to output folder
+fn write_final_poly_radii(
+    final_fractures: &[usize],
+    accepted_poly: &[Poly],
+    output: &str,
+) -> io::Result<()> {
+    let mut radii_final = create_file(format!("{}/radii_Final.dat", output))?;
+    writeln!(
+        radii_final,
+        "Fracture Radii List After Isolated Fracture and Cluster Removal"
+    )?;
+    writeln!(
+        radii_final,
+        "Format: xRadius yRadius Family# {}",
+        RADII_FORMAT_HEADER
+    )?;
+
+    for poly in final_polys(final_fractures, accepted_poly) {
+        writeln!(
+            radii_final,
+            "{} {} {}",
+            poly.xradius,
+            poly.yradius,
+            poly.family_num + 1
+        )?;
+    }
+
+    radii_final.flush()
+}
+
+/// Deprecated Function
+/// Writes final surface area file (after isoloated fractures have been removed)
+///
+/// # Arguments
+///
+/// * `final_fractures` - Vector array of indices of fractures left after isolated fracture removal
+/// * `accepted_poly` - Vector array of all accetped fractures
+/// * `output` - Path to output folder
+fn write_final_poly_area(
+    final_fractures: &[usize],
+    accepted_poly: &[Poly],
+    output: &str,
+) -> io::Result<()> {
+    let mut area_final = create_file(format!("{}/surface_area_Final.dat", output))?;
+    writeln!(
+        area_final,
+        "Fracture Surface Area After Isolated Fracture and Cluster Removal"
+    )?;
+
+    for poly in final_polys(final_fractures, accepted_poly) {
+        writeln!(area_final, "{}", poly.area)?;
+    }
+
+    area_final.flush()
+}
+
+/// Writes a radii file for the fractures of one family
+///
+/// # Arguments
+///
+/// * `path` - Path of the file to write
+/// * `title` - First line of the file, without the family number
+/// * `family_num` - Family number for which radii file will be written for
+///   -2 - User Rectangles, -1 - User Ellipses, Family# >= 0 - Family in order of 'FamProb' in input file
+/// * `polys` - Fractures to select from
+fn write_family_radii<'a>(
+    path: String,
+    title: &str,
+    family_num: isize,
+    polys: impl Iterator<Item = &'a Poly>,
+) -> io::Result<()> {
+    let mut file = create_file(path)?;
+    writeln!(file, "{} (Family {})", title, family_num + 1)?;
+    writeln!(
+        file,
+        "Format: xRadius yRadius Distrubution# {}",
+        RADII_FORMAT_HEADER
+    )?;
+
+    for poly in polys.filter(|poly| poly.family_num == family_num) {
+        writeln!(
+            file,
+            "{} {} {}",
+            poly.xradius,
+            poly.yradius,
+            poly.family_num + 1
+        )?;
+    }
+
+    file.flush()
 }
 
 /// Writes triple intersection points to file (triple_Points.dat)
@@ -938,67 +815,24 @@ fn write_triple_pts(
     accepted_poly: &[Poly],
     int_pts: &[IntersectionPoints],
     output: &str,
-) {
-    let file_name = format!("{}/triple_points.dat", output);
-    let mut file = File::create(file_name).unwrap();
-    // Save triple point indices from final list of fractures to temp array
-    // There will be duplicates  which need to be removed
-    // before writing to file
-    let mut triple_pts_list = Vec::new();
-    let mut size = final_fractures.len();
+) -> io::Result<()> {
+    let mut file = create_file(format!("{}/triple_points.dat", output))?;
 
-    for i in 0..size {
-        let intersect_count = accepted_poly[final_fractures[i]].intersection_index.len();
+    // Each triple point is referenced by several intersections, write it only once
+    let mut triple_pts_list: Vec<usize> = final_polys(final_fractures, accepted_poly)
+        .flat_map(|poly| &poly.intersection_index)
+        .flat_map(|&int_idx| &int_pts[int_idx].triple_points_idx)
+        .copied()
+        .collect();
+    triple_pts_list.sort();
+    triple_pts_list.dedup();
 
-        for j in 0..intersect_count {
-            let triple_size = int_pts[accepted_poly[final_fractures[i]].intersection_index[j]]
-                .triple_points_idx
-                .len();
-
-            for k in 0..triple_size {
-                let triple_pt_idx = int_pts
-                    [accepted_poly[final_fractures[i]].intersection_index[j]]
-                    .triple_points_idx[k];
-                triple_pts_list.push(triple_pt_idx);
-            }
-        }
+    for idx in triple_pts_list {
+        let point = &triple_points[idx];
+        writeln!(file, "{:.17} {:.17} {:.17}", point.x, point.y, point.z)?;
     }
 
-    size = triple_pts_list.len();
-
-    if size > 0 {
-        //remove duplicates
-        triple_pts_list.sort();
-        let mut final_pts = Vec::new();
-        let mut prev_pt = triple_pts_list[0];
-        final_pts.push(prev_pt);
-
-        for triple_pts in triple_pts_list.iter().take(size).skip(1) {
-            let cur_pt = triple_pts;
-
-            if cur_pt != &prev_pt {
-                final_pts.push(*cur_pt);
-            }
-
-            prev_pt = *cur_pt;
-        }
-
-        triple_pts_list.clear();
-        size = final_pts.len();
-
-        for i in 0..size {
-            file.write_all(
-                format!(
-                    "{:.17} {:.17} {:.17}\n",
-                    triple_points[final_pts[i]].x,
-                    triple_points[final_pts[i]].y,
-                    triple_points[final_pts[i]].z
-                )
-                .as_bytes(),
-            )
-            .unwrap();
-        }
-    }
+    file.flush()
 }
 
 /// Write rejections.dat, rejection statistics
@@ -1007,236 +841,161 @@ fn write_triple_pts(
 ///
 /// * `pstats` - Stats structure of program statistics
 /// * `output` - Path to output folder
-fn write_rejection_stats(pstats: &Stats, output: &str) {
+fn write_rejection_stats(pstats: &Stats, output: &str) -> io::Result<()> {
     info!("Writing Rejection Statistics File (rejections.dat)");
-    let _ = std::fs::create_dir_all(output);
-    let file_name = format!("{}/rejections.dat", output);
-    let mut file = File::create(file_name).unwrap();
-    file.write_all(
-        format!(
-            "Short Intersection: {}\n",
-            pstats.rejection_reasons.short_intersection
-        )
-        .as_bytes(),
-    )
-    .unwrap();
-    file.write_all(
-        format!(
-            "Close to Node: {}\n",
-            pstats.rejection_reasons.close_to_node
-        )
-        .as_bytes(),
-    )
-    .unwrap();
-    file.write_all(
-        format!(
-            "Close to Edge: {}\n",
-            pstats.rejection_reasons.close_to_edge
-        )
-        .as_bytes(),
-    )
-    .unwrap();
-    file.write_all(
-        format!(
-            "Vertex Close to Edge: {}\n",
-            pstats.rejection_reasons.close_point_to_edge
-        )
-        .as_bytes(),
-    )
-    .unwrap();
-    file.write_all(format!("Outside of Domain: {}\n", pstats.rejection_reasons.outside).as_bytes())
-        .unwrap();
-    file.write_all(
-        format!("Triple Intersection: {}\n", pstats.rejection_reasons.triple).as_bytes(),
-    )
-    .unwrap();
-    file.write_all(
-        format!(
-            "Intersections Too Close: {}\n",
-            pstats.rejection_reasons.inter_close_to_inter
-        )
-        .as_bytes(),
-    )
-    .unwrap();
+    let mut file = create_file(format!("{}/rejections.dat", output))?;
+    let reasons = &pstats.rejection_reasons;
+
+    writeln!(file, "Short Intersection: {}", reasons.short_intersection)?;
+    writeln!(file, "Close to Node: {}", reasons.close_to_node)?;
+    writeln!(file, "Close to Edge: {}", reasons.close_to_edge)?;
+    writeln!(
+        file,
+        "Vertex Close to Edge: {}",
+        reasons.close_point_to_edge
+    )?;
+    writeln!(file, "Outside of Domain: {}", reasons.outside)?;
+    writeln!(file, "Triple Intersection: {}", reasons.triple)?;
+    writeln!(
+        file,
+        "Intersections Too Close: {}",
+        reasons.inter_close_to_inter
+    )?;
+    file.flush()
 }
 
-/// Write rejections.dat, rejection statistics
+/// Write userFractureRejections.dat, the user defined fractures which were rejected
 ///
 /// # Arguments
 ///
 /// * `pstats` - Stats structure of program statistics
 /// * `output` - Path to output folder
-fn write_user_rejected_fracture_information(pstats: &Stats, output: &str) {
-    if !pstats.rejected_user_fracture.is_empty() {
-        info!("Writing User Fracture Rejection File (userFractureRejections.dat)");
-        let file_name = format!("{}/userFractureRejections.dat", output);
-        let mut file = File::open(file_name).unwrap();
-        file.write_all("Fracture id,User Fracture Type\n".as_bytes())
-            .unwrap();
-
-        for i in 0..pstats.rejected_user_fracture.len() {
-            file.write_all(
-                format!(
-                    "{},{}\n",
-                    pstats.rejected_user_fracture[i].id,
-                    pstats.rejected_user_fracture[i].user_fracture_type
-                )
-                .as_bytes(),
-            )
-            .unwrap();
-        }
+fn write_user_rejected_fracture_information(pstats: &Stats, output: &str) -> io::Result<()> {
+    if pstats.rejected_user_fracture.is_empty() {
+        return Ok(());
     }
+
+    info!("Writing User Fracture Rejection File (userFractureRejections.dat)");
+    let mut file = File::open(format!("{}/userFractureRejections.dat", output))?;
+    writeln!(file, "Fracture id,User Fracture Type")?;
+
+    for rejected in &pstats.rejected_user_fracture {
+        writeln!(file, "{},{}", rejected.id, rejected.user_fracture_type)?;
+    }
+
+    Ok(())
 }
 
 /// Writes families.dat, Shape families definition file
 ///
 /// # Arguments
 ///
-/// * `user_ellipses_on_off` - If true, user defined ellipses are used
-/// * `user_rectangles_on_off` - If true, user defined rectangles are used
-/// * `user_polygon_by_coord` - If true, user defined polygons are used
-/// * `stop_condition` - Stop condition for fracture generation (0 - nPoly, 1 - P32)
-/// * `orientation_option` - Orientation option for fracture generation
-/// * `n_fam_ell` - Number of ellipse families
-/// * `layers` - Vector array of layers
-/// * `regions` - Vector array of regions
-/// * `fam_prob_original` - Vector array of family probabilities
+/// * `input` - Input structure, contains all user input
 /// * `frac_families` - Vector array of all fracture shape families
 /// * `output` - Path to output folder
-#[allow(clippy::too_many_arguments)]
 fn write_frac_fams(
-    user_ellipses_on_off: bool,
-    user_rectangles_on_off: bool,
-    user_polygon_by_coord: bool,
-    stop_condition: u8,
-    layers: &[f64],
-    regions: &[f64],
+    input: &Input,
     frac_families: &FractureFamilyCollection,
     output: &str,
-) {
+) -> io::Result<()> {
     let rad_to_deg = 180. / std::f64::consts::PI;
     info!("Writing Family Definitions File (families.dat)");
-    let file_name = format!("{}/families.dat", output);
-    let mut file = File::create(file_name).unwrap();
+    let mut file = create_file(format!("{}/families.dat", output))?;
+    let user_files = &input.ext_fracture_files;
 
     //TODO: add stub code in families.dat for userDefined fractures, IF there are user defined fractures
 
-    if user_ellipses_on_off {
-        file.write_all("UserDefined Ellipse Family: 0\n\n".as_bytes())
-            .unwrap();
+    if user_files.user_ell_file.is_some() {
+        write!(file, "UserDefined Ellipse Family: 0\n\n")?;
     }
 
-    if user_rectangles_on_off {
-        file.write_all("UserDefined Rectangle Family: -1\n\n".as_bytes())
-            .unwrap();
+    if user_files.user_rect_file.is_some() {
+        write!(file, "UserDefined Rectangle Family: -1\n\n")?;
     }
 
-    if user_polygon_by_coord {
-        file.write_all("UserDefined Polygon Family: -2\n\n".as_bytes())
-            .unwrap();
+    if user_files.user_poly_by_coord_file.is_some() {
+        write!(file, "UserDefined Polygon Family: -2\n\n")?;
     }
 
     for (i, shape) in frac_families.families.iter().enumerate() {
         //name(rect or ell) and number of family
-        file.write_all(format!("{} Family: {}\n", shape.shape, shape.id).as_bytes())
-            .unwrap();
-        file.write_all(format!("Global Family: {}\n", i + 1).as_bytes())
-            .unwrap();
+        writeln!(file, "{} Family: {}", shape.shape, shape.id)?;
+        writeln!(file, "Global Family: {}", i + 1)?;
+        writeln!(
+            file,
+            "Number of Vertices: {}",
+            shape.shape.number_of_nodes()
+        )?;
+        writeln!(file, "Aspect Ratio: {}", shape.aspect_ratio)?;
 
-        // Print vertice number
-        match shape.shape {
-            Shape::Ellipse(n) => {
-                file.write_all(format!("Number of Vertices: {}\n", n).as_bytes())
-                    .unwrap();
-            }
-            Shape::Rectangle => {
-                file.write_all("Number of Vertices: 4\n".as_bytes())
-                    .unwrap();
-            }
-        }
-
-        // aspect ratio
-        file.write_all(format!("Aspect Ratio: {}\n", shape.aspect_ratio).as_bytes())
-            .unwrap();
-
-        // p32 target
-        if stop_condition == 1 {
-            file.write_all(
-                format!("P32 (Fracture Intensity) Target: {}\n", shape.p32_target).as_bytes(),
-            )
-            .unwrap();
+        if input.stopCondition == 1 {
+            writeln!(
+                file,
+                "P32 (Fracture Intensity) Target: {}",
+                shape.p32_target
+            )?;
         }
 
         // beta distribution, rotation around normal vector
         if !shape.beta_distribution {
-            file.write_all(
-                "Beta Distribution (Rotation Around Normal Vector): Uniform\n".as_bytes(),
-            )
-            .unwrap();
+            writeln!(
+                file,
+                "Beta Distribution (Rotation Around Normal Vector): Uniform"
+            )?;
         } else {
-            file.write_all(
-                format!("Beta (Rotation Around Normal Vector)-rad: {}\n", shape.beta).as_bytes(),
-            )
-            .unwrap();
-            file.write_all(
-                format!(
-                    "Beta (Rotation Around Normal Vector)-deg: {}\n",
-                    shape.beta * rad_to_deg
-                )
-                .as_bytes(),
-            )
-            .unwrap();
+            writeln!(
+                file,
+                "Beta (Rotation Around Normal Vector)-rad: {}",
+                shape.beta
+            )?;
+            writeln!(
+                file,
+                "Beta (Rotation Around Normal Vector)-deg: {}",
+                shape.beta * rad_to_deg
+            )?;
         }
 
-        file.write_all(shape.orientation.to_string().as_bytes())
-            .unwrap();
+        write!(file, "{}", shape.orientation)?;
 
         // Print layer family belongs to
         if shape.layer_id == 0 {
-            file.write_all("Layer: Entire domain\n".as_bytes()).unwrap();
+            writeln!(file, "Layer: Entire domain")?;
         } else {
             let idx = (shape.layer_id - 1) * 2;
-            file.write_all(format!("Layer Number: {}\n", shape.layer_id).as_bytes())
-                .unwrap();
-            file.write_all(format!("Layer: {{{}, {}}}\n", layers[idx], layers[idx + 1]).as_bytes())
-                .unwrap();
+            writeln!(file, "Layer Number: {}", shape.layer_id)?;
+            writeln!(
+                file,
+                "Layer: {{{}, {}}}",
+                input.layers[idx],
+                input.layers[idx + 1]
+            )?;
         }
 
-        // Print layer family belongs to
+        // Print region family belongs to
         if shape.region_id == 0 {
-            file.write_all("Region: Entire domain\n".as_bytes())
-                .unwrap();
+            writeln!(file, "Region: Entire domain")?;
         } else {
             let idx = (shape.region_id - 1) * 6;
-            file.write_all(format!("Region Number: {}\n", shape.region_id).as_bytes())
-                .unwrap();
-            file.write_all(
-                format!(
-                    "Region: {{{}, {}, {}, {}, {}, {}}}\n",
-                    regions[idx],
-                    regions[idx + 1],
-                    regions[idx + 2],
-                    regions[idx + 3],
-                    regions[idx + 4],
-                    regions[idx + 5]
-                )
-                .as_bytes(),
-            )
-            .unwrap();
+            let region = &input.regions[idx..idx + 6];
+            writeln!(file, "Region Number: {}", shape.region_id)?;
+            writeln!(
+                file,
+                "Region: {{{}, {}, {}, {}, {}, {}}}",
+                region[0], region[1], region[2], region[3], region[4], region[5]
+            )?;
         }
 
         // Print distribution data
-        file.write_all(shape.radius.to_string().as_bytes()).unwrap();
+        write!(file, "{}", shape.radius)?;
 
-        file.write_all(
-            format!(
-                "Family Insertion Probability: {}\n\n",
-                frac_families.original_probabilities[i]
-            )
-            .as_bytes(),
-        )
-        .unwrap();
+        write!(
+            file,
+            "Family Insertion Probability: {}\n\n",
+            frac_families.original_probabilities[i]
+        )?;
     }
+
+    file.flush()
 }
 
 /// Writes fracture connectivity edge graph
@@ -1252,10 +1011,9 @@ fn write_connectivity(
     accepted_poly: &[Poly],
     int_pts: &[IntersectionPoints],
     output: &str,
-) {
+) -> io::Result<()> {
     info!("Writing Connectivity Data (connectivity.dat)");
-    let file_name = format!("{}/connectivity.dat", output);
-    let mut file = File::create(file_name).unwrap();
+    let mut file = create_file(format!("{}/connectivity.dat", output))?;
 
     // Format for connectivity: Line number = poly number, integers on line are intersecting fractures
     //  eg:
@@ -1264,28 +1022,16 @@ fn write_connectivity(
     // 1 2
     // Fracture 1 intersects frac 2 and 3, fract 2 intersects 1 and 3 etc
 
-    for i in 0..final_fractures.len() {
-        let size = accepted_poly[final_fractures[i]].intersection_index.len();
-
-        for j in 0..size {
-            let int_idx = accepted_poly[final_fractures[i]].intersection_index[j];
-
-            // Don't write fractures own fracture ID
-
-            // NOTE: At this stage in the program, the fracture ID's have been changed to
-            // negative. See 'adjustIntFractIds()' for more details.
-            // Use '-' to make them positive again.
-            if -int_pts[int_idx].fract1 == i as isize + 1 {
-                file.write_all(format!("{} ", -int_pts[int_idx].fract2).as_bytes())
-                    .unwrap();
-            } else {
-                file.write_all(format!("{} ", -int_pts[int_idx].fract1).as_bytes())
-                    .unwrap();
-            }
+    for (i, poly) in final_polys(final_fractures, accepted_poly).enumerate() {
+        for &int_idx in &poly.intersection_index {
+            let (_, other) = intersecting_fracture_ids(&int_pts[int_idx], i + 1);
+            write!(file, "{} ", other)?;
         }
 
-        file.write_all("\n".as_bytes()).unwrap();
+        writeln!(file)?;
     }
+
+    file.flush()
 }
 
 /// Writes poly_info.dat
@@ -1293,47 +1039,35 @@ fn write_connectivity(
 ///
 /// # Arguments
 ///
-/// * `eps` - Epsilon value for floating point comparisons
-/// * `domain_size` - domain size in x, y, z
+/// * `input` - Input structure, contains all user input
 /// * `accepted_poly` - Array off all polygons in DFN before isolated fracture removal
 /// * `final_fractures` - Array of indices to polys in 'accepted_poly' which are left after isolated fracture removal
 /// * `frac_families` - Array of all fracture shape families
 /// * `output` - Path to output folder
 fn write_rotation_data(
-    eps: f64,
-    domain_size: &Vector3<f64>,
+    input: &Input,
     accepted_poly: &[Poly],
     final_fractures: &[usize],
     frac_families: &FractureFamilyCollection,
     output: &str,
-) {
-    let file_output_file = format!("{}/../poly_info.dat", output);
-    let mut file = File::create(file_output_file).unwrap();
+) -> io::Result<()> {
+    let mut file = create_file(format!("{}/../poly_info.dat", output))?;
     info!("Writing Rotation Data File (poly_info.dat)");
-    let mut max_domain_size = domain_size[0];
 
-    if max_domain_size < domain_size[1] {
-        max_domain_size = domain_size[1];
-    }
+    let domain_size = &input.domainSize;
+    let max_domain_size = 10. * domain_size[0].max(domain_size[1]).max(domain_size[2]);
+    let total_families = frac_families.families.len() as isize;
+    let e3 = Vector3::new(0., 0., 1.);
 
-    if max_domain_size < domain_size[2] {
-        max_domain_size = domain_size[2];
-    }
-
-    max_domain_size *= 10.;
-
-    for i in 0..final_fractures.len() {
+    for (i, poly) in final_polys(final_fractures, accepted_poly).enumerate() {
         // poly's normal is already normalized at this point
-        let normal = accepted_poly[final_fractures[i]].normal;
-        let e3 = Vector3::new(0., 0., 1.);
-        // Rotation angle in radians
-        let mut theta = normal.dot(&e3).acos();
-        // rad to deg
-        theta *= 180.0 / std::f64::consts::PI;
+        let normal = poly.normal;
+        // Rotation angle in degrees
+        let theta = normal.dot(&e3).acos() * (180.0 / std::f64::consts::PI);
         // Rotation into xy plane
         let mut v = e3.cross(&normal);
 
-        if !(v[0].abs() < eps && v[1].abs() < eps && v[2].abs() < eps) {
+        if !(v[0].abs() < input.eps && v[1].abs() < input.eps && v[2].abs() < input.eps) {
             //if not zero vector
             v = v.normalize();
         }
@@ -1349,64 +1083,57 @@ fn write_rotation_data(
         // -1 and -2 are not good numbers to use as material IDs in Lagrit.
         // If the family number is -1 or -2 we change these numbers to be
         // number of stochastic families + 1 and number of stochastic families + 2
-        let fam_num = if accepted_poly[final_fractures[i]].family_num == -1 {
-            frac_families.families.len() as isize + 1
-        } else if accepted_poly[final_fractures[i]].family_num == -2 {
-            frac_families.families.len() as isize + 2
-        } else {
-            accepted_poly[final_fractures[i]].family_num + 1
+        let fam_num = match poly.family_num {
+            -1 => total_families + 1,
+            -2 => total_families + 2,
+            family_num => family_num + 1,
         };
 
-        // Format: fracture#, x0, y0, z0, x1, y1, z1, family#
-        file.write_all(
-            format!(
-                "{} {} {:.15} {:.15} {:.15} {:.15} {:.15} {:.15} {:.15}\n",
-                i + 1,
-                fam_num,
-                theta,
-                x0,
-                y0,
-                z0,
-                x1,
-                y1,
-                z1
-            )
-            .as_bytes(),
-        )
-        .unwrap();
+        // Format: fracture#, family#, theta, x0, y0, z0, x1, y1, z1
+        writeln!(
+            file,
+            "{} {} {:.15} {:.15} {:.15} {:.15} {:.15} {:.15} {:.15}",
+            i + 1,
+            fam_num,
+            theta,
+            x0,
+            y0,
+            z0,
+            x1,
+            y1,
+            z1
+        )?;
     }
+
+    file.flush()
 }
 
 /// Writes normal_vectors.dat
-///
-/// Writes fracture rotation data. Also includes shape families each fracture belongs to.
 ///
 /// # Arguments
 ///
 /// * `accepted_poly` - Array off all polygons in DFN before isolated fracture removal
 /// * `final_fractures` - Array of indices to polys in 'accepted_poly' which are left after isolated fracture removal
 /// * `output` - Path to output folder
-fn write_normal_vectors(accepted_poly: &[Poly], final_fractures: &[usize], output: &str) {
-    let file_output_file = format!("{}/normal_vectors.dat", output);
-    let mut file = File::create(file_output_file).unwrap();
+fn write_normal_vectors(
+    accepted_poly: &[Poly],
+    final_fractures: &[usize],
+    output: &str,
+) -> io::Result<()> {
+    let mut file = create_file(format!("{}/normal_vectors.dat", output))?;
     info!("Writing Normal Vectors into File (normal_vectors.dat)");
 
-    for i in 0..final_fractures.len() {
+    for poly in final_polys(final_fractures, accepted_poly) {
         // poly's normal is already normalized at this point
         // Format: nx, ny, nz
-        //std::cout <<  std::setprecision(15) << acceptedPoly[finalFractures[i]].normal[0] << " "
-        //<< acceptedPoly[finalFractures[i]].normal[1] << " " << acceptedPoly[finalFractures[i]].normal[2]  << "\n";
-        file.write_all(
-            format!(
-                " {:.15} {:.15} {:.15}\n",
-                accepted_poly[final_fractures[i]].normal[0],
-                accepted_poly[final_fractures[i]].normal[1],
-                accepted_poly[final_fractures[i]].normal[2]
-            )
-            .as_bytes(),
-        )
-        .unwrap();
+        writeln!(
+            file,
+            " {:.15} {:.15} {:.15}",
+            poly.normal[0], poly.normal[1], poly.normal[2]
+        )?;
     }
+
+    file.flush()
 }
 
 /// Writes rejectsPerAttempt.dat
@@ -1421,323 +1148,153 @@ fn write_normal_vectors(accepted_poly: &[Poly], final_fractures: &[usize], outpu
 ///
 /// * `pstats` - Stats structure of program statistics
 /// * `output` - Path to output folder
-fn write_rejects_per_attempt(pstats: &Stats, output: &str) {
-    let file_output_file = format!("{}/rejectsPerAttempt.dat", output);
-    let mut file = File::create(file_output_file).unwrap();
+fn write_rejects_per_attempt(pstats: &Stats, output: &str) -> io::Result<()> {
+    let mut file = create_file(format!("{}/rejectsPerAttempt.dat", output))?;
     info!("Writing Rotation Data File (rejectsPerAttempt.dat)");
 
-    for i in 0..pstats.rejects_per_attempt.len() {
-        file.write_all(format!("{}\n", pstats.rejects_per_attempt[i]).as_bytes())
-            .unwrap();
+    for rejects in &pstats.rejects_per_attempt {
+        writeln!(file, "{}", rejects)?;
     }
+
+    file.flush()
 }
+
+/// Domain boundary faces as `(axis, id of the + face, id of the - face)`.
+/// The ids are the negated FEHM face numbers:
+/// top / Z+ / 1, bottom / Z- / 2, left / X- / 3, front / Y+ / 4, right / X+ / 5, back / Y- / 6
+const BOUNDARY_FACE_IDS: [(usize, isize, isize); 3] = [(0, -5, -3), (1, -4, -6), (2, -1, -2)];
 
 /// Writes graph data files to intersections_list.dat and fracture_info.dat
 ///
 /// # Arguments
 ///
-/// * `eps` - Epsilon value for floating point comparisons
-/// * `domain_size` - domain size in x, y, z
+/// * `input` - Input structure, contains all user input
 /// * `final_fractures` - Vector array of indices of fractures left after isolated fracture removal
 /// * `accepted_poly` - Vector array of all accetped fractures (before isolated fracture removal)
 /// * `int_pts` - Vector array of all intersections
 /// * `output` - Path to output folder
 fn write_graph_data(
-    eps: f64,
-    domain_size: &Vector3<f64>,
+    input: &Input,
     final_fractures: &[usize],
     accepted_poly: &[Poly],
     int_pts: &[IntersectionPoints],
     output: &str,
-) {
-    let domain_x = domain_size[0] * 0.5;
-    let domain_y = domain_size[1] * 0.5;
-    let domain_z = domain_size[2] * 0.5;
-    // Keeps track of current un-rotated points we are working with
+) -> io::Result<()> {
+    let eps = input.eps;
+    let half_domain = [
+        input.domainSize[0] * 0.5,
+        input.domainSize[1] * 0.5,
+        input.domainSize[2] * 0.5,
+    ];
+
     info!("Writing Graph Data Files");
-    //adjustIntFractIDs(finalFractures,acceptedPoly, intPts);
-    // Make new intersection file in intersections folder
-    let file = format!("{}/intersection_list.dat", output);
-    let mut int_file = File::create(file).unwrap();
-    int_file
-        .write_all("f1 f2 x y z length\n".as_bytes())
-        .unwrap();
-    // Make new intersection file in intersections folder
-    let file2 = format!("{}/fracture_info.dat", output);
-    let mut fract_file = File::create(file2).unwrap();
-    fract_file
-        .write_all("num_connections perm aperture\n".as_bytes())
-        .unwrap();
+    let mut int_file = create_file(format!("{}/intersection_list.dat", output))?;
+    writeln!(int_file, "f1 f2 x y z length")?;
+    let mut fract_file = create_file(format!("{}/fracture_info.dat", output))?;
+    writeln!(fract_file, "num_connections perm aperture")?;
 
-    for i in 0..final_fractures.len() {
+    for (i, poly) in final_polys(final_fractures, accepted_poly).enumerate() {
+        let fracture_id = i + 1;
         let mut num_conn = 0;
-        // Go through each final fracture's intersections and write to output
-        let size = accepted_poly[final_fractures[i]].intersection_index.len();
 
-        for j in 0..size {
-            // Used to measure current length before rotation (used to calculate number of points
-            // to discretize) based on original intersection. This fixes any precision errors we
-            // when calculating length after rotation, both rotations for the same intersection will
-            // always have the same step size and same number of discretized points.
-            let poly_int_idx = accepted_poly[final_fractures[i]].intersection_index[j];
-            // fracture 1 is i
-            // fracture 2 is the other intersecting fracture
-            let fract1;
-            let fract2;
-
-            if -int_pts[poly_int_idx].fract1 == i as isize + 1 {
-                fract1 = -int_pts[poly_int_idx].fract1;
-                fract2 = -int_pts[poly_int_idx].fract2;
-            } else {
-                fract2 = -int_pts[poly_int_idx].fract1;
-                fract1 = -int_pts[poly_int_idx].fract2;
-            }
+        // Write each intersection once, from the fracture with the smaller id
+        for &int_idx in &poly.intersection_index {
+            let intersection = &int_pts[int_idx];
+            let (fract1, fract2) = intersecting_fracture_ids(intersection, fracture_id);
 
             if fract1 < fract2 {
                 write_mid_point(
                     &mut int_file,
                     fract1,
                     fract2,
-                    int_pts[poly_int_idx].p1.x,
-                    int_pts[poly_int_idx].p1.y,
-                    int_pts[poly_int_idx].p1.z,
-                    int_pts[poly_int_idx].p2.x,
-                    int_pts[poly_int_idx].p2.y,
-                    int_pts[poly_int_idx].p2.z,
-                );
+                    &intersection.p1,
+                    &intersection.p2,
+                )?;
                 num_conn += 1;
             }
         }
 
-        // Find intersections with domain boundaries
-        // bools are so that lines of intersection are only found and written to file once
-        // once an intersection with a domain boundary is found the bool = true
-        let mut right = false;
-        let mut left = false;
-        let mut top = false;
-        let mut bottom = false;
-        let mut front = false;
-        let mut back = false;
-        let temp = accepted_poly[final_fractures[i]].number_of_nodes;
+        // Find intersections with domain boundaries.
+        // A line of intersection is written only once per face: between the first
+        // vertex found on the face and the first other vertex on the same face.
+        let number_of_nodes = poly.number_of_nodes as usize;
+        let mut is_face_written = [[false; 2]; 3];
 
-        // fracture 2 index are based on FEHM format
-        // top / Z+ / 1
-        // bottom / Z- / 2
-        // left / X- / 3
-        // front / Y+ / 4
-        // right / X- / 5
-        // back / Y- / 6
-        for k in 0..temp {
-            // Check boundary faces
-            // Update which boundaries newPoly touches
-            let idx = k as usize * 3;
+        for k in 0..number_of_nodes {
+            for (axis, plus_face_id, minus_face_id) in BOUNDARY_FACE_IDS {
+                let is_on_plus_face =
+                    |vertex: usize| poly.vertices[vertex * 3 + axis] >= half_domain[axis] - eps;
+                let is_on_minus_face =
+                    |vertex: usize| poly.vertices[vertex * 3 + axis] <= -half_domain[axis] + eps;
 
-            // if fracture if on right boundary
-            if accepted_poly[final_fractures[i]].vertices[idx] >= domain_x - eps {
-                for kk in 0..temp {
-                    let iidx = kk as usize * 3;
+                let (side, face_id) = if is_on_plus_face(k) {
+                    (0, plus_face_id)
+                } else if is_on_minus_face(k) {
+                    (1, minus_face_id)
+                } else {
+                    continue;
+                };
 
-                    if accepted_poly[final_fractures[i]].vertices[iidx] >= domain_x - eps
-                        && idx != iidx
-                        && !right
-                    {
-                        write_mid_point(
-                            &mut int_file,
-                            i as isize + 1,
-                            -5,
-                            accepted_poly[final_fractures[i]].vertices[idx],
-                            accepted_poly[final_fractures[i]].vertices[idx + 1],
-                            accepted_poly[final_fractures[i]].vertices[idx + 2],
-                            accepted_poly[final_fractures[i]].vertices[iidx],
-                            accepted_poly[final_fractures[i]].vertices[iidx + 1],
-                            accepted_poly[final_fractures[i]].vertices[iidx + 2],
-                        );
-                        right = true;
-                        num_conn += 1;
-                        break;
-                    }
+                if is_face_written[axis][side] {
+                    continue;
                 }
-            }
-            // if fracture if on left boundary
-            else if accepted_poly[final_fractures[i]].vertices[idx] <= -domain_x + eps {
-                for kk in 0..temp {
-                    let iidx = kk as usize * 3;
 
-                    if accepted_poly[final_fractures[i]].vertices[iidx] <= -domain_x + eps
-                        && idx != iidx
-                        && !left
-                    {
-                        write_mid_point(
-                            &mut int_file,
-                            i as isize + 1,
-                            -3,
-                            accepted_poly[final_fractures[i]].vertices[idx],
-                            accepted_poly[final_fractures[i]].vertices[idx + 1],
-                            accepted_poly[final_fractures[i]].vertices[idx + 2],
-                            accepted_poly[final_fractures[i]].vertices[iidx],
-                            accepted_poly[final_fractures[i]].vertices[iidx + 1],
-                            accepted_poly[final_fractures[i]].vertices[iidx + 2],
-                        );
-                        left = true;
-                        num_conn += 1;
-                        break;
-                    }
-                }
-            }
+                let other_vertex = (0..number_of_nodes).find(|&kk| {
+                    kk != k
+                        && if side == 0 {
+                            is_on_plus_face(kk)
+                        } else {
+                            is_on_minus_face(kk)
+                        }
+                });
 
-            // if fracture if on front boundary
-            if accepted_poly[final_fractures[i]].vertices[idx + 1] >= domain_y - eps {
-                for kk in 0..temp {
-                    let iidx = kk as usize * 3;
-
-                    if accepted_poly[final_fractures[i]].vertices[iidx + 1] >= domain_y - eps
-                        && idx != iidx
-                        && !front
-                    {
-                        write_mid_point(
-                            &mut int_file,
-                            i as isize + 1,
-                            -4,
-                            accepted_poly[final_fractures[i]].vertices[idx],
-                            accepted_poly[final_fractures[i]].vertices[idx + 1],
-                            accepted_poly[final_fractures[i]].vertices[idx + 2],
-                            accepted_poly[final_fractures[i]].vertices[iidx],
-                            accepted_poly[final_fractures[i]].vertices[iidx + 1],
-                            accepted_poly[final_fractures[i]].vertices[iidx + 2],
-                        );
-                        front = true;
-                        num_conn += 1;
-                        break;
-                    }
-                }
-            }
-            // if fracture if on back boundary
-            else if accepted_poly[final_fractures[i]].vertices[idx + 1] <= -domain_y + eps {
-                for kk in 0..temp {
-                    let iidx = kk as usize * 3;
-
-                    if accepted_poly[final_fractures[i]].vertices[iidx + 1] <= -domain_y + eps
-                        && idx != iidx
-                        && !back
-                    {
-                        write_mid_point(
-                            &mut int_file,
-                            i as isize + 1,
-                            -6,
-                            accepted_poly[final_fractures[i]].vertices[idx],
-                            accepted_poly[final_fractures[i]].vertices[idx + 1],
-                            accepted_poly[final_fractures[i]].vertices[idx + 2],
-                            accepted_poly[final_fractures[i]].vertices[iidx],
-                            accepted_poly[final_fractures[i]].vertices[iidx + 1],
-                            accepted_poly[final_fractures[i]].vertices[iidx + 2],
-                        );
-                        back = true;
-                        num_conn += 1;
-                        break;
-                    }
-                }
-            }
-
-            if accepted_poly[final_fractures[i]].vertices[idx + 2] >= domain_z - eps {
-                for kk in 0..temp {
-                    let iidx = kk as usize * 3;
-
-                    if accepted_poly[final_fractures[i]].vertices[iidx + 2] >= domain_z - eps
-                        && idx != iidx
-                        && !top
-                    {
-                        write_mid_point(
-                            &mut int_file,
-                            i as isize + 1,
-                            -1,
-                            accepted_poly[final_fractures[i]].vertices[idx],
-                            accepted_poly[final_fractures[i]].vertices[idx + 1],
-                            accepted_poly[final_fractures[i]].vertices[idx + 2],
-                            accepted_poly[final_fractures[i]].vertices[iidx],
-                            accepted_poly[final_fractures[i]].vertices[iidx + 1],
-                            accepted_poly[final_fractures[i]].vertices[iidx + 2],
-                        );
-                        top = true;
-                        num_conn += 1;
-                        break;
-                    }
-                }
-            } else if accepted_poly[final_fractures[i]].vertices[idx + 2] <= -domain_z + eps {
-                for kk in 0..temp {
-                    let iidx = kk as usize * 3;
-
-                    if accepted_poly[final_fractures[i]].vertices[iidx + 2] <= -domain_z + eps
-                        && idx != iidx
-                        && !bottom
-                    {
-                        write_mid_point(
-                            &mut int_file,
-                            i as isize + 1,
-                            -2,
-                            accepted_poly[final_fractures[i]].vertices[idx],
-                            accepted_poly[final_fractures[i]].vertices[idx + 1],
-                            accepted_poly[final_fractures[i]].vertices[idx + 2],
-                            accepted_poly[final_fractures[i]].vertices[iidx],
-                            accepted_poly[final_fractures[i]].vertices[iidx + 1],
-                            accepted_poly[final_fractures[i]].vertices[iidx + 2],
-                        );
-                        bottom = true;
-                        num_conn += 1;
-                        break;
-                    }
+                if let Some(kk) = other_vertex {
+                    write_mid_point(
+                        &mut int_file,
+                        fracture_id as isize,
+                        face_id,
+                        &poly.vertex(k),
+                        &poly.vertex(kk),
+                    )?;
+                    is_face_written[axis][side] = true;
+                    num_conn += 1;
                 }
             }
         }
 
-        // fractFile << num_conn << " " << std::setprecision(10) << acceptedPoly[finalFractures[i]].permeability << " " << acceptedPoly[finalFractures[i]].aperture << "\n";
-        fract_file
-            .write_all(format!("{} 0 0\n", num_conn).as_bytes())
-            .unwrap();
+        writeln!(fract_file, "{} 0 0", num_conn)?;
     }
+
+    int_file.flush()?;
+    fract_file.flush()
 }
 
-/// Writes mid point and length of line defined by x1,y1,z1 and x2,y2,z2 into file fp
+/// Writes mid point and length of the line between two points into file fp
 ///
 /// # Arguments
 ///
 /// * `fp` - File to write information into
 /// * `fract1` - Fracture 1
 /// * `fract2` - Fracture 2
-/// * `x1` - x coordinate of first endpoint
-/// * `y1` - y coordinate of first endpoint
-/// * `z1` - z coordinate of first endpoint
-/// * `x2` - x coordinate of second endpoint
-/// * `y2` - y coordinate of second endpoint
-/// * `z2` - z coordinate of second endpoint
-#[allow(clippy::too_many_arguments)]
+/// * `point1` - First endpoint
+/// * `point2` - Second endpoint
 fn write_mid_point(
-    fp: &mut File,
+    fp: &mut impl Write,
     fract1: isize,
     fract2: isize,
-    x1: f64,
-    y1: f64,
-    z1: f64,
-    x2: f64,
-    y2: f64,
-    z2: f64,
-) {
-    // Keeps track of current un-rotated points we are working with
-    let temp_point1 = Point3::new(x1, y1, z1);
-    let temp_point2 = Point3::new(x2, y2, z2);
-    let temp_point3 = Point3::new(
-        0.5 * (temp_point1.x + temp_point2.x),
-        0.5 * (temp_point1.y + temp_point2.y),
-        0.5 * (temp_point1.z + temp_point2.z),
-    );
-    let cur_length = distance(&temp_point1, &temp_point2);
-    fp.write_all(
-        format!(
-            "{} {} {:.10} {:.10} {:.10} {:.10}\n",
-            fract1, fract2, temp_point3.x, temp_point3.y, temp_point3.z, cur_length
-        )
-        .as_bytes(),
+    point1: &Point3<f64>,
+    point2: &Point3<f64>,
+) -> io::Result<()> {
+    writeln!(
+        fp,
+        "{} {} {:.10} {:.10} {:.10} {:.10}",
+        fract1,
+        fract2,
+        0.5 * (point1.x + point2.x),
+        0.5 * (point1.y + point2.y),
+        0.5 * (point1.z + point2.z),
+        distance(point1, point2)
     )
-    .unwrap();
 }
 
 /// Writes fracture numbers into ASCII files corresponding to which boundary they touch
@@ -1746,62 +1303,27 @@ fn write_mid_point(
 ///
 /// * `final_fractures` - Vector array of indices of fractures left after isolated fracture removal
 /// * `accepted_poly` - Vector array of all accepted fractures (before isolated fracture removal)
-fn write_boundary_files(final_fractures: &[usize], accepted_poly: &[Poly], output: &str) {
+fn write_boundary_files(
+    final_fractures: &[usize],
+    accepted_poly: &[Poly],
+    output: &str,
+) -> io::Result<()> {
     info!("Writing Boundary Files");
-    let left_file_name = format!("{}/left.dat", output);
-    let mut left_file = File::create(left_file_name).unwrap();
-    let right_file_name = format!("{}/right.dat", output);
-    let mut right_file = File::create(right_file_name).unwrap();
-    let front_file_name = format!("{}/front.dat", output);
-    let mut front_file = File::create(front_file_name).unwrap();
-    let back_file_name = format!("{}/back.dat", output);
-    let mut back_file = File::create(back_file_name).unwrap();
-    let top_file_name = format!("{}/top.dat", output);
-    let mut top_file = File::create(top_file_name).unwrap();
-    let bottom_file_name = format!("{}/bottom.dat", output);
-    let mut bottom_file = File::create(bottom_file_name).unwrap();
 
-    for i in 0..final_fractures.len() {
-        // If touching X max
-        if accepted_poly[final_fractures[i]].faces[0] {
-            right_file
-                .write_all(format!("{}\n", i + 1).as_bytes())
-                .unwrap();
+    // File name for each index of Poly::faces
+    let boundary_files = ["right", "left", "front", "back", "top", "bottom"];
+
+    for (face, name) in boundary_files.iter().enumerate() {
+        let mut file = create_file(format!("{}/{}.dat", output, name))?;
+
+        for (i, poly) in final_polys(final_fractures, accepted_poly).enumerate() {
+            if poly.faces[face] {
+                writeln!(file, "{}", i + 1)?;
+            }
         }
 
-        // If touching X min
-        if accepted_poly[final_fractures[i]].faces[1] {
-            left_file
-                .write_all(format!("{}\n", i + 1).as_bytes())
-                .unwrap();
-        }
-
-        // If touching Y max
-        if accepted_poly[final_fractures[i]].faces[2] {
-            front_file
-                .write_all(format!("{}\n", i + 1).as_bytes())
-                .unwrap();
-        }
-
-        // If touching Y min
-        if accepted_poly[final_fractures[i]].faces[3] {
-            back_file
-                .write_all(format!("{}\n", i + 1).as_bytes())
-                .unwrap();
-        }
-
-        // If touching Z max
-        if accepted_poly[final_fractures[i]].faces[4] {
-            top_file
-                .write_all(format!("{}\n", i + 1).as_bytes())
-                .unwrap();
-        }
-
-        // If touching Z min
-        if accepted_poly[final_fractures[i]].faces[5] {
-            bottom_file
-                .write_all(format!("{}\n", i + 1).as_bytes())
-                .unwrap();
-        }
+        file.flush()?;
     }
+
+    Ok(())
 }

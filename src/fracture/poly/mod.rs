@@ -1,6 +1,6 @@
 mod domain_truncation;
 
-use parry3d_f64::na::Vector3;
+use parry3d_f64::na::{Point3, Vector3};
 
 use crate::{
     cg::{is_parallel, rotation_matrix},
@@ -89,6 +89,16 @@ pub struct Poly {
 }
 
 impl Poly {
+    /// Coordinates of the vertex at `index`.
+    pub fn vertex(&self, index: usize) -> Point3<f64> {
+        let idx = index * 3;
+        Point3::new(
+            self.vertices[idx],
+            self.vertices[idx + 1],
+            self.vertices[idx + 2],
+        )
+    }
+
     /// Create a Rectangular
     ///
     /// # Arguments

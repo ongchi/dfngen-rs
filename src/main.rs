@@ -242,11 +242,11 @@ fn main() -> Result<(), DfngenError> {
         &cli.output_folder,
         &mut dfngen.accepted_poly,
         &mut dfngen.intpts,
-        &mut dfngen.triple_points,
+        &dfngen.triple_points,
         &mut dfngen.pstats,
         &final_fractures,
         &frac_fam_col,
-    );
+    )?;
 
     // Duplicate node counters are set in write_output(), so this must come after it.
     info!(
