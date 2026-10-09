@@ -1,0 +1,37 @@
+nUserRect: 1 
+ 
+nPolygons 
+1 
+
+Radii: 
+25.0 
+
+Aspect_Ratio: 
+0.001 
+
+Beta: 
+0 
+
+AngleOption: 
+degree 
+
+Translation: 
+[0, 0, 0] 
+
+userOrientationOption: 0 
+ 
+Normal: 
+[1, 0, 0] 
+
+aperture 
+[None] 
+
+transmissivity 
+[None] 
+
+permeability 
+[1e-12] 
+
+hy_prop_type 
+permeability 
+
