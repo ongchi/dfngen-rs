@@ -3,7 +3,9 @@
 #
 # Usage:
 #   scripts/compare_output.sh record <baseline_dir>   # save the current output as baseline
-#   scripts/compare_output.sh check  <baseline_dir>   # diff the current output against it
+#   scripts/compare_output.sh check  <baseline_dir>   # the output must be identical to it
+#   scripts/compare_output.sh check  <baseline_dir> <tolerance>
+#                                                     # decimal numbers can differ by the tolerance
 #
 # DFN_output.txt is ignored because it contains timestamps. The console log is
 # compared with the timestamps removed.
@@ -11,6 +13,7 @@ set -euo pipefail
 
 mode="${1:?usage: compare_output.sh record|check <baseline_dir>}"
 baseline_dir="${2:?usage: compare_output.sh record|check <baseline_dir>}"
+tolerance="${3:-}"
 repo_root="$(cd "$(dirname "$0")/.." && pwd)"
 
 cargo build --release --quiet --manifest-path "$repo_root/Cargo.toml"
@@ -39,10 +42,13 @@ for input_file in *.dat; do
     mv "$output_dir/$case_name.log" "$output_dir/$case_name/console.log"
 
     if [ "$mode" = check ]; then
-        if diff -r -q -x DFN_output.txt "$baseline_dir/$case_name" "$output_dir/$case_name"; then
-            echo "ok   $case_name"
+        if diff -r -q -x DFN_output.txt "$baseline_dir/$case_name" "$output_dir/$case_name" >/dev/null; then
+            echo "ok   $case_name (identical)"
+        elif [ -n "$tolerance" ] && python3 "$repo_root/scripts/compare_output.py" \
+            "$baseline_dir/$case_name" "$output_dir/$case_name" "$tolerance"; then
+            echo "ok   $case_name (within tolerance $tolerance)"
         else
-            echo "FAIL $case_name"
+            echo "FAIL $case_name (output kept in $output_dir/$case_name)"
             status=1
         fi
     fi
