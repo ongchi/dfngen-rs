@@ -69,6 +69,26 @@ pub enum RadiusOption {
 }
 
 impl FractureFamily {
+    /// Adds the area of an accepted polygon to the family's current P32.
+    /// The volume is that of the family's layer or region, or of the whole domain.
+    pub fn add_area_to_p32(
+        &mut self,
+        area: f64,
+        domain_volume: f64,
+        layer_volumes: &[f64],
+        region_volumes: &[f64],
+    ) {
+        let volume = if self.layer_id > 0 {
+            layer_volumes[self.layer_id - 1]
+        } else if self.region_id > 0 {
+            region_volumes[self.region_id - 1]
+        } else {
+            domain_volume
+        };
+
+        self.current_p32 += area * 2. / volume;
+    }
+
     pub fn normal_vector(&self, rng: Rc<RefCell<Mt64>>) -> Vector3<f64> {
         rng.borrow_mut().sample(&self.orientation)
     }
@@ -330,28 +350,14 @@ impl FractureFamilyCollection {
             n_poly -= self.families.len();
         }
 
-        let mut ell_id = 0;
-        let mut rect_id = 0;
-
-        for i in 0..self.families.len() {
-            let frac_fam = &mut self.families[i];
-
-            match frac_fam.shape {
-                Shape::Ellipse(_) => ell_id += 1,
-                Shape::Rectangle => rect_id += 1,
-            };
-
-            for _ in 0..((self.probabilities[i] * n_poly as f64).ceil() as usize) {
+        for (frac_fam, probability) in self.families.iter_mut().zip(&self.probabilities) {
+            for _ in 0..((probability * n_poly as f64).ceil() as usize) {
                 match frac_fam.radius.sample(generator.clone()) {
                     Ok(radius) => frac_fam.radii_list.push(radius),
                     Err(e) => {
                         error!(
                             "Attempt to populate fracture radii: {} Family {}",
-                            frac_fam.shape,
-                            match frac_fam.shape {
-                                Shape::Ellipse(_) => ell_id,
-                                Shape::Rectangle => rect_id,
-                            }
+                            frac_fam.shape, frac_fam.id
                         );
                         error!("{}", e);
                         return Err(e);

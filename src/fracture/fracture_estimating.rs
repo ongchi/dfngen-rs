@@ -23,7 +23,7 @@ use crate::math_functions::{adjust_cdf_and_fam_prob, cumsum, index_from_prob_and
 /// * `frac_families` - Array of stochastic fracture families
 /// * `generator` - Random number generator
 pub fn dry_run(
-    input: &mut Input,
+    input: &Input,
     frac_families: &mut FractureFamilyCollection,
     generator: Rc<RefCell<Mt64>>,
 ) {
@@ -118,25 +118,12 @@ pub fn dry_run(
         // Calculate poly's area
         new_poly.assign_area();
 
-        // Update P32
-        if frac_families.families[family_index].layer_id == 0
-            && frac_families.families[family_index].region_id == 0
-        {
-            // Whole domain
-            frac_families.families[family_index].current_p32 += new_poly.area * 2. / dom_vol;
-        } else if frac_families.families[family_index].layer_id > 0
-            && frac_families.families[family_index].region_id == 0
-        {
-            // Layer
-            frac_families.families[family_index].current_p32 += new_poly.area * 2.
-                / input.layerVol[frac_families.families[family_index].layer_id - 1];
-        } else if frac_families.families[family_index].layer_id == 0
-            && frac_families.families[family_index].region_id > 0
-        {
-            // Region
-            frac_families.families[family_index].current_p32 += new_poly.area * 2.
-                / input.regionVol[frac_families.families[family_index].region_id - 1];
-        }
+        frac_families.families[family_index].add_area_to_p32(
+            new_poly.area,
+            dom_vol,
+            &input.layerVol,
+            &input.regionVol,
+        );
 
         // Save radius for real DFN generation
         frac_families.families[family_index]
