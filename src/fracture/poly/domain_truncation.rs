@@ -1,7 +1,6 @@
 use parry3d_f64::na::{Point3, Vector3};
 use parry3d_f64::query::details::clip_halfspace_polygon;
 
-use crate::domain_mesh::DomainMesh;
 use crate::fracture::poly::Poly;
 
 /// What to do with the part of a fracture which is outside the domain
@@ -168,24 +167,6 @@ impl Poly {
         }
 
         is_rejected
-    }
-
-    /// Checks the center of the polygon against the cells of the domain mesh
-    ///
-    /// # Arguments
-    ///
-    /// * `domain_mesh` - The domain mesh, if the domain has one
-    /// * `region_id` - Region in which the center must be. 0 is the whole mesh.
-    ///
-    /// # Returns
-    ///
-    /// true - If there is a mesh and the center is in no cell of the region
-    pub fn is_center_outside_mesh(
-        &self,
-        domain_mesh: Option<&DomainMesh>,
-        region_id: usize,
-    ) -> bool {
-        domain_mesh.is_some_and(|mesh| !mesh.contains_point(&self.translation.into(), region_id))
     }
 }
 

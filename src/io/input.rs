@@ -389,6 +389,7 @@ fn build_input(
     domain_mesh: Option<DomainMesh>,
 ) -> Result<(Input, FractureFamilyCollection), DfngenError> {
     let eps = file.h * 1e-8;
+    let domain_mesh = domain_mesh.map(Rc::new);
 
     if file.fram.disable {
         info!("FRAM IS DISABLED");
@@ -399,7 +400,7 @@ fn build_input(
     }
 
     let (domain_size, domain_center, domain_volume) =
-        build_domain_box(&file.domain, domain_mesh.as_ref()).map_err(invalid_input)?;
+        build_domain_box(&file.domain, domain_mesh.as_deref()).map_err(invalid_input)?;
     let domain_size_increase = Vector3::from(file.domain.size_increase);
 
     let layers: Vec<f64> = file.domain.layers.iter().flatten().copied().collect();
@@ -478,7 +479,7 @@ fn build_input(
         eps,
         layers: &layers,
         regions: &regions,
-        mesh_regions: domain_mesh.as_ref().map(|mesh| mesh.regions()),
+        domain_mesh: domain_mesh.as_ref(),
         domain_size: &domain_size,
         domain_size_increase: &domain_size_increase,
     };
@@ -497,7 +498,7 @@ fn build_input(
         n_poly,
         domain_size,
         domain_volume,
-        domain_mesh: domain_mesh.map(Rc::new),
+        domain_mesh,
         domain_boundary_mode: if file.domain.truncate_fractures {
             DomainBoundaryMode::Truncate
         } else {
@@ -543,8 +544,7 @@ struct FamilyContext<'a> {
     eps: f64,
     layers: &'a [f64],
     regions: &'a [f64],
-    /// The regions of the domain mesh, if there is a mesh
-    mesh_regions: Option<&'a [MeshRegion]>,
+    domain_mesh: Option<&'a Rc<DomainMesh>>,
     domain_size: &'a Vector3<f64>,
     domain_size_increase: &'a Vector3<f64>,
 }
@@ -557,8 +557,8 @@ fn build_family(
     if section.layer > context.layers.len() / 2 {
         return Err(format!("layer {} is not defined", section.layer));
     }
-    let region_id = match context.mesh_regions {
-        Some(mesh_regions) => find_mesh_region_id(section.region, mesh_regions)?,
+    let region_id = match context.domain_mesh {
+        Some(mesh) => find_mesh_region_id(section.region, mesh.regions())?,
         None => section.region,
     };
     if region_id > context.regions.len() / 6 {
@@ -578,7 +578,8 @@ fn build_family(
         .layers(context.layers)
         .regions(context.regions)
         .domain_size(context.domain_size)
-        .domain_size_increase(context.domain_size_increase);
+        .domain_size_increase(context.domain_size_increase)
+        .domain_mesh(context.domain_mesh.cloned());
 
     if let Some(beta) = section.beta {
         builder.beta(beta.to_radians());
@@ -753,6 +754,7 @@ fn build_user_fracture(
 mod tests {
     use super::*;
     use crate::domain_mesh::test_meshes::l_shaped_mesh;
+    use crate::fracture::fracture_family::PositionSampler;
     use crate::structures::RadiusFunction;
 
     const GENERAL_OPTIONS: &str = r#"
@@ -906,14 +908,28 @@ mod tests {
         let family = RECTANGLE_FAMILY.replace("region = 0", "region = 2");
         let (_, families) = parse_with_mesh(&[&general_options_without_size(), &family]).unwrap();
 
-        // Region 2 of the L-shaped mesh is the box in +y
-        assert_eq!(
-            (
-                families.families[0].region_id,
-                families.families[0].boundary.maxs.y
-            ),
-            (2, 5.)
-        );
+        assert_eq!(families.families[0].region_id, 2);
+    }
+
+    #[test]
+    fn test_family_with_mesh_samples_its_positions_in_its_mesh_region() {
+        let family = RECTANGLE_FAMILY.replace("region = 0", "region = 2");
+        let (_, families) = parse_with_mesh(&[&general_options_without_size(), &family]).unwrap();
+
+        assert!(matches!(
+            families.families[0].position_sampler,
+            PositionSampler::Mesh { region_id: 2, .. }
+        ));
+    }
+
+    #[test]
+    fn test_family_without_mesh_samples_its_positions_in_a_box() {
+        let (_, families) = parse(&[GENERAL_OPTIONS, RECTANGLE_FAMILY]).unwrap();
+
+        assert!(matches!(
+            families.families[0].position_sampler,
+            PositionSampler::Box(_)
+        ));
     }
 
     #[test]

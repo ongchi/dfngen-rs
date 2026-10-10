@@ -9,10 +9,35 @@ use tracing::error;
 
 use crate::distribution::generating_points::random_position;
 use crate::distribution::Fisher;
+use crate::domain_mesh::DomainMesh;
 use crate::error::DfngenError;
 use crate::structures::RadiusDistribution;
 
 use super::poly::Poly;
+
+/// Where the centers of the fractures of a family are sampled
+pub enum PositionSampler {
+    /// Uniform in a box
+    Box(Aabb),
+    /// Uniform in the cells of a region of the domain mesh.
+    /// `region_id` 0 means the cells of all regions.
+    Mesh {
+        mesh: Rc<DomainMesh>,
+        region_id: usize,
+    },
+}
+
+impl PositionSampler {
+    pub fn sample(&self, generator: Rc<RefCell<Mt64>>) -> Vector3<f64> {
+        match self {
+            Self::Box(boundary) => random_position(*boundary, generator),
+            Self::Mesh { mesh, region_id } => {
+                mesh.sample_point(*region_id, &mut *generator.borrow_mut())
+                    .coords
+            }
+        }
+    }
+}
 
 /// FractureFamily holds the variables of one stochastic family of the input file.
 pub struct FractureFamily {
@@ -56,7 +81,7 @@ pub struct FractureFamily {
 
     pub orientation: Fisher,
 
-    pub boundary: Aabb,
+    pub position_sampler: PositionSampler,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -148,7 +173,7 @@ impl FractureFamily {
         new_poly.normal = norm;
 
         // Translate - will also set translation vector in poly structure
-        let position = random_position(self.boundary, generator.clone());
+        let position = self.position_sampler.sample(generator.clone());
         new_poly.translate(position);
 
         new_poly
@@ -170,6 +195,7 @@ pub struct FractureFamilyBuilder<'a> {
     regions: Option<&'a [f64]>,
     domain_size: Option<&'a Vector3<f64>>,
     domain_size_inc: Option<&'a Vector3<f64>>,
+    domain_mesh: Option<Rc<DomainMesh>>,
 }
 
 impl<'a> FractureFamilyBuilder<'a> {
@@ -238,6 +264,12 @@ impl<'a> FractureFamilyBuilder<'a> {
         self
     }
 
+    /// With a domain mesh, the fracture centers are sampled in its cells.
+    pub fn domain_mesh(&mut self, domain_mesh: Option<Rc<DomainMesh>>) -> &mut Self {
+        self.domain_mesh = domain_mesh;
+        self
+    }
+
     pub fn build(&mut self) -> Result<FractureFamily, String> {
         let layers = self.layers.ok_or("layers is required".to_string())?;
         let regions = self.regions.ok_or("regions is required".to_string())?;
@@ -285,7 +317,10 @@ impl<'a> FractureFamilyBuilder<'a> {
             return Err("Layer and Region both defined for this Family.".to_string());
         };
 
-        let boundary = Aabb::new(mins.into(), maxs.into());
+        let position_sampler = match self.domain_mesh.take() {
+            Some(mesh) => PositionSampler::Mesh { mesh, region_id },
+            None => PositionSampler::Box(Aabb::new(mins.into(), maxs.into())),
+        };
 
         Ok(FractureFamily {
             id: self.id.take().ok_or("id is required".to_string())?,
@@ -308,7 +343,7 @@ impl<'a> FractureFamilyBuilder<'a> {
                 .orientation
                 .take()
                 .ok_or("orientation is required".to_string())?,
-            boundary,
+            position_sampler,
         })
     }
 }

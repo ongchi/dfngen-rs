@@ -1,6 +1,7 @@
 use parry3d_f64::bounding_volume::{Aabb, BoundingVolume};
 use parry3d_f64::na::{Point3, Vector3};
 use parry3d_f64::query::details::clip_halfspace_polygon;
+use rand::Rng;
 
 /// Tolerance of the point test, as a part of the diagonal of the mesh bounding box.
 /// A point on the face between two cells must be in one of them.
@@ -26,6 +27,7 @@ pub struct MeshRegion {
 
 #[derive(Debug)]
 struct Tetrahedron {
+    vertices: [Point3<f64>; 4],
     /// A point on each face, and the outward unit normal of the face
     faces: [(Point3<f64>, Vector3<f64>); 4],
     /// 0: the cell has no region. N > 0: region N of `DomainMesh::regions`.
@@ -46,7 +48,34 @@ impl Tetrahedron {
             }
         });
 
-        Self { faces, region_id }
+        Self {
+            vertices: *vertices,
+            faces,
+            region_id,
+        }
+    }
+
+    /// Point of the tetrahedron for 3 numbers in [0, 1). Uniform random
+    /// numbers give a uniform random point.
+    fn point_at(&self, mut s: f64, mut t: f64, mut u: f64) -> Point3<f64> {
+        // Fold the unit cube into the tetrahedron s + t + u <= 1
+        // (Rocchini and Cignoni, Generating random points in a tetrahedron, 2000)
+        if s + t > 1. {
+            s = 1. - s;
+            t = 1. - t;
+        }
+        if t + u > 1. {
+            let old_u = u;
+            u = 1. - s - t;
+            t = 1. - old_u;
+        } else if s + t + u > 1. {
+            let old_u = u;
+            u = s + t + u - 1.;
+            s = 1. - t - old_u;
+        }
+
+        let [a, b, c, d] = self.vertices;
+        a + (b - a) * s + (c - a) * t + (d - a) * u
     }
 
     fn contains_point(&self, point: &Point3<f64>, tolerance: f64) -> bool {
@@ -71,6 +100,32 @@ impl Tetrahedron {
 fn tetrahedron_volume(vertices: &[Point3<f64>; 4]) -> f64 {
     let [a, b, c, d] = vertices;
     ((b - a).cross(&(c - a)).dot(&(d - a)) / 6.).abs()
+}
+
+/// The tetrahedra of one region with their cumulative volumes, to select a
+/// tetrahedron with a probability in proportion to its volume
+#[derive(Debug, Default, Clone)]
+struct VolumeTable {
+    tetrahedra: Vec<usize>,
+    cumulative_volumes: Vec<f64>,
+}
+
+impl VolumeTable {
+    fn push(&mut self, tetrahedron: usize, volume: f64) {
+        let total_volume = self.cumulative_volumes.last().copied().unwrap_or(0.);
+        self.tetrahedra.push(tetrahedron);
+        self.cumulative_volumes.push(total_volume + volume);
+    }
+
+    /// The tetrahedron at a fraction in [0, 1) of the total volume
+    fn select(&self, fraction: f64) -> usize {
+        let total_volume = self.cumulative_volumes[self.cumulative_volumes.len() - 1];
+        let position = self
+            .cumulative_volumes
+            .partition_point(|&volume| volume <= fraction * total_volume);
+
+        self.tetrahedra[position.min(self.tetrahedra.len() - 1)]
+    }
 }
 
 /// Uniform grid over the bounding box of the mesh. Each grid cell has the
@@ -145,6 +200,8 @@ pub struct DomainMesh {
     volume: f64,
     regions: Vec<MeshRegion>,
     tetrahedra: Vec<Tetrahedron>,
+    /// Table 0 has all tetrahedra, table N > 0 those of region N
+    volume_tables: Vec<VolumeTable>,
     grid: Grid,
     tolerance: f64,
 }
@@ -190,6 +247,7 @@ impl DomainMesh {
 
         let mut volume = 0.;
         let mut tetrahedra = Vec::with_capacity(mesh_tetrahedra.len());
+        let mut volume_tables = vec![VolumeTable::default(); regions.len() + 1];
         let mut grid = Grid::new(&size, mesh_tetrahedra.len());
 
         for (i, mesh_tetrahedron) in mesh_tetrahedra.iter().enumerate() {
@@ -201,11 +259,13 @@ impl DomainMesh {
                 .map_or(0, |position| position + 1);
 
             volume += tetrahedron_volume;
+            volume_tables[0].push(i, tetrahedron_volume);
 
             if region_id > 0 {
                 let region = &mut regions[region_id - 1];
                 region.bounds.merge(&bounds);
                 region.volume += tetrahedron_volume;
+                volume_tables[region_id].push(i, tetrahedron_volume);
             }
 
             grid.insert(i, &bounds.loosened(tolerance));
@@ -218,6 +278,7 @@ impl DomainMesh {
             volume,
             regions,
             tetrahedra,
+            volume_tables,
             grid,
             tolerance,
         })
@@ -254,6 +315,16 @@ impl DomainMesh {
             (region_id == 0 || tetrahedron.region_id == region_id)
                 && tetrahedron.contains_point(point, self.tolerance)
         })
+    }
+
+    /// Uniform random point in the cells of the region.
+    /// `region_id` 0 means the cells of all regions.
+    pub fn sample_point(&self, region_id: usize, rng: &mut impl Rng) -> Point3<f64> {
+        let tetrahedron = &self.tetrahedra[self.volume_tables[region_id].select(rng.random())];
+        let point = tetrahedron.point_at(rng.random(), rng.random(), rng.random());
+        debug_assert!(self.contains_point(&point, region_id));
+
+        point
     }
 
     /// True if the convex polygon has a point in a cell.
@@ -315,6 +386,8 @@ pub mod test_meshes {
 
 #[cfg(test)]
 mod tests {
+    use rand_mt::Mt64;
+
     use super::test_meshes::*;
     use super::*;
 
@@ -418,6 +491,73 @@ mod tests {
     #[test]
     fn test_point_is_not_in_the_region_of_another_cell() {
         assert!(!l_shaped_mesh().contains_point(&Point3::new(-2.5, 2.5, 0.), 1));
+    }
+
+    fn sample_points(region_id: usize, count: usize) -> Vec<Point3<f64>> {
+        let mesh = l_shaped_mesh();
+        let mut rng = Mt64::new(1);
+
+        (0..count)
+            .map(|_| mesh.sample_point(region_id, &mut rng))
+            .collect()
+    }
+
+    #[test]
+    fn test_sampled_points_are_in_the_mesh() {
+        let mesh = l_shaped_mesh();
+
+        assert!(sample_points(0, 1000)
+            .iter()
+            .all(|point| mesh.contains_point(point, 0)));
+    }
+
+    #[test]
+    fn test_sampled_points_of_a_region_are_in_that_region() {
+        let mesh = l_shaped_mesh();
+
+        assert!(sample_points(2, 1000)
+            .iter()
+            .all(|point| mesh.contains_point(point, 2)));
+    }
+
+    #[test]
+    fn test_share_of_sampled_points_in_a_region_is_its_volume_share() {
+        // Region 2 has 1/3 of the volume of the L shape
+        let points = sample_points(0, 30000);
+        let points_in_region_2 = points.iter().filter(|point| point.y > 0.).count();
+
+        assert!(
+            (9700..=10300).contains(&points_in_region_2),
+            "{points_in_region_2} of 30000 points are in region 2"
+        );
+    }
+
+    #[test]
+    fn test_sampled_points_are_uniform_in_a_tetrahedron() {
+        // The center of mass of a tetrahedron is the mean of its vertices
+        let vertices = [
+            Point3::origin(),
+            Point3::new(4., 0., 0.),
+            Point3::new(0., 4., 0.),
+            Point3::new(0., 0., 4.),
+        ];
+        let mesh = DomainMesh::new(&[MeshTetrahedron {
+            vertices,
+            region: 0,
+        }])
+        .unwrap();
+        let mut rng = Mt64::new(1);
+        let count = 30000;
+        let sum = (0..count).fold(Vector3::zeros(), |sum, _| {
+            sum + mesh.sample_point(0, &mut rng).coords
+        });
+
+        // The points have the center of the bounding box (2, 2, 2) at the origin
+        let center_of_mass = sum / count as f64 + Vector3::new(2., 2., 2.);
+        assert!(
+            (center_of_mass - Vector3::new(1., 1., 1.)).norm() < 0.03,
+            "the center of mass is {center_of_mass}"
+        );
     }
 
     #[test]

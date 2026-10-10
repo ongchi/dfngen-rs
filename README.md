@@ -112,12 +112,13 @@ not the two together. `tests/data/mesh_domain.toml` is an example.
   "Ascii" in the save dialog. In PyVista, use `mesh.save("domain.vtu", binary=False)`.
 - The cells can be tetrahedra, voxels, hexahedra, wedges and pyramids (VTK
   types 10 to 14).
-- The bounding box of the mesh is the box domain: `truncate_fractures`,
-  `size_increase` and `clusters.boundary_faces` use this box. The mesh can be
-  at any position.
-- The center of each stochastic fracture is in a cell of the mesh. A fracture
-  with its center in the mesh can have a part outside the mesh; the fracture is
-  cut only at the bounding box.
+- The bounding box of the mesh is the box domain: `truncate_fractures` and
+  `clusters.boundary_faces` use this box. The mesh can be at any position.
+- The center of each stochastic fracture is in a cell of the mesh. The centers
+  are sampled in the cells, uniform by volume, thus `size_increase` has no
+  effect on the stochastic fractures. A fracture with its center in the mesh
+  can have a part outside the mesh; the fracture is cut only at the bounding
+  box.
 - A user-defined fracture is rejected only if it intersects no cell. Its center
   can be outside the mesh.
 - The volume for P32 is the sum of the cell volumes.
@@ -132,11 +133,9 @@ the family is the volume of these cells. `region = 0` of a family is the whole
 mesh. Without the `region` array, all cells have the region 0. A family with a
 region value which no cell has is an error.
 
-A cell is split into tetrahedra for the point check and the volume. This is
-approximate for a hexahedron with a face which is not flat.
-
-When the mesh fills only a small part of its bounding box, most of the
-positions are rejected, and the generation is slow.
+A cell is split into tetrahedra for the sampling of the centers, the check of
+the user-defined fractures and the volume. This is approximate for a
+hexahedron with a face which is not flat.
 
 Orientation of a family: `theta` and `phi`, or `trend` and `plunge`, or `dip`
 and `strike`, each with `kappa` (Fisher distribution).

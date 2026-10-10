@@ -394,13 +394,9 @@ fn insert_stochastic_fractures(
                 input.eps,
                 &input.domain_size,
                 input.domain_boundary_mode,
-            ) || new_poly.is_center_outside_mesh(
-                input.domain_mesh.as_deref(),
-                frac_fam_col.families[family_index].region_id,
             ) {
                 // Poly was completely outside domain, or was truncated to less than
-                // 3 vertices due to vertices being too close together, or its
-                // center is outside the domain mesh
+                // 3 vertices due to vertices being too close together
                 dfngen.pstats.rejection_reasons.outside += 1;
 
                 if reject_counter >= input.rejects_per_fracture {

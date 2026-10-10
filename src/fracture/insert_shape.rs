@@ -6,7 +6,6 @@ use rand::Rng;
 use rand_mt::Mt64;
 use tracing::warn;
 
-use crate::distribution::generating_points::random_position;
 use crate::fracture::fracture_family::FractureFamily;
 
 use super::poly::Poly;
@@ -42,7 +41,7 @@ pub fn re_translate_poly(
         }
 
         // Translate to new position
-        let t = random_position(frac_fam.boundary, generator.clone());
+        let t = frac_fam.position_sampler.sample(generator.clone());
         new_poly.translate(t);
     } else {
         // Poly was truncated, need to rebuild the polygon
@@ -83,7 +82,7 @@ pub fn re_translate_poly(
         new_poly.normal = normal_b;
         // Translate to new position
         // Translate() will also set translation vector in poly structure
-        let t = random_position(frac_fam.boundary, generator.clone());
+        let t = frac_fam.position_sampler.sample(generator.clone());
 
         new_poly.translate(t);
     }

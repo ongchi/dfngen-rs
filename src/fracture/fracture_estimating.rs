@@ -86,13 +86,9 @@ pub fn dry_run(
             input.eps,
             &input.domain_size,
             input.domain_boundary_mode,
-        ) || new_poly.is_center_outside_mesh(
-            input.domain_mesh.as_deref(),
-            frac_families.families[family_index].region_id,
         ) {
             // Poly is completely outside domain, or was truncated to
-            // less than 3 vertices due to vertices being too close together,
-            // or its center is outside the domain mesh
+            // less than 3 vertices due to vertices being too close together
             reject_counter += 1; // Counter for re-trying a new translation
 
             // Test if newPoly has reached its limit of insertion attempts
