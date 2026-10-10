@@ -4,6 +4,7 @@ use std::io::{self, Write};
 use parry3d_f64::na::Vector3;
 
 use crate::fracture::poly::Poly;
+use crate::io::output::to_output_coordinates;
 use crate::structures::RejectedFracture;
 
 /// Writes the final fractures as polygons in VTK XML PolyData format (`.vtp`, ASCII)
@@ -18,19 +19,27 @@ use crate::structures::RejectedFracture;
 /// * `final_fractures` - Sorted indices of fractures left after isolated fracture removal
 /// * `accepted_poly` - All accepted fractures
 /// * `boundary_face_counts` - `boundary_face_count` of each accepted fracture
+/// * `mesh_center` - Center of the domain mesh, if the domain has a mesh
 /// * `output` - File to write to
 pub fn write_fractures_vtk(
     final_fractures: &[usize],
     accepted_poly: &[Poly],
     boundary_face_counts: &[usize],
+    mesh_center: Option<&Vector3<f64>>,
     output: &mut impl Write,
 ) -> io::Result<()> {
     let polys: Vec<&Poly> = final_fractures.iter().map(|&i| &accepted_poly[i]).collect();
-    write_geometry(output, &polys)?;
+    write_geometry(output, &polys, mesh_center)?;
 
     writeln!(output, r#"<CellData Normals="normal">"#)?;
     write_data_array(output, "fracture_id", "Int32", 1, 1..=final_fractures.len())?;
-    write_accepted_cell_data(output, final_fractures, accepted_poly, boundary_face_counts)?;
+    write_accepted_cell_data(
+        output,
+        final_fractures,
+        accepted_poly,
+        boundary_face_counts,
+        mesh_center,
+    )?;
     writeln!(output, "</CellData>")?;
 
     write_file_end(output)
@@ -47,18 +56,20 @@ pub fn write_fractures_vtk(
 /// * `removed_fractures` - Sorted indices of the accepted fractures which were removed
 /// * `accepted_poly` - All accepted fractures
 /// * `boundary_face_counts` - `boundary_face_count` of each accepted fracture
+/// * `mesh_center` - Center of the domain mesh, if the domain has a mesh
 /// * `output` - File to write to
 pub fn write_removed_fractures_vtk(
     removed_fractures: &[usize],
     accepted_poly: &[Poly],
     boundary_face_counts: &[usize],
+    mesh_center: Option<&Vector3<f64>>,
     output: &mut impl Write,
 ) -> io::Result<()> {
     let polys: Vec<&Poly> = removed_fractures
         .iter()
         .map(|&i| &accepted_poly[i])
         .collect();
-    write_geometry(output, &polys)?;
+    write_geometry(output, &polys, mesh_center)?;
 
     writeln!(output, r#"<CellData Normals="normal">"#)?;
     write_accepted_cell_data(
@@ -66,6 +77,7 @@ pub fn write_removed_fractures_vtk(
         removed_fractures,
         accepted_poly,
         boundary_face_counts,
+        mesh_center,
     )?;
     writeln!(output, "</CellData>")?;
 
@@ -91,11 +103,13 @@ pub fn write_removed_fractures_vtk(
 /// * `fractures` - Indices of the accepted fractures to write
 /// * `accepted_poly` - All accepted fractures
 /// * `boundary_face_counts` - `boundary_face_count` of each accepted fracture
+/// * `mesh_center` - Center of the domain mesh, if the domain has a mesh
 fn write_accepted_cell_data(
     output: &mut impl Write,
     fractures: &[usize],
     accepted_poly: &[Poly],
     boundary_face_counts: &[usize],
+    mesh_center: Option<&Vector3<f64>>,
 ) -> io::Result<()> {
     let polys: Vec<&Poly> = fractures.iter().map(|&i| &accepted_poly[i]).collect();
 
@@ -146,7 +160,7 @@ fn write_accepted_cell_data(
     write_real_array(output, "aspect_ratio", &polys, |poly| poly.aspect_ratio)?;
     write_real_array(output, "area", &polys, |poly| poly.area)?;
     write_vector_array(output, "normal", &polys, |poly| poly.normal)?;
-    write_vector_array(output, "translation", &polys, |poly| poly.translation)
+    write_translation_array(output, &polys, mesh_center)
 }
 
 /// Writes the rejected fractures as polygons in VTK XML PolyData format (`.vtp`, ASCII)
@@ -163,16 +177,18 @@ fn write_accepted_cell_data(
 /// # Arguments
 ///
 /// * `rejected_poly` - All rejected fractures
+/// * `mesh_center` - Center of the domain mesh, if the domain has a mesh
 /// * `output` - File to write to
 pub fn write_rejected_fractures_vtk(
     rejected_poly: &[RejectedFracture],
+    mesh_center: Option<&Vector3<f64>>,
     output: &mut impl Write,
 ) -> io::Result<()> {
     let polys: Vec<&Poly> = rejected_poly
         .iter()
         .map(|rejected| &rejected.poly)
         .collect();
-    write_geometry(output, &polys)?;
+    write_geometry(output, &polys, mesh_center)?;
 
     writeln!(output, r#"<CellData Normals="normal">"#)?;
     write_data_array(
@@ -200,14 +216,18 @@ pub fn write_rejected_fractures_vtk(
     write_real_array(output, "y_radius", &polys, |poly| poly.yradius)?;
     write_real_array(output, "aspect_ratio", &polys, |poly| poly.aspect_ratio)?;
     write_vector_array(output, "normal", &polys, |poly| poly.normal)?;
-    write_vector_array(output, "translation", &polys, |poly| poly.translation)?;
+    write_translation_array(output, &polys, mesh_center)?;
     writeln!(output, "</CellData>")?;
 
     write_file_end(output)
 }
 
 /// Writes the start of the file, and one polygon cell for each fracture.
-fn write_geometry(output: &mut impl Write, polys: &[&Poly]) -> io::Result<()> {
+fn write_geometry(
+    output: &mut impl Write,
+    polys: &[&Poly],
+    mesh_center: Option<&Vector3<f64>>,
+) -> io::Result<()> {
     let point_count: usize = polys.iter().map(|poly| poly.vertices.len()).sum();
 
     writeln!(output, r#"<?xml version="1.0"?>"#)?;
@@ -232,6 +252,7 @@ fn write_geometry(output: &mut impl Write, polys: &[&Poly]) -> io::Result<()> {
         polys
             .iter()
             .flat_map(|poly| &poly.vertices)
+            .map(|vertex| to_output_coordinates(vertex, mesh_center))
             .map(|vertex| format!("{} {} {}", vertex.x, vertex.y, vertex.z)),
     )?;
     writeln!(output, "</Points>")?;
@@ -276,12 +297,23 @@ fn write_real_array(
     )
 }
 
+/// Writes the translation of each fracture, in the coordinates of the output.
+fn write_translation_array(
+    output: &mut impl Write,
+    polys: &[&Poly],
+    mesh_center: Option<&Vector3<f64>>,
+) -> io::Result<()> {
+    write_vector_array(output, "translation", polys, |poly| {
+        to_output_coordinates(&poly.translation.into(), mesh_center).coords
+    })
+}
+
 /// Writes one vector for each fracture.
 fn write_vector_array(
     output: &mut impl Write,
     name: &str,
     polys: &[&Poly],
-    value_of: fn(&Poly) -> Vector3<f64>,
+    value_of: impl Fn(&Poly) -> Vector3<f64>,
 ) -> io::Result<()> {
     write_data_array(
         output,
@@ -337,10 +369,21 @@ mod tests {
     }
 
     fn write_final_fractures() -> String {
+        write_final_fractures_of_mesh(None)
+    }
+
+    fn write_final_fractures_of_mesh(mesh_center: Option<&Vector3<f64>>) -> String {
         let (accepted_poly, boundary_face_counts) = three_accepted_fractures();
 
         let mut output = Vec::new();
-        write_fractures_vtk(&[1, 2], &accepted_poly, &boundary_face_counts, &mut output).unwrap();
+        write_fractures_vtk(
+            &[1, 2],
+            &accepted_poly,
+            &boundary_face_counts,
+            mesh_center,
+            &mut output,
+        )
+        .unwrap();
         String::from_utf8(output).unwrap()
     }
 
@@ -348,8 +391,14 @@ mod tests {
         let (accepted_poly, boundary_face_counts) = three_accepted_fractures();
 
         let mut output = Vec::new();
-        write_removed_fractures_vtk(&[0], &accepted_poly, &boundary_face_counts, &mut output)
-            .unwrap();
+        write_removed_fractures_vtk(
+            &[0],
+            &accepted_poly,
+            &boundary_face_counts,
+            None,
+            &mut output,
+        )
+        .unwrap();
         String::from_utf8(output).unwrap()
     }
 
@@ -363,7 +412,7 @@ mod tests {
         };
 
         let mut output = Vec::new();
-        write_rejected_fractures_vtk(&[rejected], &mut output).unwrap();
+        write_rejected_fractures_vtk(&[rejected], None, &mut output).unwrap();
         String::from_utf8(output).unwrap()
     }
 
@@ -434,6 +483,25 @@ mod tests {
         assert_eq!(data_array(&file, "area"), ["20", "0"]);
         assert_eq!(data_array(&file, "boundary_face_count"), ["2", "1"]);
         assert_eq!(data_array(&file, "normal"), ["0 0 1", "0 0 1"]);
+    }
+
+    #[test]
+    fn test_points_with_mesh_have_the_mesh_coordinates() {
+        let file = write_final_fractures_of_mesh(Some(&Vector3::new(10., 20., 30.)));
+        // The first final fracture has the translation (1, 2, 3) only in its cell data
+        let first_vertex = Poly::new(6, 3., 1.).vertices[0];
+
+        assert_eq!(
+            data_array(&file, "points")[0],
+            format!("{} {} 30", first_vertex.x + 10., first_vertex.y + 20.)
+        );
+    }
+
+    #[test]
+    fn test_translation_with_mesh_has_the_mesh_coordinates() {
+        let file = write_final_fractures_of_mesh(Some(&Vector3::new(10., 20., 30.)));
+
+        assert_eq!(data_array(&file, "translation"), ["11 22 33", "10 20 30"]);
     }
 
     #[test]

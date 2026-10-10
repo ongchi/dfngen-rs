@@ -1,0 +1,49 @@
+<?xml version="1.0"?>
+<!-- L shape in the x-y plane, 10 high in z. The bounding box is 10 x 10 x 10
+     with its center at (15, 25, 35). No cell has x > 15 and y > 25.
+     Region 1: two hexahedra along x. Region 2: two wedges in +y. -->
+<VTKFile type="UnstructuredGrid" version="1.0" byte_order="LittleEndian">
+<UnstructuredGrid>
+<Piece NumberOfPoints="16" NumberOfCells="4">
+<CellData Scalars="region">
+<DataArray type="Int32" Name="region" format="ascii">
+1 1 2 2
+</DataArray>
+</CellData>
+<Points>
+<DataArray type="Float64" Name="Points" NumberOfComponents="3" format="ascii">
+10 20 30
+15 20 30
+20 20 30
+10 25 30
+15 25 30
+20 25 30
+10 30 30
+15 30 30
+10 20 40
+15 20 40
+20 20 40
+10 25 40
+15 25 40
+20 25 40
+10 30 40
+15 30 40
+</DataArray>
+</Points>
+<Cells>
+<DataArray type="Int64" Name="connectivity" format="ascii">
+0 1 4 3 8 9 12 11
+1 2 5 4 9 10 13 12
+3 4 7 11 12 15
+3 7 6 11 15 14
+</DataArray>
+<DataArray type="Int64" Name="offsets" format="ascii">
+8 16 22 28
+</DataArray>
+<DataArray type="UInt8" Name="types" format="ascii">
+12 12 13 13
+</DataArray>
+</Cells>
+</Piece>
+</UnstructuredGrid>
+</VTKFile>

@@ -27,6 +27,7 @@ use crate::structures::{DFNGen, PolyOptions, RadiusFunction, RejectedFracture, S
 
 mod cg;
 mod distribution;
+mod domain_mesh;
 mod error;
 mod fracture;
 mod io;
@@ -62,6 +63,7 @@ fn main() -> Result<(), DfngenError> {
         eps: input.eps,
         domain_size: input.domain_size,
         domain_boundary_mode: input.domain_boundary_mode,
+        domain_mesh: input.domain_mesh.clone(),
         r_fram: input.r_fram,
         disable_fram: input.disable_fram,
         triple_intersections: input.triple_intersections,
@@ -74,7 +76,7 @@ fn main() -> Result<(), DfngenError> {
             .map(|t| t.as_secs())?,
         seed => seed,
     })));
-    let dom_vol = domain_volume(&input);
+    let dom_vol = input.domain_volume;
 
     if total_families > 0 {
         prepare_radii_lists(
@@ -259,10 +261,6 @@ fn init_tracing() {
         .init();
 }
 
-fn domain_volume(input: &Input) -> f64 {
-    input.domain_size[0] * input.domain_size[1] * input.domain_size[2]
-}
-
 /// Pre-generates the sorted radii list of each family and initializes the
 /// per-family counters in `pstats`.
 fn prepare_radii_lists(
@@ -341,7 +339,7 @@ fn insert_stochastic_fractures(
     generator: Rc<RefCell<Mt64>>,
 ) -> Result<(), DfngenError> {
     let total_families = frac_fam_col.families.len();
-    let dom_vol = domain_volume(input);
+    let dom_vol = input.domain_volume;
 
     // Probabilities of the families which have not met their P32 target (P32 option).
     // This is a copy: the family probabilities must stay in their original state.
@@ -396,9 +394,13 @@ fn insert_stochastic_fractures(
                 input.eps,
                 &input.domain_size,
                 input.domain_boundary_mode,
+            ) || new_poly.is_center_outside_mesh(
+                input.domain_mesh.as_deref(),
+                frac_fam_col.families[family_index].region_id,
             ) {
                 // Poly was completely outside domain, or was truncated to less than
-                // 3 vertices due to vertices being too close together
+                // 3 vertices due to vertices being too close together, or its
+                // center is outside the domain mesh
                 dfngen.pstats.rejection_reasons.outside += 1;
 
                 if reject_counter >= input.rejects_per_fracture {
@@ -568,12 +570,17 @@ fn log_family_location(frac_fam: &FractureFamily, input: &Input) {
         info!("Layer: Whole Domain");
     }
 
-    if frac_fam.region_id > 0 {
-        let idx = (frac_fam.region_id - 1) * 6;
-        info!("Region: {}", frac_fam.region_id);
-        info!("{{-x,+x,-y,+y,-z,+z}}: {:?}", &input.regions[idx..idx + 6]);
-    } else {
-        info!("Region: Whole Domain");
+    match (frac_fam.region_id, &input.domain_mesh) {
+        (0, _) => info!("Region: Whole Domain"),
+        (region_id, Some(mesh)) => info!(
+            "Region: {} of the domain mesh",
+            mesh.regions()[region_id - 1].value
+        ),
+        (region_id, None) => {
+            let idx = (region_id - 1) * 6;
+            info!("Region: {}", region_id);
+            info!("{{-x,+x,-y,+y,-z,+z}}: {:?}", &input.regions[idx..idx + 6]);
+        }
     }
 }
 

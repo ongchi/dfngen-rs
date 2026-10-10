@@ -28,7 +28,7 @@ pub fn dry_run(
     generator: Rc<RefCell<Mt64>>,
 ) {
     info!("Estimating number of fractures per family for defined fracture intensities (P32)...");
-    let dom_vol = input.domain_size[0] * input.domain_size[1] * input.domain_size[2];
+    let dom_vol = input.domain_volume;
     // Probabilities of the families which have not met their P32 target.
     // This is a copy: the family probabilities must stay in their original state.
     let mut probabilities = frac_families.probabilities.clone();
@@ -86,9 +86,13 @@ pub fn dry_run(
             input.eps,
             &input.domain_size,
             input.domain_boundary_mode,
+        ) || new_poly.is_center_outside_mesh(
+            input.domain_mesh.as_deref(),
+            frac_families.families[family_index].region_id,
         ) {
             // Poly is completely outside domain, or was truncated to
-            // less than 3 vertices due to vertices being too close together
+            // less than 3 vertices due to vertices being too close together,
+            // or its center is outside the domain mesh
             reject_counter += 1; // Counter for re-trying a new translation
 
             // Test if newPoly has reached its limit of insertion attempts

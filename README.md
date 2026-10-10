@@ -19,6 +19,7 @@ h = 0.1                            # minimum feature size (FRAM)
 
 [domain]
 size = [10.0, 10.0, 10.0]          # x, y, z; the domain center is the origin
+# mesh = "domain.vtu"              # in place of `size`: a mesh gives the domain (see below)
 size_increase = [1.0, 1.0, 1.0]    # larger volume for the fracture centers
 truncate_fractures = true          # false = keep each fracture whole (see below)
 layers = [[-5.0, 0.0], [0.0, 5.0]]             # optional; -z, +z of each layer
@@ -100,6 +101,42 @@ give different networks for the same seed.
   run stops with a lower intensity in the domain than `p32_target`.
 - `truncated` and `boundary_face_count` are 0, and `intersection_list.dat` has no
   line between a fracture and a domain face.
+
+### Mesh as the domain
+
+`domain.mesh = "domain.vtu"` gives the domain as a VTK UnstructuredGrid file.
+A relative path starts at the folder of the input file. Use `mesh` or `size`,
+not the two together. `tests/data/mesh_domain.toml` is an example.
+
+- The file must be an ASCII `.vtu` file. In ParaView, select the data mode
+  "Ascii" in the save dialog. In PyVista, use `mesh.save("domain.vtu", binary=False)`.
+- The cells can be tetrahedra, voxels, hexahedra, wedges and pyramids (VTK
+  types 10 to 14).
+- The bounding box of the mesh is the box domain: `truncate_fractures`,
+  `size_increase` and `clusters.boundary_faces` use this box. The mesh can be
+  at any position.
+- The center of each stochastic fracture is in a cell of the mesh. A fracture
+  with its center in the mesh can have a part outside the mesh; the fracture is
+  cut only at the bounding box.
+- A user-defined fracture is rejected only if it intersects no cell. Its center
+  can be outside the mesh.
+- The volume for P32 is the sum of the cell volumes.
+- All coordinates in the input file and in the output files are the coordinates
+  of the mesh file.
+- `layers`, `regions` and `polygon_boundary` cannot be used with `mesh`.
+
+Regions of the mesh: the cell data array `region` (optional) gives one integer
+of 0 or more for each cell. `region = N` of a family (N > 0) puts the fracture
+centers of the family only in the cells with the value N, and the P32 volume of
+the family is the volume of these cells. `region = 0` of a family is the whole
+mesh. Without the `region` array, all cells have the region 0. A family with a
+region value which no cell has is an error.
+
+A cell is split into tetrahedra for the point check and the volume. This is
+approximate for a hexahedron with a face which is not flat.
+
+When the mesh fills only a small part of its bounding box, most of the
+positions are rejected, and the generation is slow.
 
 Orientation of a family: `theta` and `phi`, or `trend` and `plunge`, or `dip`
 and `strike`, each with `kappa` (Fisher distribution).

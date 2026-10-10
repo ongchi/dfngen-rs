@@ -9,6 +9,7 @@ use tracing::{error, info, warn};
 
 use crate::cg::intersection_checking;
 use crate::distribution::{LogNormalSampling, TruncExp, TruncLogNormal, TruncPowerLaw};
+use crate::domain_mesh::DomainMesh;
 use crate::error::DfngenError;
 use crate::fracture::insert_shape::print_reject_reason;
 use crate::fracture::poly::{DomainBoundaryMode, Poly};
@@ -383,8 +384,12 @@ impl DFNGen {
             opts.eps,
             &opts.domain_size,
             opts.domain_boundary_mode,
-        ) {
-            // Poly completely outside domain
+        ) || opts
+            .domain_mesh
+            .as_ref()
+            .is_some_and(|mesh| !mesh.intersects_polygon(&new_poly.vertices))
+        {
+            // Poly completely outside domain, or it intersects no cell of the domain mesh
             self.pstats.rejection_reasons.outside += 1;
             self.pstats.rejected_poly_count += 1;
             self.pstats.rejected_user_fracture.push(poly_id);
@@ -525,6 +530,8 @@ pub struct PolyOptions {
     pub eps: f64,
     pub domain_size: Vector3<f64>,
     pub domain_boundary_mode: DomainBoundaryMode,
+    /// The cells which make the domain, if the input file gives a mesh.
+    pub domain_mesh: Option<Rc<DomainMesh>>,
     pub r_fram: bool,
     pub disable_fram: bool,
     pub triple_intersections: bool,
@@ -534,6 +541,7 @@ pub struct PolyOptions {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::domain_mesh::test_meshes::l_shaped_mesh;
 
     fn assert_samples_are_within_limits(distribution: RadiusDistribution) {
         let generator = Rc::new(RefCell::new(Mt64::new(1)));
@@ -570,18 +578,26 @@ mod tests {
         assert_samples_are_within_limits(RadiusDistribution::new_truncated_power_law(2.5, 1., 4.));
     }
 
-    /// Inserts the same rectangle two times. FRAM rejects the second one.
-    fn insert_two_equal_rectangles(keep_rejected_fractures: bool) -> DFNGen {
-        let opts = PolyOptions {
+    fn poly_options(
+        keep_rejected_fractures: bool,
+        domain_mesh: Option<Rc<DomainMesh>>,
+    ) -> PolyOptions {
+        PolyOptions {
             h: 0.1,
             eps: 1e-9,
             domain_size: Vector3::new(10., 10., 10.),
             domain_boundary_mode: DomainBoundaryMode::Truncate,
+            domain_mesh,
             r_fram: false,
             disable_fram: false,
             triple_intersections: false,
             keep_rejected_fractures,
-        };
+        }
+    }
+
+    /// Inserts the same rectangle two times. FRAM rejects the second one.
+    fn insert_two_equal_rectangles(keep_rejected_fractures: bool) -> DFNGen {
+        let opts = poly_options(keep_rejected_fractures, None);
         let mut dfngen = DFNGen::new();
         dfngen.pstats.rejects_per_attempt.push(0);
 
@@ -592,6 +608,35 @@ mod tests {
         }
 
         dfngen
+    }
+
+    /// Inserts a horizontal square with sides of 2 into the L-shaped domain mesh.
+    /// The mesh has no cell where x and y are positive.
+    fn insert_square_into_l_shaped_mesh(center: [f64; 3]) -> DFNGen {
+        let opts = poly_options(false, Some(Rc::new(l_shaped_mesh())));
+        let mut dfngen = DFNGen::new();
+        dfngen.pstats.rejects_per_attempt.push(0);
+
+        let mut square = Poly::new(4, 2f64.sqrt(), 1.);
+        square.normal = Vector3::new(0., 0., 1.);
+        square.translate(Vector3::from(center));
+        dfngen.insert_poly(square, 1, &opts);
+
+        dfngen
+    }
+
+    #[test]
+    fn test_user_fracture_with_center_outside_the_mesh_is_accepted_if_it_intersects_a_cell() {
+        let dfngen = insert_square_into_l_shaped_mesh([0.5, 0.5, 0.]);
+
+        assert_eq!(dfngen.accepted_poly.len(), 1);
+    }
+
+    #[test]
+    fn test_user_fracture_which_intersects_no_cell_is_rejected() {
+        let dfngen = insert_square_into_l_shaped_mesh([2.5, 2.5, 0.]);
+
+        assert_eq!(dfngen.pstats.rejected_user_fracture, [1]);
     }
 
     #[test]
