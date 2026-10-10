@@ -1,5 +1,6 @@
 seed = 12345
 h = 0.1
+user_fractures = "user_fractures_by_coord_user_fractures.vtp"
 
 [domain]
 mesh = "user_fractures_by_coord.vtu"
@@ -27,31 +28,3 @@ keep_isolated_fractures = false
 [output]
 print_reject_reasons = false
 rejected_fractures = false
-
-[[user_fracture]]
-vertices = [
-    [-4.0, -4.0, 0.0],
-    [4.0, -4.0, 0.0],
-    [4.0, 4.0, 0.0],
-    [-4.0, 4.0, 0.0],
-]
-
-[[user_fracture]]
-vertices = [
-    [0.0, -3.0, -3.0],
-    [0.0, 3.0, -3.0],
-    [0.0, 3.0, 3.0],
-    [0.0, -3.0, 3.0],
-]
-
-[[user_fracture]]
-vertices = [
-    [2.5, 2.0, 1.0],
-    [2.5, 1.414213562, 2.414213562],
-    [2.5, 0.0, 3.0],
-    [2.5, -1.414213562, 2.414213562],
-    [2.5, -2.0, 1.0],
-    [2.5, -1.414213562, -0.414213562],
-    [2.5, 0.0, -1.0],
-    [2.5, 1.414213562, -0.414213562],
-]

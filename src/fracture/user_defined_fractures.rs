@@ -1,4 +1,4 @@
-use parry3d_f64::na::{center, distance, Point3, Vector3};
+use parry3d_f64::na::{center, distance, Point3};
 
 use crate::structures::{DFNGen, PolyOptions};
 
@@ -7,25 +7,7 @@ use super::poly::Poly;
 /// Family number of the user-defined fractures.
 pub const USER_FRACTURE_FAMILY: isize = -1;
 
-/// A fracture which the user defines in the input file.
-#[derive(Debug)]
-pub enum UserFracture {
-    ByParameters(FractureDef),
-    ByVertices(FractureNodesDef),
-}
-
-impl UserFracture {
-    pub fn to_poly(&self) -> Poly {
-        let mut poly = match self {
-            Self::ByParameters(fracture) => fracture.to_poly(),
-            Self::ByVertices(fracture) => fracture.to_poly(),
-        };
-        poly.family_num = USER_FRACTURE_FAMILY;
-        poly
-    }
-}
-
-/// Inserts the user-defined fractures in the order of the input file.
+/// Inserts the user-defined fractures in the order of their file.
 /// Returns the number of them.
 pub fn insert_user_defined_fractures(
     fractures: &[UserFracture],
@@ -39,15 +21,19 @@ pub fn insert_user_defined_fractures(
     fractures.len()
 }
 
-/// User-defined fracture that is defined by its vertices.
+/// A fracture which the user defines by its vertices, in the file of the
+/// user-defined fractures.
 #[derive(Debug)]
-pub struct FractureNodesDef {
+pub struct UserFracture {
     pub vertices: Vec<[f64; 3]>,
 }
 
-impl FractureNodesDef {
+impl UserFracture {
     pub fn to_poly(&self) -> Poly {
-        let mut poly = Poly::default();
+        let mut poly = Poly {
+            family_num: USER_FRACTURE_FAMILY,
+            ..Default::default()
+        };
         let nodes = &self.vertices;
 
         // Get a normal vector
@@ -93,51 +79,15 @@ impl FractureNodesDef {
     }
 }
 
-/// User-defined fracture that is defined by a set of properties.
-#[derive(Debug)]
-pub struct FractureDef {
-    pub eps: f64, // TODO: Move this parameter into global
-    pub number_of_points: usize,
-    pub radius: f64,
-    /// Rotation around the normal vector in radians
-    pub beta: f64,
-    pub aspect_ratio: f64,
-    pub translation: [f64; 3],
-    pub normal: [f64; 3],
-}
-
-impl FractureDef {
-    pub fn to_poly(&self) -> Poly {
-        let normal = Vector3::from_row_slice(&self.normal);
-
-        let mut new_poly = Poly::new(self.number_of_points, self.radius, self.aspect_ratio);
-        new_poly.translation = Vector3::from_row_slice(&self.translation);
-
-        // Apply 2d rotation matrix, twist around origin
-        // Assumes polygon on x-y plane
-        // Angle must be in rad
-        new_poly.rotation_2d(self.beta);
-
-        // Rotate vertices to uenormal[index] (new normal)
-        new_poly.rotation_3d(&normal, self.eps);
-
-        // Save newPoly's new normal vector
-        new_poly.normal = normal;
-
-        // Translate newPoly to uetranslation
-        new_poly.translate(Vector3::from_row_slice(&self.translation));
-
-        new_poly
-    }
-}
-
 #[cfg(test)]
 mod tests {
+    use parry3d_f64::na::Vector3;
+
     use super::*;
 
     #[test]
     fn test_triangle_by_vertices_has_its_normal() {
-        let triangle = FractureNodesDef {
+        let triangle = UserFracture {
             vertices: vec![[0., 0., 0.], [1., 0., 0.], [1., 1., 0.]],
         };
 

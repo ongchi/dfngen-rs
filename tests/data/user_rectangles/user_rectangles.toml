@@ -1,5 +1,6 @@
 seed = 12345
 h = 0.1
+user_fractures = "user_rectangles_user_fractures.vtp"
 
 [domain]
 mesh = "user_rectangles.vtu"
@@ -27,27 +28,3 @@ keep_isolated_fractures = false
 [output]
 print_reject_reasons = false
 rejected_fractures = false
-
-[[user_fracture]]
-number_of_points = 4
-radius = 5.656854249492381
-aspect_ratio = 1.0
-beta = 0.0
-translation = [0.0, 0.0, 0.0]
-normal = [0.0, 0.0, 1.0]
-
-[[user_fracture]]
-number_of_points = 4
-radius = 5.656854249492381
-aspect_ratio = 1.0
-beta = 0.0
-translation = [0.0, 0.0, 0.0]
-normal = [1.0, 0.0, 0.0]
-
-[[user_fracture]]
-number_of_points = 4
-radius = 1.4142135623730951
-aspect_ratio = 1.5
-beta = 0.0
-translation = [2.5, 2.5, 0.5]
-normal = [0.0, 1.0, 0.0]

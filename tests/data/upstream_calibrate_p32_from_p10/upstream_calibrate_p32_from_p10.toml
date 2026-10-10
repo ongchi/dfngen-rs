@@ -1,5 +1,6 @@
 seed = 6969420
 h = 0.1
+user_fractures = "upstream_calibrate_p32_from_p10_user_fractures.vtp"
 
 [domain]
 mesh = "upstream_calibrate_p32_from_p10.vtu"
@@ -44,12 +45,3 @@ region = 0
 p32_target = 1.4568217933106986
 radius = { distribution = "log_normal", log_mean = 1.9365735902799728, sd = 0.15, min = 1.4142135623730951, max = 14.142135623730951 }
 orientation = { trend = 40.0, plunge = 46.0, kappa = 9.0 }
-
-[[user_fracture]]
-number_of_points = 4
-# 25 * sqrt(2), rounded down: the corners must not be outside the domain
-radius = 35.35533905932737
-aspect_ratio = 0.001
-beta = 0.0
-translation = [0.0, 0.0, 0.0]
-normal = [1.0, 0.0, 0.0]

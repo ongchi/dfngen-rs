@@ -5,7 +5,6 @@ use parry3d_f64::na::Vector3;
 use serde::Deserialize;
 use tracing::{debug, info, warn};
 
-use crate::cg::{normal_from_dip_strike, normal_from_trend_plunge};
 use crate::distribution::{Fisher, LogNormalSampling};
 use crate::domain_mesh::{DomainMesh, MeshRegion};
 use crate::error::DfngenError;
@@ -13,7 +12,8 @@ use crate::fracture::fracture_family::{
     FractureFamily, FractureFamilyBuilder, FractureFamilyCollection,
 };
 use crate::fracture::poly::DomainBoundaryMode;
-use crate::fracture::user_defined_fractures::{FractureDef, FractureNodesDef, UserFracture};
+use crate::fracture::user_defined_fractures::UserFracture;
+use crate::io::vtp::read_user_fractures;
 use crate::io::vtu::read_domain_mesh;
 use crate::structures::RadiusDistribution;
 
@@ -141,7 +141,8 @@ pub struct Input {
     ///         and remove fractures with no intersections
     pub ignore_boundary_faces: bool,
 
-    /// User-defined fractures, in the order of the input file.
+    /// User-defined fractures, in the order of their file. The vertices have
+    /// the coordinates of the generation.
     pub user_fractures: Vec<UserFracture>,
 }
 
@@ -150,6 +151,9 @@ pub struct Input {
 struct InputFile {
     seed: u64,
     h: f64,
+    /// Path of an ASCII `.vtp` file with the user-defined fractures (optional).
+    /// A relative path starts at the folder of the input file.
+    user_fractures: Option<String>,
     domain: DomainSection,
     generation: GenerationSection,
     fram: FramSection,
@@ -157,8 +161,6 @@ struct InputFile {
     output: OutputSection,
     #[serde(default, rename = "family")]
     families: Vec<FamilySection>,
-    #[serde(default, rename = "user_fracture")]
-    user_fractures: Vec<UserFractureSection>,
 }
 
 #[derive(Deserialize)]
@@ -256,23 +258,6 @@ struct OrientationSection {
     kappa: f64,
 }
 
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct UserFractureSection {
-    // Definition by parameters
-    number_of_points: Option<usize>,
-    radius: Option<f64>,
-    aspect_ratio: Option<f64>,
-    beta: Option<f64>,
-    translation: Option<[f64; 3]>,
-    normal: Option<[f64; 3]>,
-    trend_plunge: Option<[f64; 2]>,
-    dip_strike: Option<[f64; 2]>,
-
-    // Definition by vertices
-    vertices: Option<Vec<[f64; 3]>>,
-}
-
 fn invalid_input(message: String) -> DfngenError {
     DfngenError::InvalidInput(message)
 }
@@ -289,8 +274,12 @@ pub fn read_input(input_file: &str) -> Result<(Input, FractureFamilyCollection),
     let file = parse_input_file(&text)?;
     let input_folder = Path::new(input_file).parent().unwrap_or(Path::new(""));
     let domain_mesh = read_domain_mesh(&input_folder.join(&file.domain.mesh))?;
+    let user_fractures = match &file.user_fractures {
+        Some(fracture_file) => read_user_fractures(&input_folder.join(fracture_file))?,
+        None => Vec::new(),
+    };
 
-    build_input(file, domain_mesh)
+    build_input(file, domain_mesh, user_fractures)
 }
 
 fn parse_input_file(text: &str) -> Result<InputFile, DfngenError> {
@@ -314,9 +303,17 @@ fn find_mesh_region_id(region_value: usize, mesh_regions: &[MeshRegion]) -> Resu
         ))
 }
 
+/// Builds the input options and the stochastic fracture families.
+///
+/// # Arguments
+///
+/// * `file` - Content of the TOML input file
+/// * `domain_mesh` - Domain mesh of `domain.mesh`
+/// * `user_fractures` - User-defined fractures, in the coordinates of the mesh file
 fn build_input(
     file: InputFile,
     domain_mesh: DomainMesh,
+    mut user_fractures: Vec<UserFracture>,
 ) -> Result<(Input, FractureFamilyCollection), DfngenError> {
     let eps = file.h * 1e-8;
     let domain_mesh = Rc::new(domain_mesh);
@@ -350,15 +347,14 @@ fn build_input(
         (_, n_poly) => n_poly.unwrap_or(0),
     };
 
-    let user_fractures = file
-        .user_fractures
-        .iter()
-        .enumerate()
-        .map(|(i, section)| {
-            build_user_fracture(section, eps, &domain_mesh.center())
-                .map_err(|message| invalid_input(format!("user_fracture {}: {}", i + 1, message)))
-        })
-        .collect::<Result<Vec<_>, _>>()?;
+    // The generation has the center of the mesh at the origin
+    let domain_center = domain_mesh.center();
+    for vertex in user_fractures
+        .iter_mut()
+        .flat_map(|fracture| &mut fracture.vertices)
+    {
+        *vertex = (Vector3::from(*vertex) - domain_center).into();
+    }
 
     let family_context = FamilyContext {
         stop_condition,
@@ -550,67 +546,6 @@ fn valid_number_of_points(number_of_points: usize) -> Result<usize, String> {
     Ok(number_of_points)
 }
 
-/// The angles of the section are in degrees. The coordinates of the section
-/// are moved so that `domain_center` becomes the origin.
-fn build_user_fracture(
-    section: &UserFractureSection,
-    eps: f64,
-    domain_center: &Vector3<f64>,
-) -> Result<UserFracture, String> {
-    let move_to_origin =
-        |point: [f64; 3]| -> [f64; 3] { (Vector3::from(point) - domain_center).into() };
-
-    let has_parameters = section.number_of_points.is_some()
-        || section.radius.is_some()
-        || section.aspect_ratio.is_some()
-        || section.beta.is_some()
-        || section.translation.is_some()
-        || section.normal.is_some()
-        || section.trend_plunge.is_some()
-        || section.dip_strike.is_some();
-
-    if let Some(vertices) = &section.vertices {
-        if has_parameters {
-            return Err("a fracture with vertices can have no other parameters".to_string());
-        }
-        if vertices.len() < 3 {
-            return Err("a fracture must have 3 vertices or more".to_string());
-        }
-        return Ok(UserFracture::ByVertices(FractureNodesDef {
-            vertices: vertices.iter().copied().map(move_to_origin).collect(),
-        }));
-    }
-
-    let number_of_points = valid_number_of_points(
-        section
-            .number_of_points
-            .ok_or("number_of_points or vertices is necessary")?,
-    )?;
-
-    let normal = match (section.normal, section.trend_plunge, section.dip_strike) {
-        (Some(normal), None, None) => normal,
-        (None, Some([trend, plunge]), None) => {
-            normal_from_trend_plunge(trend.to_radians(), plunge.to_radians()).into()
-        }
-        (None, None, Some([dip, strike])) => {
-            normal_from_dip_strike(dip.to_radians(), strike.to_radians()).into()
-        }
-        _ => {
-            return Err("one of normal, trend_plunge, or dip_strike is necessary".to_string());
-        }
-    };
-
-    Ok(UserFracture::ByParameters(FractureDef {
-        eps,
-        number_of_points,
-        radius: section.radius.ok_or("radius is necessary")?,
-        beta: section.beta.ok_or("beta is necessary")?.to_radians(),
-        aspect_ratio: section.aspect_ratio.ok_or("aspect_ratio is necessary")?,
-        translation: move_to_origin(section.translation.ok_or("translation is necessary")?),
-        normal,
-    }))
-}
-
 #[cfg(test)]
 pub mod test_inputs {
     use super::*;
@@ -651,7 +586,11 @@ pub mod test_inputs {
     /// Reads the sections with the L-shaped mesh as the domain. The mesh has
     /// the regions 1 and 2, and its center is (15, 25, 35).
     pub fn parse(sections: &[&str]) -> Result<(Input, FractureFamilyCollection), DfngenError> {
-        build_input(parse_input_file(&sections.concat())?, l_shaped_mesh())
+        build_input(
+            parse_input_file(&sections.concat())?,
+            l_shaped_mesh(),
+            Vec::new(),
+        )
     }
 
     /// The input of `GENERAL_OPTIONS`
@@ -664,6 +603,7 @@ pub mod test_inputs {
 mod tests {
     use super::test_inputs::{parse, GENERAL_OPTIONS};
     use super::*;
+    use crate::domain_mesh::test_meshes::l_shaped_mesh;
     use crate::structures::RadiusFunction;
 
     const RECTANGLE_FAMILY: &str = r#"
@@ -686,11 +626,6 @@ mod tests {
         radius = { distribution = "truncated_power_law", alpha = 2.5, min = 1.0, max = 5.0 }
         orientation = { theta = 0.0, phi = 0.0, kappa = 8.0 }
     "#;
-
-    fn parse_user_fracture(user_fracture: &str) -> Result<UserFracture, DfngenError> {
-        let (mut input, _) = parse(&[GENERAL_OPTIONS, "[[user_fracture]]\n", user_fracture])?;
-        Ok(input.user_fractures.remove(0))
-    }
 
     fn error_message(result: Result<(Input, FractureFamilyCollection), DfngenError>) -> String {
         result
@@ -761,16 +696,38 @@ mod tests {
 
     #[test]
     fn test_user_fracture_coordinates_are_moved_by_the_mesh_center() {
-        let (input, _) = parse(&[
-            GENERAL_OPTIONS,
-            "[[user_fracture]]\nvertices = [[15.0, 25.0, 35.0], [16.0, 25.0, 35.0], [16.0, 26.0, 35.0]]",
-        ])
+        let triangle = UserFracture {
+            vertices: vec![[15., 25., 35.], [16., 25., 35.], [16., 26., 35.]],
+        };
+
+        let (input, _) = build_input(
+            parse_input_file(GENERAL_OPTIONS).unwrap(),
+            l_shaped_mesh(),
+            vec![triangle],
+        )
         .unwrap();
 
-        let UserFracture::ByVertices(fracture) = &input.user_fractures[0] else {
-            panic!("the fracture must be defined by vertices");
-        };
-        assert_eq!(fracture.vertices[0], [0., 0., 0.]);
+        assert_eq!(input.user_fractures[0].vertices[0], [0., 0., 0.]);
+    }
+
+    #[test]
+    fn test_input_without_user_fractures_key_has_no_user_fractures() {
+        let (input, _) = parse(&[GENERAL_OPTIONS]).unwrap();
+
+        assert!(input.user_fractures.is_empty());
+    }
+
+    #[test]
+    fn test_user_fracture_table_is_rejected() {
+        let message = error_message(parse(&[
+            GENERAL_OPTIONS,
+            "[[user_fracture]]\nvertices = [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [1.0, 1.0, 0.0]]",
+        ]));
+
+        assert!(
+            message.contains("unknown field `user_fracture`"),
+            "{message}"
+        );
     }
 
     #[test]
@@ -945,37 +902,6 @@ mod tests {
     }
 
     #[test]
-    fn test_user_fracture_by_normal_is_read() {
-        let fracture = parse_user_fracture(
-            r#"number_of_points = 4
-            radius = 4.0
-            aspect_ratio = 1.0
-            beta = 0.0
-            translation = [0.0, 0.0, 0.0]
-            normal = [0.0, 0.0, 1.0]"#,
-        )
-        .unwrap();
-
-        assert_eq!(fracture.to_poly().normal, Vector3::new(0., 0., 1.));
-    }
-
-    #[test]
-    fn test_user_ellipse_by_trend_plunge_is_in_degrees() {
-        let fracture = parse_user_fracture(
-            r#"number_of_points = 8
-            radius = 2.0
-            aspect_ratio = 1.0
-            beta = 0.0
-            translation = [0.0, 0.0, 0.0]
-            trend_plunge = [90.0, 30.0]"#,
-        )
-        .unwrap();
-
-        let expected = normal_from_trend_plunge(90f64.to_radians(), 30f64.to_radians());
-        assert_eq!(fracture.to_poly().normal, expected);
-    }
-
-    #[test]
     fn test_angle_unit_is_rejected() {
         let options = GENERAL_OPTIONS.replace("h = 0.1", "h = 0.1\nangle_unit = \"radian\"");
 
@@ -989,35 +915,6 @@ mod tests {
     }
 
     #[test]
-    fn test_user_fracture_by_vertices_is_read() {
-        let fracture = parse_user_fracture(
-            r#"vertices = [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [1.0, 1.0, 0.0]]"#,
-        )
-        .unwrap();
-
-        assert_eq!(fracture.to_poly().vertices.len(), 3);
-    }
-
-    #[test]
-    fn test_user_fracture_with_two_vertices_is_rejected() {
-        let result = parse_user_fracture(r#"vertices = [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]]"#);
-
-        let message = result.expect_err("the input must be rejected").to_string();
-        assert!(message.contains("user_fracture 1: a fracture must have 3 vertices or more"));
-    }
-
-    #[test]
-    fn test_user_fracture_with_vertices_and_parameters_is_rejected() {
-        let result = parse_user_fracture(
-            r#"number_of_points = 4
-            vertices = [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [1.0, 1.0, 0.0]]"#,
-        );
-
-        let message = result.expect_err("the input must be rejected").to_string();
-        assert!(message.contains("a fracture with vertices can have no other parameters"));
-    }
-
-    #[test]
     fn test_family_with_two_points_is_rejected() {
         let family = ELLIPSE_FAMILY.replace("number_of_points = 8", "number_of_points = 2");
 
@@ -1028,19 +925,5 @@ mod tests {
             "{}",
             message
         );
-    }
-
-    #[test]
-    fn test_user_fracture_without_orientation_is_rejected() {
-        let result = parse_user_fracture(
-            r#"number_of_points = 4
-            radius = 4.0
-            aspect_ratio = 1.0
-            beta = 0.0
-            translation = [0.0, 0.0, 0.0]"#,
-        );
-
-        let message = result.expect_err("the input must be rejected").to_string();
-        assert!(message.contains("one of normal, trend_plunge, or dip_strike"));
     }
 }

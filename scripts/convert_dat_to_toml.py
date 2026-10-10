@@ -4,8 +4,11 @@
 Usage: convert_dat_to_toml.py <input.dat> <output.toml>
 
 The user-defined fracture files to which the `.dat` file refers are read too.
-Their content goes into the TOML file. A relative path in the `.dat` file is
-relative to the folder of the `.dat` file.
+Their fractures go into `<output>_user_fractures.vtp`, next to the TOML file,
+as one polygon for each fracture. For an ellipse or a rectangle which dfnGen
+defines by parameters, the script calculates the vertices as dfngen-rs makes
+them for a stochastic fracture. A relative path in the `.dat` file is relative
+to the folder of the `.dat` file.
 
 The domain of dfngen-rs is a mesh. The script writes the box of `domainSize`
 as a mesh of one hexahedron to `<output>.vtu`, next to the TOML file. Layers,
@@ -21,8 +24,8 @@ side; in dfngen-rs it is the distance from the center to a corner of the
 square with that side. Thus the radius values of a rectangle are multiplied
 by sqrt(2).
 
-All angles in the TOML file are in degrees. Angles in radians (`angleOption: 0`,
-or `AngleOption: radian` in a user-defined fracture file) are changed to degrees.
+All angles in the TOML file are in degrees. Angles in radians (`angleOption: 0`)
+are changed to degrees.
 
 Needs only the Python standard library.
 """
@@ -32,11 +35,27 @@ from __future__ import annotations
 import math
 import re
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 
 BRACKET_GROUP = re.compile(r"[{\[(]([^}\])]*)[}\])]")
 SQRT_2 = math.sqrt(2.0)
 RECTANGLE_POINT_COUNT = 4
+
+Vector = list[float]
+
+
+@dataclass
+class FractureShape:
+    """A dfnGen fracture by parameters. `radius` is the radius of dfngen-rs."""
+
+    point_count: int
+    radius: float
+    aspect_ratio: float
+    # Rotation about the normal, in radians
+    beta: float
+    translation: Vector
+    normal: Vector
 
 
 class DatFile:
@@ -107,10 +126,6 @@ def rectangle_radius(value: str) -> str:
     return repr(float(value) * SQRT_2)
 
 
-def numbers(values: list[str]) -> str:
-    return "[" + ", ".join(number(value) for value in values) + "]"
-
-
 def boolean(is_set: bool) -> str:
     return "true" if is_set else "false"
 
@@ -118,10 +133,6 @@ def boolean(is_set: bool) -> str:
 def angle(value: str, is_degree: bool) -> str:
     """A TOML float with the angle in degrees."""
     return number(value) if is_degree else repr(math.degrees(float(value)))
-
-
-def angles(values: list[str], is_degree: bool) -> str:
-    return "[" + ", ".join(angle(value, is_degree) for value in values) + "]"
 
 
 def stop_if_not_convertible(dat: DatFile) -> None:
@@ -173,7 +184,9 @@ def box_mesh(size: list[float]) -> str:
     )
 
 
-def convert_general_options(dat: DatFile, mesh_file_name: str) -> list[str]:
+def convert_general_options(
+    dat: DatFile, mesh_file_name: str, user_fractures_file_name: str | None
+) -> list[str]:
     stop_condition = int(dat.word("stopCondition"))
     if stop_condition not in (0, 1):
         sys.exit(f"{dat.path}: stopCondition must be 0 or 1")
@@ -181,6 +194,10 @@ def convert_general_options(dat: DatFile, mesh_file_name: str) -> list[str]:
     lines = [
         f"seed = {int(dat.word('seed'))}",
         f"h = {number(dat.word('h'))}",
+    ]
+    if user_fractures_file_name is not None:
+        lines.append(f'user_fractures = "{user_fractures_file_name}"')
+    lines += [
         "",
         "[domain]",
         f'mesh = "{mesh_file_name}"',
@@ -312,57 +329,128 @@ def convert_families(dat: DatFile, prefix: str, probabilities: list[str]) -> lis
     return lines
 
 
-def convert_fractures_by_parameters(path: Path, shape: str) -> list[str]:
+def normal_from_trend_plunge(trend: float, plunge: float) -> Vector:
+    """Upward normal of a plane from the trend and plunge of its pole, in radians."""
+    return [
+        -math.sin(trend) * math.cos(plunge),
+        -math.cos(trend) * math.cos(plunge),
+        math.sin(plunge),
+    ]
+
+
+def normal_from_dip_strike(dip: float, strike: float) -> Vector:
+    """Normal of a plane from its dip and strike (right-hand rule), in radians."""
+    return [
+        math.sin(dip) * math.cos(strike),
+        -math.sin(dip) * math.sin(strike),
+        math.cos(dip),
+    ]
+
+
+def rotate_z_axis_to(normal: Vector, vertices: list[Vector], eps: float) -> list[Vector]:
+    """Rotates the vertices as dfngen-rs does it: the z axis goes to the normal."""
+    # dfngen-rs does not rotate if the normal is the z axis
+    if 1.0 - eps < normal[2] < 1.0 + eps:
+        return vertices
+
+    length = math.sqrt(sum(value * value for value in normal))
+    unit_x, unit_y, unit_z = (value / length for value in normal)
+
+    # Rotation axis: z cross normal. Its length is the sine of the angle.
+    sine = math.hypot(unit_x, unit_y)
+    if sine == 0.0:
+        # Opposite to the z axis: half turn about the y axis
+        return [[-x, y, -z] for x, y, z in vertices]
+    axis_x, axis_y = -unit_y / sine, unit_x / sine
+    cosine = unit_z
+
+    rotated = []
+    for x, y, z in vertices:
+        # Rodrigues' rotation formula with the axis (axis_x, axis_y, 0)
+        along_axis = (axis_x * x + axis_y * y) * (1.0 - cosine)
+        rotated.append(
+            [
+                x * cosine + axis_y * z * sine + axis_x * along_axis,
+                y * cosine - axis_x * z * sine + axis_y * along_axis,
+                z * cosine + (axis_x * y - axis_y * x) * sine,
+            ]
+        )
+    return rotated
+
+
+def polygon_from_parameters(shape: FractureShape, eps: float) -> list[Vector]:
+    """The vertices which dfngen-rs makes for a fracture with these parameters."""
+    angle_step = 2.0 * math.pi / shape.point_count
+    sine, cosine = math.sin(shape.beta), math.cos(shape.beta)
+
+    vertices = []
+    for k in range(shape.point_count):
+        # The first vertex is half a step from the x axis
+        theta = angle_step * (k + 0.5)
+        x = shape.radius * math.cos(theta)
+        y = shape.radius * shape.aspect_ratio * math.sin(theta)
+        # Rotation by beta about the z axis
+        vertices.append([x * cosine + y * sine, -x * sine + y * cosine, 0.0])
+
+    vertices = rotate_z_axis_to(shape.normal, vertices, eps)
+    return [[a + b for a, b in zip(vertex, shape.translation)] for vertex in vertices]
+
+
+def convert_fractures_by_parameters(path: Path, shape: str, eps: float) -> list[list[Vector]]:
     dat = DatFile(path)
     count = int(dat.word("nUserEll" if shape == "ellipse" else "nUserRect"))
 
     angle_unit = dat.word("AngleOption")
     if angle_unit not in ("degree", "radian"):
         sys.exit(f"{path}: AngleOption must be degree or radian")
-    is_degree = angle_unit == "degree"
+
+    def radians(value: str) -> float:
+        return math.radians(float(value)) if angle_unit == "degree" else float(value)
 
     radii = dat.words("Radii", count)
     betas = dat.words("Beta", count)
     aspect_ratios = dat.words("Aspect_Ratio", count)
     translations = dat.groups("Translation", count)
-    orientation_key, orientation_label = [
-        ("normal", "Normal"),
-        ("trend_plunge", "Trend_Plunge"),
-        ("dip_strike", "Dip_Strike"),
-    ][int(dat.word("userOrientationOption"))]
-    orientations = dat.groups(orientation_label, count)
+    orientation_option = int(dat.word("userOrientationOption"))
+    orientations = dat.groups(["Normal", "Trend_Plunge", "Dip_Strike"][orientation_option], count)
     if shape == "ellipse":
         point_counts = dat.words("Number_of_Vertices", count)
 
-    lines = []
+    fractures = []
     for i in range(count):
-        lines += ["", "[[user_fracture]]"]
+        if orientation_option == 0:
+            normal = [float(value) for value in orientations[i]]
+        elif orientation_option == 1:
+            normal = normal_from_trend_plunge(*(radians(value) for value in orientations[i]))
+        else:
+            normal = normal_from_dip_strike(*(radians(value) for value in orientations[i]))
+
         if shape == "ellipse":
-            point_count, radius = int(point_counts[i]), number(radii[i])
+            point_count, radius = int(point_counts[i]), float(radii[i])
         else:
-            point_count, radius = RECTANGLE_POINT_COUNT, rectangle_radius(radii[i])
-        lines += [
-            f"number_of_points = {point_count}",
-            f"radius = {radius}",
-            f"aspect_ratio = {number(aspect_ratios[i])}",
-            f"beta = {angle(betas[i], is_degree)}",
-            f"translation = {numbers(translations[i])}",
-        ]
-        if orientation_key == "normal":
-            lines.append(f"normal = {numbers(orientations[i])}")
-        else:
-            lines.append(f"{orientation_key} = {angles(orientations[i], is_degree)}")
-    return lines
+            point_count, radius = RECTANGLE_POINT_COUNT, float(rectangle_radius(radii[i]))
+
+        fractures.append(
+            polygon_from_parameters(
+                FractureShape(
+                    point_count=point_count,
+                    radius=radius,
+                    aspect_ratio=float(aspect_ratios[i]),
+                    beta=radians(betas[i]),
+                    translation=[float(value) for value in translations[i]],
+                    normal=normal,
+                ),
+                eps,
+            )
+        )
+    return fractures
 
 
-def fracture_by_vertices(vertices: list[list[str]]) -> list[str]:
-    lines = ["", "[[user_fracture]]", "vertices = ["]
-    lines += [f"    {numbers(vertex)}," for vertex in vertices]
-    lines.append("]")
-    return lines
+def to_vectors(vertices: list[list[str]]) -> list[Vector]:
+    return [[float(value) for value in vertex] for vertex in vertices]
 
 
-def convert_fractures_by_vertices(path: Path, shape: str) -> list[str]:
+def convert_fractures_by_vertices(path: Path, shape: str) -> list[list[Vector]]:
     dat = DatFile(path)
     if shape == "ellipse":
         count = int(dat.word("nEllipses"))
@@ -371,20 +459,17 @@ def convert_fractures_by_vertices(path: Path, shape: str) -> list[str]:
         count = int(dat.word("nRectangles"))
         point_count = RECTANGLE_POINT_COUNT
 
-    vertices = dat.groups("Coordinates", count * point_count)
-    lines = []
-    for i in range(count):
-        lines += fracture_by_vertices(vertices[i * point_count : (i + 1) * point_count])
-    return lines
+    vertices = to_vectors(dat.groups("Coordinates", count * point_count))
+    return [vertices[i * point_count : (i + 1) * point_count] for i in range(count)]
 
 
-def convert_polygons(path: Path) -> list[str]:
+def convert_polygons(path: Path) -> list[list[Vector]]:
     dat = DatFile(path)
     count = int(dat.word("nPolygons"))
     text = dat.rest("nPolygons").split(maxsplit=1)[1]
 
     # Each polygon is its number of nodes, then one {x, y, z} group for each node
-    lines = []
+    fractures = []
     for _ in range(count):
         point_count, text = text.split(maxsplit=1)
         vertices = []
@@ -394,13 +479,18 @@ def convert_polygons(path: Path) -> list[str]:
                 sys.exit(f"{path}: expected {point_count} nodes for a polygon")
             vertices.append([value.strip() for value in match.group(1).split(",")])
             text = text[match.end() :]
-        lines += fracture_by_vertices(vertices)
-    return lines
+        fractures.append(to_vectors(vertices))
+    return fractures
 
 
-def convert_user_fractures(dat: DatFile) -> list[str]:
+def convert_user_fractures(dat: DatFile) -> list[list[Vector]]:
+    """The vertices of each user-defined fracture, in the insertion order of dfnGen."""
+
     def path_if_enabled(flag_label: str, path_label: str) -> Path | None:
         return resolve(dat, dat.word(path_label)) if dat.flag(flag_label) else None
+
+    # Same value as in dfngen-rs
+    eps = float(dat.word("h")) * 1e-8
 
     # dfngen-rs inserts the fractures in the order of the file. dfnGen inserts
     # the polygons first, then the rectangles and the ellipses in the order
@@ -412,13 +502,13 @@ def convert_user_fractures(dat: DatFile) -> list[str]:
 
     rectangles = []
     if path := path_if_enabled("userRectanglesOnOff", "UserRect_Input_File_Path"):
-        rectangles += convert_fractures_by_parameters(path, "rectangle")
+        rectangles += convert_fractures_by_parameters(path, "rectangle", eps)
     if path := path_if_enabled("userRecByCoord", "RectByCoord_Input_File_Path"):
         rectangles += convert_fractures_by_vertices(path, "rectangle")
 
     ellipses = []
     if path := path_if_enabled("userEllipsesOnOff", "UserEll_Input_File_Path"):
-        ellipses += convert_fractures_by_parameters(path, "ellipse")
+        ellipses += convert_fractures_by_parameters(path, "ellipse", eps)
     if path := path_if_enabled("userEllByCoord", "EllByCoord_Input_File_Path"):
         ellipses += convert_fractures_by_vertices(path, "ellipse")
 
@@ -427,10 +517,47 @@ def convert_user_fractures(dat: DatFile) -> list[str]:
     return polygons + ellipses + rectangles
 
 
-def convert(dat: DatFile, mesh_file_name: str) -> str:
+def polygons_file(fractures: list[list[Vector]]) -> str:
+    """An ASCII `.vtp` file with one polygon for each fracture."""
+    points = [f"{x!r} {y!r} {z!r}" for vertices in fractures for x, y, z in vertices]
+    offsets = []
+    for vertices in fractures:
+        offsets.append((offsets[-1] if offsets else 0) + len(vertices))
+
+    return "\n".join(
+        [
+            '<?xml version="1.0"?>',
+            '<VTKFile type="PolyData" version="1.0" byte_order="LittleEndian">',
+            "<PolyData>",
+            f'<Piece NumberOfPoints="{len(points)}" NumberOfVerts="0" NumberOfLines="0" '
+            f'NumberOfStrips="0" NumberOfPolys="{len(fractures)}">',
+            "<Points>",
+            '<DataArray type="Float64" Name="points" NumberOfComponents="3" format="ascii">',
+            *points,
+            "</DataArray>",
+            "</Points>",
+            "<Polys>",
+            '<DataArray type="Int64" Name="connectivity" format="ascii">',
+            # The points are in polygon order
+            *(str(point) for point in range(len(points))),
+            "</DataArray>",
+            '<DataArray type="Int64" Name="offsets" format="ascii">',
+            *(str(offset) for offset in offsets),
+            "</DataArray>",
+            "</Polys>",
+            "</Piece>",
+            "</PolyData>",
+            "</VTKFile>",
+            "",
+        ]
+    )
+
+
+def convert(dat: DatFile, mesh_file_name: str, user_fractures_file_name: str | None) -> str:
+    """The TOML input file. `user_fractures_file_name` is None if there are no such fractures."""
     stop_if_not_convertible(dat)
 
-    lines = convert_general_options(dat, mesh_file_name)
+    lines = convert_general_options(dat, mesh_file_name, user_fractures_file_name)
 
     family_count = int(dat.word("nFamEll")) + int(dat.word("nFamRect"))
     probabilities = dat.list("famProb") if family_count > 0 else []
@@ -438,8 +565,6 @@ def convert(dat: DatFile, mesh_file_name: str) -> str:
         sys.exit(f"{dat.path}: famProb must have {family_count} values")
     lines += convert_families(dat, "e", probabilities)
     lines += convert_families(dat, "r", probabilities)
-
-    lines += convert_user_fractures(dat)
 
     return "\n".join(lines) + "\n"
 
@@ -453,7 +578,14 @@ def main() -> int:
     toml_path = Path(sys.argv[2])
     mesh_path = toml_path.with_suffix(".vtu")
 
-    toml_path.write_text(convert(dat, mesh_path.name))
+    user_fractures = convert_user_fractures(dat)
+    user_fractures_path = toml_path.with_name(toml_path.stem + "_user_fractures.vtp")
+    if user_fractures:
+        user_fractures_path.write_text(polygons_file(user_fractures))
+
+    toml_path.write_text(
+        convert(dat, mesh_path.name, user_fractures_path.name if user_fractures else None)
+    )
     mesh_path.write_text(box_mesh([float(length) for length in dat.list("domainSize")]))
     return 0
 

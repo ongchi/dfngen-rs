@@ -1,5 +1,6 @@
 seed = 12345
 h = 0.1
+user_fractures = "mesh_domain_user_fractures.vtp"
 
 [domain]
 mesh = "mesh_domain.vtu"
@@ -48,14 +49,3 @@ radius = { distribution = "constant", value = 1.5 }
 orientation = { theta = 45.0, phi = 15.0, kappa = 20.0 }
 
 # The center (17, 27, 35) is in no cell, but the fracture intersects the cells
-[[user_fracture]]
-number_of_points = 4
-radius = 4.0
-aspect_ratio = 1.0
-beta = 0.0
-translation = [17.0, 27.0, 35.0]
-normal = [0.0, 0.0, 1.0]
-
-# This fracture intersects no cell. It is rejected.
-[[user_fracture]]
-vertices = [[17.0, 27.0, 32.0], [19.0, 27.0, 32.0], [19.0, 29.0, 32.0], [17.0, 29.0, 32.0]]

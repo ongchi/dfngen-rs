@@ -1,5 +1,6 @@
 seed = 12345
 h = 0.1
+user_fractures = "all_input_options_user_fractures.vtp"
 
 [domain]
 mesh = "all_input_options.vtu"
@@ -52,44 +53,3 @@ aspect_ratio = 1.5
 region = 0
 radius = { distribution = "log_normal", log_mean = 0.8465735902799727, sd = 0.4, min = 1.4142135623730951, max = 5.656854249492381, sampling = "inverse_cdf" }
 orientation = { dip = 45.0, strike = 90.0, kappa = 10.0 }
-
-[[user_fracture]]
-vertices = [
-    [-3.0, -2.0, -3.0],
-    [3.0, -2.0, -3.0],
-    [3.5, -2.0, 0.0],
-    [0.0, -2.0, 3.0],
-    [-3.5, -2.0, 0.0],
-]
-
-[[user_fracture]]
-number_of_points = 8
-radius = 2.0
-aspect_ratio = 1.0
-beta = 0.0
-translation = [1.0, 1.0, -2.0]
-trend_plunge = [120.0, 35.0]
-
-[[user_fracture]]
-number_of_points = 12
-radius = 1.5
-aspect_ratio = 2.0
-beta = 30.0
-translation = [-2.0, 0.0, 2.0]
-trend_plunge = [10.0, 80.0]
-
-[[user_fracture]]
-number_of_points = 4
-radius = 4.242640687119286
-aspect_ratio = 1.0
-beta = 15.0
-translation = [0.0, 0.0, 0.0]
-dip_strike = [40.0, 110.0]
-
-[[user_fracture]]
-number_of_points = 4
-radius = 2.8284271247461903
-aspect_ratio = 1.5
-beta = 0.0
-translation = [2.0, -1.0, 1.0]
-dip_strike = [65.0, 25.0]

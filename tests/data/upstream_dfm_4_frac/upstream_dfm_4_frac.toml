@@ -1,5 +1,6 @@
 seed = 1
 h = 0.1
+user_fractures = "upstream_dfm_4_frac_user_fractures.vtp"
 
 [domain]
 mesh = "upstream_dfm_4_frac.vtu"
@@ -26,35 +27,3 @@ keep_isolated_fractures = false
 [output]
 print_reject_reasons = false
 rejected_fractures = false
-
-[[user_fracture]]
-number_of_points = 4
-radius = 0.848528137423857
-aspect_ratio = 1.0
-beta = 0.0
-translation = [-0.4, 0.0, 0.0]
-normal = [0.0, 0.0, 1.0]
-
-[[user_fracture]]
-number_of_points = 4
-radius = 1.4142135623730951
-aspect_ratio = 0.65
-beta = 0.0
-translation = [0.0, 0.0, 0.0]
-normal = [1.0, 0.0, 0.0]
-
-[[user_fracture]]
-number_of_points = 4
-radius = 0.848528137423857
-aspect_ratio = 1.0
-beta = 0.0
-translation = [0.4, 0.0, 0.2]
-normal = [0.0, 0.0, 1.0]
-
-[[user_fracture]]
-number_of_points = 4
-radius = 0.848528137423857
-aspect_ratio = 1.0
-beta = 0.0
-translation = [0.4, 0.0, -0.2]
-normal = [0.0, 0.0, 1.0]

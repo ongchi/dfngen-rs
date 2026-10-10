@@ -193,7 +193,7 @@ fn split_cell_into_tetrahedra(
     Ok(tetrahedra)
 }
 
-fn find_child<'a, 'input>(
+pub(super) fn find_child<'a, 'input>(
     parent: Node<'a, 'input>,
     tag_name: &str,
 ) -> Result<Node<'a, 'input>, String> {
@@ -207,7 +207,7 @@ fn find_child<'a, 'input>(
         ))
 }
 
-fn find_data_array<'a, 'input>(
+pub(super) fn find_data_array<'a, 'input>(
     parent: Node<'a, 'input>,
     name: &str,
 ) -> Result<Node<'a, 'input>, String> {
@@ -222,7 +222,7 @@ fn find_data_array<'a, 'input>(
 }
 
 /// Reads the numbers of an ASCII `DataArray` element.
-fn read_values<T: FromStr>(data_array: Node) -> Result<Vec<T>, String> {
+pub(super) fn read_values<T: FromStr>(data_array: Node) -> Result<Vec<T>, String> {
     let name = data_array.attribute("Name").unwrap_or("Points");
     let format = data_array.attribute("format").unwrap_or("ascii");
 
