@@ -118,7 +118,6 @@ pub fn dry_run(
         frac_families.families[family_index].add_area_to_p32(
             new_poly.area,
             dom_vol,
-            &input.layer_volumes,
             &input.region_volumes,
         );
 

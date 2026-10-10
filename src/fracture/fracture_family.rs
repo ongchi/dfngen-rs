@@ -1,43 +1,17 @@
 use std::{cell::RefCell, rc::Rc};
 
-use parry3d_f64::bounding_volume::Aabb;
 use parry3d_f64::na::Vector3;
 use rand::Rng;
 use rand_distr::Uniform;
 use rand_mt::Mt64;
 use tracing::error;
 
-use crate::distribution::generating_points::random_position;
 use crate::distribution::Fisher;
 use crate::domain_mesh::DomainMesh;
 use crate::error::DfngenError;
 use crate::structures::RadiusDistribution;
 
 use super::poly::Poly;
-
-/// Where the centers of the fractures of a family are sampled
-pub enum PositionSampler {
-    /// Uniform in a box
-    Box(Aabb),
-    /// Uniform in the cells of a region of the domain mesh.
-    /// `region_id` 0 means the cells of all regions.
-    Mesh {
-        mesh: Rc<DomainMesh>,
-        region_id: usize,
-    },
-}
-
-impl PositionSampler {
-    pub fn sample(&self, generator: Rc<RefCell<Mt64>>) -> Vector3<f64> {
-        match self {
-            Self::Box(boundary) => random_position(*boundary, generator),
-            Self::Mesh { mesh, region_id } => {
-                mesh.sample_point(*region_id, &mut *generator.borrow_mut())
-                    .coords
-            }
-        }
-    }
-}
 
 /// FractureFamily holds the variables of one stochastic family of the input file.
 pub struct FractureFamily {
@@ -54,12 +28,8 @@ pub struct FractureFamily {
     /// Initial list of fracture/polygon radii, sorted largest to smallest.
     pub radii_list: Vec<f64>,
 
-    /// Layer the family belongs to. 0 is entire domain, greater than 0 is a layer.
-    /// e.g. 2 would be the second layer listed in the input file under "layers:".
-    pub layer_id: usize,
-
-    /// Region the family belongs to. 0 is entire domain, greater than 0 is a region.
-    /// e.g. 2 would be the second region listed in the input file under "regions:".
+    /// Region the family belongs to. 0 is entire domain, greater than 0 is
+    /// the position of the region in `DomainMesh::regions` plus 1.
     pub region_id: usize,
 
     /// Aspect ratio for family.
@@ -81,7 +51,8 @@ pub struct FractureFamily {
 
     pub orientation: Fisher,
 
-    pub position_sampler: PositionSampler,
+    /// The fracture centers are sampled in the cells of the family's region.
+    pub domain_mesh: Rc<DomainMesh>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -93,23 +64,22 @@ pub enum RadiusOption {
 
 impl FractureFamily {
     /// Adds the area of an accepted polygon to the family's current P32.
-    /// The volume is that of the family's layer or region, or of the whole domain.
-    pub fn add_area_to_p32(
-        &mut self,
-        area: f64,
-        domain_volume: f64,
-        layer_volumes: &[f64],
-        region_volumes: &[f64],
-    ) {
-        let volume = if self.layer_id > 0 {
-            layer_volumes[self.layer_id - 1]
-        } else if self.region_id > 0 {
+    /// The volume is that of the family's region, or of the whole domain.
+    pub fn add_area_to_p32(&mut self, area: f64, domain_volume: f64, region_volumes: &[f64]) {
+        let volume = if self.region_id > 0 {
             region_volumes[self.region_id - 1]
         } else {
             domain_volume
         };
 
         self.current_p32 += area * 2. / volume;
+    }
+
+    /// Uniform random position in the cells of the family's region
+    pub fn sample_position(&self, generator: Rc<RefCell<Mt64>>) -> Vector3<f64> {
+        self.domain_mesh
+            .sample_point(self.region_id, &mut *generator.borrow_mut())
+            .coords
     }
 
     pub fn normal_vector(&self, rng: Rc<RefCell<Mt64>>) -> Vector3<f64> {
@@ -173,7 +143,7 @@ impl FractureFamily {
         new_poly.normal = norm;
 
         // Translate - will also set translation vector in poly structure
-        let position = self.position_sampler.sample(generator.clone());
+        let position = self.sample_position(generator.clone());
         new_poly.translate(position);
 
         new_poly
@@ -181,7 +151,7 @@ impl FractureFamily {
 }
 
 #[derive(Default)]
-pub struct FractureFamilyBuilder<'a> {
+pub struct FractureFamilyBuilder {
     id: Option<usize>,
     number_of_points: Option<usize>,
     radius: Option<RadiusDistribution>,
@@ -189,16 +159,11 @@ pub struct FractureFamilyBuilder<'a> {
     aspect_ratio: Option<f64>,
     beta: Option<f64>,
     p32_target: Option<f64>,
-    layer_id: Option<usize>,
     region_id: Option<usize>,
-    layers: Option<&'a [f64]>,
-    regions: Option<&'a [f64]>,
-    domain_size: Option<&'a Vector3<f64>>,
-    domain_size_inc: Option<&'a Vector3<f64>>,
     domain_mesh: Option<Rc<DomainMesh>>,
 }
 
-impl<'a> FractureFamilyBuilder<'a> {
+impl FractureFamilyBuilder {
     pub fn id(&mut self, id: usize) -> &mut Self {
         self.id = Some(id);
         self
@@ -234,94 +199,18 @@ impl<'a> FractureFamilyBuilder<'a> {
         self
     }
 
-    pub fn layer_id(&mut self, layer: usize) -> &mut Self {
-        self.layer_id = Some(layer);
-        self
-    }
-
     pub fn region_id(&mut self, region: usize) -> &mut Self {
         self.region_id = Some(region);
         self
     }
 
-    pub fn layers(&mut self, layers: &'a [f64]) -> &mut Self {
-        self.layers = Some(layers);
-        self
-    }
-
-    pub fn regions(&mut self, regions: &'a [f64]) -> &mut Self {
-        self.regions = Some(regions);
-        self
-    }
-
-    pub fn domain_size(&mut self, domain_size: &'a Vector3<f64>) -> &mut Self {
-        self.domain_size = Some(domain_size);
-        self
-    }
-
-    pub fn domain_size_increase(&mut self, domain_size_inc: &'a Vector3<f64>) -> &mut Self {
-        self.domain_size_inc = Some(domain_size_inc);
-        self
-    }
-
-    /// With a domain mesh, the fracture centers are sampled in its cells.
-    pub fn domain_mesh(&mut self, domain_mesh: Option<Rc<DomainMesh>>) -> &mut Self {
-        self.domain_mesh = domain_mesh;
+    /// The fracture centers are sampled in the cells of the domain mesh.
+    pub fn domain_mesh(&mut self, domain_mesh: Rc<DomainMesh>) -> &mut Self {
+        self.domain_mesh = Some(domain_mesh);
         self
     }
 
     pub fn build(&mut self) -> Result<FractureFamily, String> {
-        let layers = self.layers.ok_or("layers is required".to_string())?;
-        let regions = self.regions.ok_or("regions is required".to_string())?;
-        let layer_id = self.layer_id.ok_or("layer_id is required".to_string())?;
-        let region_id = self.region_id.ok_or("region_id is required".to_string())?;
-
-        let domain_size = self
-            .domain_size
-            .ok_or("domain size is required".to_string())?;
-        let domain_size_increase = self
-            .domain_size_inc
-            .ok_or("domain size increase is required".to_string())?;
-
-        let (mins, maxs) = if layer_id == 0 && region_id == 0 {
-            // The family layer is the whole domain
-            let mins = (-domain_size - domain_size_increase) / 2.;
-            let maxs = (domain_size + domain_size_increase) / 2.;
-            (mins, maxs)
-        } else if layer_id > 0 && region_id == 0 {
-            // Family belongs to a certain layer, frac_fam.layer is > zero
-            // Layers start at 1, but the array of layers start at 0, hence
-            // the subtraction by 1
-            // Layer 0 is reservered to be the entire domain
-            let layer_idx = (layer_id - 1) * 2;
-            let _mins = (-domain_size - domain_size_increase) / 2.;
-            let _maxs = (domain_size + domain_size_increase) / 2.;
-            // Layers only apply to z coordinates
-            let mins = Vector3::new(_mins.x, _mins.y, layers[layer_idx]);
-            let maxs = Vector3::new(_maxs.x, _maxs.y, layers[layer_idx + 1]);
-            (mins, maxs)
-        } else if layer_id == 0 && region_id > 0 {
-            let region_idx = (region_id - 1) * 6;
-            let mins = Vector3::new(
-                regions[region_idx],
-                regions[region_idx + 2],
-                regions[region_idx + 4],
-            );
-            let maxs = Vector3::new(
-                regions[region_idx + 1],
-                regions[region_idx + 3],
-                regions[region_idx + 5],
-            );
-            (mins, maxs)
-        } else {
-            return Err("Layer and Region both defined for this Family.".to_string());
-        };
-
-        let position_sampler = match self.domain_mesh.take() {
-            Some(mesh) => PositionSampler::Mesh { mesh, region_id },
-            None => PositionSampler::Box(Aabb::new(mins.into(), maxs.into())),
-        };
-
         Ok(FractureFamily {
             id: self.id.take().ok_or("id is required".to_string())?,
             number_of_points: self
@@ -330,8 +219,7 @@ impl<'a> FractureFamilyBuilder<'a> {
             radius: self.radius.take().ok_or("radius is required".to_string())?,
             radii_idx: 0,
             radii_list: Vec::new(),
-            layer_id,
-            region_id,
+            region_id: self.region_id.ok_or("region_id is required".to_string())?,
             aspect_ratio: self
                 .aspect_ratio
                 .ok_or("aspect ratio is required".to_string())?,
@@ -343,7 +231,10 @@ impl<'a> FractureFamilyBuilder<'a> {
                 .orientation
                 .take()
                 .ok_or("orientation is required".to_string())?,
-            position_sampler,
+            domain_mesh: self
+                .domain_mesh
+                .take()
+                .ok_or("domain mesh is required".to_string())?,
         })
     }
 }

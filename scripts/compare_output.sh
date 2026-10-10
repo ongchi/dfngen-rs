@@ -30,8 +30,9 @@ mkdir -p "$output_dir"
 cd "$repo_root/tests/data"
 
 status=0
-for input_file in *.toml; do
-    case_name="${input_file%.toml}"
+# Each case is a subfolder with <case>.toml and its domain mesh
+for input_file in */*.toml; do
+    case_name="$(basename "$input_file" .toml)"
     rm -rf "${output_dir:?}/$case_name"
     # Keep the console log too, without the leading timestamp of each line
     # and without the run-specific output path.

@@ -2,8 +2,7 @@ seed = 6969420
 h = 0.1
 
 [domain]
-size = [10.0, 10.0, 10.0]
-size_increase = [0.0, 0.0, 0.0]
+mesh = "upstream_constant.vtu"
 truncate_fractures = true
 
 [generation]
@@ -33,7 +32,6 @@ rejected_fractures = false
 number_of_points = 4
 probability = 0.25
 aspect_ratio = 1.0
-layer = 0
 region = 0
 beta = 0.0
 radius = { distribution = "constant", value = 2.8284271247461903 }
@@ -43,7 +41,6 @@ orientation = { trend = 0.0, plunge = 0.0, kappa = 20.0 }
 number_of_points = 4
 probability = 0.25
 aspect_ratio = 1.0
-layer = 0
 region = 0
 beta = 0.0
 radius = { distribution = "constant", value = 2.8284271247461903 }
@@ -53,7 +50,6 @@ orientation = { trend = 35.0, plunge = 90.0, kappa = 20.0 }
 number_of_points = 4
 probability = 0.5
 aspect_ratio = 1.0
-layer = 0
 region = 0
 beta = 0.0
 radius = { distribution = "constant", value = 2.8284271247461903 }

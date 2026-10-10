@@ -3,9 +3,15 @@
 
 Usage: convert_dat_to_toml.py <input.dat> <output.toml>
 
-The user-defined fracture files and the polygon boundary file to which the
-`.dat` file refers are read too. Their content goes into the TOML file. A
-relative path in the `.dat` file is relative to the folder of the `.dat` file.
+The user-defined fracture files to which the `.dat` file refers are read too.
+Their content goes into the TOML file. A relative path in the `.dat` file is
+relative to the folder of the `.dat` file.
+
+The domain of dfngen-rs is a mesh. The script writes the box of `domainSize`
+as a mesh of one hexahedron to `<output>.vtu`, next to the TOML file. Layers,
+regions and a polygon boundary have no equivalent, and the script stops with
+an error if the `.dat` file uses them. `domainSizeIncrease` is dropped: the
+fracture centers of dfngen-rs are always in the domain.
 
 Keys which dfngen-rs does not use are dropped (`domainCenter`, `framOn`,
 `ecpmOutput`, `nFracFam`, `minimum_fracture_size`).
@@ -118,7 +124,56 @@ def angles(values: list[str], is_degree: bool) -> str:
     return "[" + ", ".join(angle(value, is_degree) for value in values) + "]"
 
 
-def convert_general_options(dat: DatFile) -> list[str]:
+def stop_if_not_convertible(dat: DatFile) -> None:
+    """Stops if the file uses a domain option which a box mesh cannot give."""
+    for label, description in (
+        ("numOfLayers", "layers"),
+        ("numOfRegions", "regions"),
+        ("polygonBoundaryFlag", "a polygon boundary"),
+    ):
+        if int(dat.word(label)) != 0:
+            sys.exit(f"{dat.path}: {description} cannot be converted ({label} is not 0)")
+
+
+def box_mesh(size: list[float]) -> str:
+    """An ASCII `.vtu` file with one hexahedron: a box with its center at the origin."""
+    half_x, half_y, half_z = (length / 2.0 for length in size)
+    points = [
+        f"{x!r} {y!r} {z!r}"
+        for z in (-half_z, half_z)
+        for x, y in ((-half_x, -half_y), (half_x, -half_y), (half_x, half_y), (-half_x, half_y))
+    ]
+    return "\n".join(
+        [
+            '<?xml version="1.0"?>',
+            '<VTKFile type="UnstructuredGrid" version="1.0" byte_order="LittleEndian">',
+            "<UnstructuredGrid>",
+            '<Piece NumberOfPoints="8" NumberOfCells="1">',
+            "<Points>",
+            '<DataArray type="Float64" Name="Points" NumberOfComponents="3" format="ascii">',
+            *points,
+            "</DataArray>",
+            "</Points>",
+            "<Cells>",
+            '<DataArray type="Int64" Name="connectivity" format="ascii">',
+            "0 1 2 3 4 5 6 7",
+            "</DataArray>",
+            '<DataArray type="Int64" Name="offsets" format="ascii">',
+            "8",
+            "</DataArray>",
+            '<DataArray type="UInt8" Name="types" format="ascii">',
+            "12",
+            "</DataArray>",
+            "</Cells>",
+            "</Piece>",
+            "</UnstructuredGrid>",
+            "</VTKFile>",
+            "",
+        ]
+    )
+
+
+def convert_general_options(dat: DatFile, mesh_file_name: str) -> list[str]:
     stop_condition = int(dat.word("stopCondition"))
     if stop_condition not in (0, 1):
         sys.exit(f"{dat.path}: stopCondition must be 0 or 1")
@@ -128,24 +183,9 @@ def convert_general_options(dat: DatFile) -> list[str]:
         f"h = {number(dat.word('h'))}",
         "",
         "[domain]",
-        f"size = {numbers(dat.list('domainSize'))}",
-        f"size_increase = {numbers(dat.list('domainSizeIncrease'))}",
+        f'mesh = "{mesh_file_name}"',
         "truncate_fractures = true",
     ]
-
-    layer_count = int(dat.word("numOfLayers"))
-    if layer_count > 0:
-        layers = flatten_groups(dat, "layers", layer_count, 2)
-        lines.append(f"layers = [{', '.join(numbers(layer) for layer in layers)}]")
-
-    region_count = int(dat.word("numOfRegions"))
-    if region_count > 0:
-        regions = flatten_groups(dat, "regions", region_count, 6)
-        lines.append(f"regions = [{', '.join(numbers(region) for region in regions)}]")
-
-    if dat.flag("polygonBoundaryFlag"):
-        vertices = read_polygon_boundary(resolve(dat, dat.word("polygonBoundaryFile")))
-        lines.append(f"polygon_boundary = [{', '.join(numbers(vertex) for vertex in vertices)}]")
 
     lines += ["", "[generation]"]
     if stop_condition == 0:
@@ -175,35 +215,6 @@ def convert_general_options(dat: DatFile) -> list[str]:
         f"rejected_fractures = {boolean(dat.flag('outputAllRadii'))}",
     ]
     return lines
-
-
-def flatten_groups(dat: DatFile, label: str, group_count: int, group_size: int) -> list[list[str]]:
-    """Reads `group_count` groups of `group_size` values.
-
-    pydfnworks writes one bracketed list for each group. One list with all
-    values is also accepted.
-    """
-    values: list[str] = []
-    text = dat.rest(label)
-    position = 0
-    while len(values) < group_count * group_size:
-        match = BRACKET_GROUP.match(text, skip_whitespace(text, position))
-        if match is None:
-            break
-        values += [value.strip() for value in match.group(1).split(",") if value.strip()]
-        position = match.end()
-
-    if len(values) != group_count * group_size:
-        sys.exit(
-            f"{dat.path}: expected {group_count} groups of {group_size} values for {label}"
-        )
-    return [values[i : i + group_size] for i in range(0, len(values), group_size)]
-
-
-def read_polygon_boundary(path: Path) -> list[list[str]]:
-    rows = [line.split() for line in path.read_text().splitlines()]
-    vertex_count = int(rows[0][0])
-    return [row[:2] for row in rows[1 : 1 + vertex_count]]
 
 
 def resolve(dat: DatFile, file_name: str) -> Path:
@@ -263,8 +274,7 @@ def convert_families(dat: DatFile, prefix: str, probabilities: list[str]) -> lis
             f"number_of_points = {point_count}",
             f"probability = {number(probabilities.pop(0))}",
             f"aspect_ratio = {number(values('aspect')[i])}",
-            f"layer = {int(values('Layer')[i])}",
-            f"region = {int(values('Region')[i])}",
+            "region = 0",
         ]
         if has_beta[i]:
             lines.append(f"beta = {angle(next(betas), is_degree)}")
@@ -417,15 +427,15 @@ def convert_user_fractures(dat: DatFile) -> list[str]:
     return polygons + ellipses + rectangles
 
 
-def convert(dat_path: Path) -> str:
-    dat = DatFile(dat_path)
+def convert(dat: DatFile, mesh_file_name: str) -> str:
+    stop_if_not_convertible(dat)
 
-    lines = convert_general_options(dat)
+    lines = convert_general_options(dat, mesh_file_name)
 
     family_count = int(dat.word("nFamEll")) + int(dat.word("nFamRect"))
     probabilities = dat.list("famProb") if family_count > 0 else []
     if len(probabilities) != family_count:
-        sys.exit(f"{dat_path}: famProb must have {family_count} values")
+        sys.exit(f"{dat.path}: famProb must have {family_count} values")
     lines += convert_families(dat, "e", probabilities)
     lines += convert_families(dat, "r", probabilities)
 
@@ -439,7 +449,12 @@ def main() -> int:
         print(__doc__, file=sys.stderr)
         return 2
 
-    Path(sys.argv[2]).write_text(convert(Path(sys.argv[1])))
+    dat = DatFile(Path(sys.argv[1]))
+    toml_path = Path(sys.argv[2])
+    mesh_path = toml_path.with_suffix(".vtu")
+
+    toml_path.write_text(convert(dat, mesh_path.name))
+    mesh_path.write_text(box_mesh([float(length) for length in dat.list("domainSize")]))
     return 0
 
 

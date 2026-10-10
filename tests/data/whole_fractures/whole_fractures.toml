@@ -2,8 +2,7 @@ seed = 1
 h = 0.1
 
 [domain]
-size = [10.0, 10.0, 10.0]
-size_increase = [1.0, 1.0, 1.0]
+mesh = "whole_fractures.vtu"
 truncate_fractures = false
 
 [generation]
@@ -33,7 +32,6 @@ rejected_fractures = false
 number_of_points = 8
 probability = 0.4
 aspect_ratio = 1.0
-layer = 0
 region = 0
 radius = { distribution = "truncated_power_law", alpha = 2.5, min = 1.0, max = 5.0 }
 orientation = { theta = 0.0, phi = 0.0, kappa = 8.0 }
@@ -42,7 +40,6 @@ orientation = { theta = 0.0, phi = 0.0, kappa = 8.0 }
 number_of_points = 12
 probability = 0.3
 aspect_ratio = 2.0
-layer = 0
 region = 0
 beta = 30.0
 radius = { distribution = "constant", value = 2.0 }
@@ -52,7 +49,6 @@ orientation = { theta = 45.0, phi = 15.0, kappa = 20.0 }
 number_of_points = 4
 probability = 0.3
 aspect_ratio = 1.5
-layer = 0
 region = 0
 radius = { distribution = "log_normal", log_mean = 0.8465735902799727, sd = 0.4, min = 1.4142135623730951, max = 5.656854249492381 }
 orientation = { theta = 70.0, phi = 60.0, kappa = 10.0 }

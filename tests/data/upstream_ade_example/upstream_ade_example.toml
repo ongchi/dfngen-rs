@@ -1,13 +1,13 @@
-seed = 2
+seed = 1
 h = 0.1
 
 [domain]
-size = [15.0, 15.0, 15.0]
-size_increase = [0.5, 0.5, 0.5]
+mesh = "upstream_ade_example.vtu"
 truncate_fractures = true
 
 [generation]
-stop_condition = "p32"
+stop_condition = "n_poly"
+n_poly = 20
 radii_list_increase = 0.1
 rejects_per_fracture = 10
 force_large_fractures = false
@@ -29,11 +29,9 @@ print_reject_reasons = false
 rejected_fractures = false
 
 [[family]]
-number_of_points = 8
+number_of_points = 4
 probability = 1.0
 aspect_ratio = 1.0
-layer = 0
 region = 0
-p32_target = 1.0
-radius = { distribution = "truncated_power_law", alpha = 1.8, min = 1.0, max = 10.0 }
+radius = { distribution = "exponential", mean = 4.77014234588445, min = 1.4142135623730951, max = 14.142135623730951 }
 orientation = { theta = 0.0, phi = 0.0, kappa = 1.0 }

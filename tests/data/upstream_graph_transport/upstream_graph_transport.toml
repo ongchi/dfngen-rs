@@ -2,8 +2,7 @@ seed = 1
 h = 1.0
 
 [domain]
-size = [400.0, 50.0, 50.0]
-size_increase = [5.0, 5.0, 5.0]
+mesh = "upstream_graph_transport.vtu"
 truncate_fractures = true
 
 [generation]
@@ -32,7 +31,6 @@ rejected_fractures = false
 number_of_points = 8
 probability = 0.3333333333333333
 aspect_ratio = 1.0
-layer = 0
 region = 0
 p32_target = 0.25
 radius = { distribution = "truncated_power_law", alpha = 1.8, min = 10.0, max = 20.0 }
@@ -42,7 +40,6 @@ orientation = { theta = 0.0, phi = 0.0, kappa = 10.0 }
 number_of_points = 8
 probability = 0.3333333333333333
 aspect_ratio = 1.0
-layer = 0
 region = 0
 p32_target = 0.25
 radius = { distribution = "truncated_power_law", alpha = 1.8, min = 10.0, max = 20.0 }
@@ -52,7 +49,6 @@ orientation = { theta = 0.0, phi = 270.0, kappa = 10.0 }
 number_of_points = 8
 probability = 0.3333333333333333
 aspect_ratio = 1.0
-layer = 0
 region = 0
 p32_target = 0.25
 radius = { distribution = "truncated_power_law", alpha = 1.8, min = 10.0, max = 20.0 }

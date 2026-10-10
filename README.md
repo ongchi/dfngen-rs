@@ -10,21 +10,17 @@ cargo run --release -- <input_file.toml> <output_folder>
 
 ## Input file
 
-The input is one TOML file. `tests/data` contains examples. All keys are
-necessary, except those marked as optional below. An unknown key is an error.
+The input is one TOML file and one mesh file for the domain. Each subfolder of
+`tests/data` is an example. All keys are necessary, except those marked as
+optional below. An unknown key is an error.
 
 ```toml
 seed = 12345                       # 0 = use the system time
 h = 0.1                            # minimum feature size (FRAM)
 
 [domain]
-size = [10.0, 10.0, 10.0]          # x, y, z; the domain center is the origin
-# mesh = "domain.vtu"              # in place of `size`: a mesh gives the domain (see below)
-size_increase = [1.0, 1.0, 1.0]    # larger volume for the fracture centers
+mesh = "domain.vtu"                # the mesh file which gives the domain (see below)
 truncate_fractures = true          # false = keep each fracture whole (see below)
-layers = [[-5.0, 0.0], [0.0, 5.0]]             # optional; -z, +z of each layer
-regions = [[-3.0, 3.0, -3.0, 3.0, -3.0, 3.0]]  # optional; -x, +x, -y, +y, -z, +z
-polygon_boundary = [[-4.0, -4.0], [4.0, -4.0], [0.0, 4.0]]  # optional; x, y of each vertex
 
 [generation]
 stop_condition = "n_poly"          # or "p32"
@@ -54,8 +50,7 @@ rejected_fractures = false
 number_of_points = 8               # 3 or more; 4 gives a rectangle
 probability = 0.4
 aspect_ratio = 1.0
-layer = 0                          # 0 = whole domain, 1 = first layer
-region = 0                         # 0 = whole domain, 1 = first region
+region = 0                         # 0 = whole domain, N = the cells with the region N
 beta = 30.0                        # optional; without it the rotation is uniform
 p32_target = 0.5                   # necessary only for stop_condition "p32"
 radius = { distribution = "truncated_power_law", alpha = 2.5, min = 1.0, max = 5.0 }
@@ -102,11 +97,12 @@ give different networks for the same seed.
 - `truncated` and `boundary_face_count` are 0, and `intersection_list.dat` has no
   line between a fracture and a domain face.
 
-### Mesh as the domain
+### Domain mesh
 
 `domain.mesh = "domain.vtu"` gives the domain as a VTK UnstructuredGrid file.
-A relative path starts at the folder of the input file. Use `mesh` or `size`,
-not the two together. `tests/data/mesh_domain.toml` is an example.
+A relative path starts at the folder of the input file. The mesh is the only
+definition of the domain. `tests/data/mesh_domain` is an example, and
+`tests/data/stochastic_npoly` has a box domain (a mesh of one hexahedron).
 
 - The file must be an ASCII `.vtu` file. In ParaView, select the data mode
   "Ascii" in the save dialog. In PyVista, use `mesh.save("domain.vtu", binary=False)`.
@@ -115,16 +111,14 @@ not the two together. `tests/data/mesh_domain.toml` is an example.
 - The bounding box of the mesh is the box domain: `truncate_fractures` and
   `clusters.boundary_faces` use this box. The mesh can be at any position.
 - The center of each stochastic fracture is in a cell of the mesh. The centers
-  are sampled in the cells, uniform by volume, thus `size_increase` has no
-  effect on the stochastic fractures. A fracture with its center in the mesh
-  can have a part outside the mesh; the fracture is cut only at the bounding
-  box.
+  are sampled in the cells, uniform by volume. A fracture with its center in
+  the mesh can have a part outside the mesh; the fracture is cut only at the
+  bounding box.
 - A user-defined fracture is rejected only if it intersects no cell. Its center
   can be outside the mesh.
 - The volume for P32 is the sum of the cell volumes.
 - All coordinates in the input file and in the output files are the coordinates
   of the mesh file.
-- `layers`, `regions` and `polygon_boundary` cannot be used with `mesh`.
 
 Regions of the mesh: the cell data array `region` (optional) gives one integer
 of 0 or more for each cell. `region = N` of a family (N > 0) puts the fracture
@@ -161,11 +155,15 @@ order of the file. The number of a family is its position in the file.
 ### dfnWorks input files
 
 `scripts/convert_dat_to_toml.py <input.dat> <output.toml>` converts a dfnGen
-input file of pydfnworks, with its user-defined fracture files and its polygon
-boundary file, to this format. A rectangle of dfnGen becomes a polygon with 4
+input file of pydfnworks, with its user-defined fracture files, to this format.
+It writes the box domain of dfnGen as a mesh of one hexahedron to
+`<output>.vtu`. It stops with an error if the dfnGen file has layers, regions
+or a polygon boundary. A rectangle of dfnGen becomes a polygon with 4
 points, and its radius values are multiplied by sqrt(2) (in dfnGen, the radius
 of a rectangle is half the side). Angles in radians are changed to degrees. The ellipses do not have the same vertices
-as in dfnGen, so the network is not the same as that of dfnGen for the same seed.
+as in dfnGen, and the fracture centers are always in the domain (dfnGen can
+put them in a larger box, `domainSizeIncrease`). Thus the network is not the
+same as that of dfnGen for the same seed.
 
 ## Output files
 
@@ -260,5 +258,4 @@ then has no valid polygon.
 
 `fractures.vtp`, `fractures_removed.vtp` and `fractures_rejected.vtp` together
 do not have all generated fractures. An accepted fracture which is removed later because it
-is smaller than `remove_fractures_less_than`, or outside the polygon boundary,
-is in none of these files.
+is smaller than `remove_fractures_less_than` is in none of these files.

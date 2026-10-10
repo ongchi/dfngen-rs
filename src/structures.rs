@@ -1,8 +1,7 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use parry3d_f64::na::{Point2, Point3, Vector3};
-use parry3d_f64::utils::point_in_poly2d;
+use parry3d_f64::na::{Point3, Vector3};
 use rand::Rng;
 use rand_mt::Mt64;
 use tracing::{error, info, warn};
@@ -384,10 +383,7 @@ impl DFNGen {
             opts.eps,
             &opts.domain_size,
             opts.domain_boundary_mode,
-        ) || opts
-            .domain_mesh
-            .as_ref()
-            .is_some_and(|mesh| !mesh.intersects_polygon(&new_poly.vertices))
+        ) || !opts.domain_mesh.intersects_polygon(&new_poly.vertices)
         {
             // Poly completely outside domain, or it intersects no cell of the domain mesh
             self.pstats.rejection_reasons.outside += 1;
@@ -471,26 +467,6 @@ impl DFNGen {
         self.rebuild_with(opts, |poly| poly.xradius >= min_size);
     }
 
-    /// Remove Fractures Outside 2D polygon domain
-    ///
-    /// Function is designed to be used AFTER DFN generation.
-    /// A fracture is kept if its center is inside the polygon.
-    /// Must be executed before getCluster(), because it rebuilds the DFN.
-    ///
-    /// # Arguments
-    ///
-    /// * `domain_vertices` - Vertices of the 2D domain polygon
-    pub fn remove_fractures_beyond_domains(
-        &mut self,
-        opts: &PolyOptions,
-        domain_vertices: &[Point2<f64>],
-    ) {
-        self.rebuild_with(opts, |poly| {
-            let center = Point2::new(poly.translation.x, poly.translation.y);
-            point_in_poly2d(&center, domain_vertices)
-        });
-    }
-
     /// Rebuilds the DFN (intersections, triple points, cluster groups) from
     /// the accepted fractures for which `is_kept` is true.
     fn rebuild_with(&mut self, opts: &PolyOptions, is_kept: impl Fn(&Poly) -> bool) {
@@ -530,8 +506,8 @@ pub struct PolyOptions {
     pub eps: f64,
     pub domain_size: Vector3<f64>,
     pub domain_boundary_mode: DomainBoundaryMode,
-    /// The cells which make the domain, if the input file gives a mesh.
-    pub domain_mesh: Option<Rc<DomainMesh>>,
+    /// The cells which make the domain.
+    pub domain_mesh: Rc<DomainMesh>,
     pub r_fram: bool,
     pub disable_fram: bool,
     pub triple_intersections: bool,
@@ -578,16 +554,15 @@ mod tests {
         assert_samples_are_within_limits(RadiusDistribution::new_truncated_power_law(2.5, 1., 4.));
     }
 
-    fn poly_options(
-        keep_rejected_fractures: bool,
-        domain_mesh: Option<Rc<DomainMesh>>,
-    ) -> PolyOptions {
+    /// Options with the L-shaped mesh as the domain. The mesh has no cell
+    /// where x and y are positive.
+    fn poly_options(keep_rejected_fractures: bool) -> PolyOptions {
         PolyOptions {
             h: 0.1,
             eps: 1e-9,
             domain_size: Vector3::new(10., 10., 10.),
             domain_boundary_mode: DomainBoundaryMode::Truncate,
-            domain_mesh,
+            domain_mesh: Rc::new(l_shaped_mesh()),
             r_fram: false,
             disable_fram: false,
             triple_intersections: false,
@@ -597,7 +572,7 @@ mod tests {
 
     /// Inserts the same rectangle two times. FRAM rejects the second one.
     fn insert_two_equal_rectangles(keep_rejected_fractures: bool) -> DFNGen {
-        let opts = poly_options(keep_rejected_fractures, None);
+        let opts = poly_options(keep_rejected_fractures);
         let mut dfngen = DFNGen::new();
         dfngen.pstats.rejects_per_attempt.push(0);
 
@@ -613,7 +588,7 @@ mod tests {
     /// Inserts a horizontal square with sides of 2 into the L-shaped domain mesh.
     /// The mesh has no cell where x and y are positive.
     fn insert_square_into_l_shaped_mesh(center: [f64; 3]) -> DFNGen {
-        let opts = poly_options(false, Some(Rc::new(l_shaped_mesh())));
+        let opts = poly_options(false);
         let mut dfngen = DFNGen::new();
         dfngen.pstats.rejects_per_attempt.push(0);
 

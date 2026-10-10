@@ -153,16 +153,6 @@ fn main() -> Result<(), DfngenError> {
         );
     }
 
-    if !input.domain_vertices.is_empty() {
-        info!("Extracting fractures from a polygon boundary domain");
-        let size = dfngen.accepted_poly.len();
-        dfngen.remove_fractures_beyond_domains(&poly_opts, &input.domain_vertices);
-        info!(
-            "Removed {} fractures outside subdomain",
-            size - dfngen.accepted_poly.len()
-        );
-    }
-
     // Remove any isolated fractures and return
     // a list of polygon indices matching the users
     // boundaryFaces option. If input option
@@ -438,12 +428,7 @@ fn insert_stochastic_fractures(
                 new_poly.assign_area();
 
                 let family = &mut frac_fam_col.families[family_index];
-                family.add_area_to_p32(
-                    new_poly.area,
-                    dom_vol,
-                    &input.layer_volumes,
-                    &input.region_volumes,
-                );
+                family.add_area_to_p32(new_poly.area, dom_vol, &input.region_volumes);
 
                 // If the last inserted pologon met the p32 reqirement, set that familiy to no longer
                 // insert any more fractures. ajust the CDF and familiy probabilites to account for this
@@ -552,31 +537,14 @@ fn log_total_area_statistics(total_area: f64, fracture_count: usize, dom_vol: f6
     );
 }
 
-/// Logs the layer and the region a family belongs to.
+/// Logs the region a family belongs to.
 fn log_family_location(frac_fam: &FractureFamily, input: &Input) {
-    if frac_fam.layer_id > 0 {
-        let idx = (frac_fam.layer_id - 1) * 2;
-        info!("Layer: {}", frac_fam.layer_id);
-        info!(
-            "Layer {{-z, +z}}: {{{}, {}}}",
-            input.layers[idx],
-            input.layers[idx + 1]
-        );
-    } else {
-        info!("Layer: Whole Domain");
-    }
-
-    match (frac_fam.region_id, &input.domain_mesh) {
-        (0, _) => info!("Region: Whole Domain"),
-        (region_id, Some(mesh)) => info!(
+    match frac_fam.region_id {
+        0 => info!("Region: Whole Domain"),
+        region_id => info!(
             "Region: {} of the domain mesh",
-            mesh.regions()[region_id - 1].value
+            input.domain_mesh.regions()[region_id - 1].value
         ),
-        (region_id, None) => {
-            let idx = (region_id - 1) * 6;
-            info!("Region: {}", region_id);
-            info!("{{-x,+x,-y,+y,-z,+z}}: {:?}", &input.regions[idx..idx + 6]);
-        }
     }
 }
 

@@ -41,7 +41,7 @@ pub fn re_translate_poly(
         }
 
         // Translate to new position
-        let t = frac_fam.position_sampler.sample(generator.clone());
+        let t = frac_fam.sample_position(generator.clone());
         new_poly.translate(t);
     } else {
         // Poly was truncated, need to rebuild the polygon
@@ -82,7 +82,7 @@ pub fn re_translate_poly(
         new_poly.normal = normal_b;
         // Translate to new position
         // Translate() will also set translation vector in poly structure
-        let t = frac_fam.position_sampler.sample(generator.clone());
+        let t = frac_fam.sample_position(generator.clone());
 
         new_poly.translate(t);
     }

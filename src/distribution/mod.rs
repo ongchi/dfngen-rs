@@ -1,6 +1,5 @@
 pub mod exp;
 mod fisher;
-pub mod generating_points;
 pub mod log_norm;
 mod power_law;
 

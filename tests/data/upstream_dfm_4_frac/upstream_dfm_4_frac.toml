@@ -2,8 +2,7 @@ seed = 1
 h = 0.1
 
 [domain]
-size = [1.0, 1.0, 1.0]
-size_increase = [0.0, 0.0, 0.0]
+mesh = "upstream_dfm_4_frac.vtu"
 truncate_fractures = true
 
 [generation]

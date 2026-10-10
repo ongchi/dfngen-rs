@@ -1,9 +1,8 @@
-seed = 1
+seed = 2
 h = 0.1
 
 [domain]
-size = [25.0, 25.0, 25.0]
-size_increase = [0.5, 0.5, 0.5]
+mesh = "upstream_tpl.vtu"
 truncate_fractures = true
 
 [generation]
@@ -30,20 +29,9 @@ rejected_fractures = false
 
 [[family]]
 number_of_points = 8
-probability = 0.5
+probability = 1.0
 aspect_ratio = 1.0
-layer = 0
 region = 0
-p32_target = 0.5
-radius = { distribution = "truncated_power_law", alpha = 2.1, min = 1.0, max = 10.0 }
-orientation = { theta = 0.0, phi = 0.0, kappa = 0.1 }
-
-[[family]]
-number_of_points = 8
-probability = 0.5
-aspect_ratio = 1.0
-layer = 0
-region = 0
-p32_target = 0.5
-radius = { distribution = "truncated_power_law", alpha = 2.1, min = 1.0, max = 10.0 }
-orientation = { theta = 0.0, phi = 0.0, kappa = 0.1 }
+p32_target = 1.0
+radius = { distribution = "truncated_power_law", alpha = 1.8, min = 1.0, max = 10.0 }
+orientation = { theta = 0.0, phi = 0.0, kappa = 1.0 }

@@ -1,7 +1,7 @@
 use std::path::Path;
 use std::rc::Rc;
 
-use parry3d_f64::na::{Point2, Vector3};
+use parry3d_f64::na::Vector3;
 use serde::Deserialize;
 use tracing::{debug, info, warn};
 
@@ -28,7 +28,7 @@ pub enum StopCondition {
     P32,
 }
 
-#[derive(Default, Debug)]
+#[derive(Debug)]
 pub struct Input {
     /// DFN generation stop condition.
     pub stop_condition: StopCondition,
@@ -36,15 +36,15 @@ pub struct Input {
     /// Number of polygons to place in the DFN with the `NPoly` stop condition.
     pub n_poly: usize,
 
-    /// Domain size with dimension x*y*z for DFN, centered at the origin.
-    /// With a domain mesh, this is the size of its bounding box.
+    /// Size of the bounding box of the domain mesh. The generation has the
+    /// center of this box at the origin.
     pub domain_size: Vector3<f64>,
 
-    /// Volume of the domain. With a domain mesh, this is the sum of its cell volumes.
+    /// Volume of the domain: the sum of the cell volumes of the domain mesh.
     pub domain_volume: f64,
 
-    /// The cells which make the domain, if the input file gives a mesh.
-    pub domain_mesh: Option<Rc<DomainMesh>>,
+    /// The cells which make the domain.
+    pub domain_mesh: Rc<DomainMesh>,
 
     /// What to do with the part of a fracture which is outside the domain.
     pub domain_boundary_mode: DomainBoundaryMode,
@@ -132,25 +132,9 @@ pub struct Input {
     /// families (Set to 1 to ignore this feature)
     pub rejects_per_fracture: usize,
 
-    /// Array of layers:
-    /// e.g. {+z1, -z1, +z2, -z2, ... , +zn, -zn}
-    pub layers: Vec<f64>,
-
-    /// Array of volumes for each defined layer, in the same order
-    /// which layers were listed.
-    pub layer_volumes: Vec<f64>,
-
-    /// Array of regions:
-    /// e.g. {+z1, -z1, +z2, -z2, ... , +zn, -zn}
-    pub regions: Vec<f64>,
-
-    /// Array of volumes for each defined layer, in the same order
-    /// which regions were listed.
+    /// Volume of each region of the domain mesh, in the order of
+    /// `DomainMesh::regions`.
     pub region_volumes: Vec<f64>,
-
-    /// Vector of points defining the 2D boundary of the domain polygon.
-    /// Empty if the domain has no polygon boundary.
-    pub domain_vertices: Vec<Point2<f64>>,
 
     /// False - Use boundaryFaces option.
     /// True  - Ignore boundaryFaces option, keep all clusters
@@ -180,25 +164,11 @@ struct InputFile {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct DomainSection {
-    /// Necessary if there is no `mesh`
-    size: Option<[f64; 3]>,
-    /// Path of an ASCII `.vtu` file which gives the domain, in place of `size`.
+    /// Path of an ASCII `.vtu` file which gives the domain.
     /// A relative path starts at the folder of the input file.
-    mesh: Option<String>,
-    /// Increase of the domain size for the insertion of fracture centers.
-    /// Each side moves out by half of the value. Fractures are truncated to `size`.
-    size_increase: [f64; 3],
+    mesh: String,
     /// True: cut each fracture at the domain boundary. False: keep it whole.
     truncate_fractures: bool,
-    /// {-z, +z} of each layer
-    #[serde(default)]
-    layers: Vec<[f64; 2]>,
-    /// {-x, +x, -y, +y, -z, +z} of each region
-    #[serde(default)]
-    regions: Vec<[f64; 6]>,
-    /// {x, y} of each vertex of the domain polygon
-    #[serde(default)]
-    polygon_boundary: Vec<[f64; 2]>,
 }
 
 #[derive(Deserialize)]
@@ -242,7 +212,6 @@ struct FamilySection {
     number_of_points: usize,
     probability: f64,
     aspect_ratio: f64,
-    layer: usize,
     region: usize,
     beta: Option<f64>,
     p32_target: Option<f64>,
@@ -317,54 +286,15 @@ pub fn read_input(input_file: &str) -> Result<(Input, FractureFamilyCollection),
     let text = std::fs::read_to_string(input_file)
         .map_err(|e| invalid_input(format!("cannot read {}: {}", input_file, e)))?;
 
+    let file = parse_input_file(&text)?;
     let input_folder = Path::new(input_file).parent().unwrap_or(Path::new(""));
-
-    parse_input(&text, input_folder)
-}
-
-fn parse_input(
-    text: &str,
-    input_folder: &Path,
-) -> Result<(Input, FractureFamilyCollection), DfngenError> {
-    let file: InputFile = toml::from_str(text).map_err(|e| invalid_input(e.to_string()))?;
-
-    let domain_mesh = match &file.domain.mesh {
-        Some(mesh_file) => Some(read_domain_mesh(&input_folder.join(mesh_file))?),
-        None => None,
-    };
+    let domain_mesh = read_domain_mesh(&input_folder.join(&file.domain.mesh))?;
 
     build_input(file, domain_mesh)
 }
 
-/// The size, the center and the volume of the domain, from `domain.size` or
-/// from the mesh.
-fn build_domain_box(
-    domain: &DomainSection,
-    domain_mesh: Option<&DomainMesh>,
-) -> Result<(Vector3<f64>, Vector3<f64>, f64), String> {
-    match (domain.size, domain_mesh) {
-        (Some(size), None) => Ok((
-            Vector3::from(size),
-            Vector3::zeros(),
-            size[0] * size[1] * size[2],
-        )),
-        (None, Some(mesh)) => {
-            if !domain.layers.is_empty()
-                || !domain.regions.is_empty()
-                || !domain.polygon_boundary.is_empty()
-            {
-                return Err(
-                    "domain.layers, domain.regions and domain.polygon_boundary cannot be used with domain.mesh. The cell property \"region\" of the mesh gives the regions."
-                        .to_string(),
-                );
-            }
-            Ok((mesh.size(), mesh.center(), mesh.volume()))
-        }
-        (None, None) => Err("domain.size or domain.mesh is necessary".to_string()),
-        (Some(_), Some(_)) => {
-            Err("domain.size cannot be used with domain.mesh. The mesh gives the size.".to_string())
-        }
-    }
+fn parse_input_file(text: &str) -> Result<InputFile, DfngenError> {
+    toml::from_str(text).map_err(|e| invalid_input(e.to_string()))
 }
 
 /// Position in the mesh regions (starts at 1) of the region value of a family.
@@ -386,10 +316,10 @@ fn find_mesh_region_id(region_value: usize, mesh_regions: &[MeshRegion]) -> Resu
 
 fn build_input(
     file: InputFile,
-    domain_mesh: Option<DomainMesh>,
+    domain_mesh: DomainMesh,
 ) -> Result<(Input, FractureFamilyCollection), DfngenError> {
     let eps = file.h * 1e-8;
-    let domain_mesh = domain_mesh.map(Rc::new);
+    let domain_mesh = Rc::new(domain_mesh);
 
     if file.fram.disable {
         info!("FRAM IS DISABLED");
@@ -399,58 +329,15 @@ fn build_input(
         info!("Running with relaxed FRAM. Mesh may not be fully conforming");
     }
 
-    let (domain_size, domain_center, domain_volume) =
-        build_domain_box(&file.domain, domain_mesh.as_deref()).map_err(invalid_input)?;
-    let domain_size_increase = Vector3::from(file.domain.size_increase);
-
-    let layers: Vec<f64> = file.domain.layers.iter().flatten().copied().collect();
-    let layer_volumes: Vec<f64> = file
-        .domain
-        .layers
+    let region_volumes: Vec<f64> = domain_mesh
+        .regions()
         .iter()
-        .map(|layer| domain_size[0] * domain_size[1] * (layer[1] - layer[0]).abs())
-        .collect();
-
-    // {-x, +x, -y, +y, -z, +z} of each region. With a domain mesh, this is the
-    // bounding box of the cells of the region.
-    let (regions, region_volumes): (Vec<f64>, Vec<f64>) = match &domain_mesh {
-        Some(mesh) => (
-            mesh.regions()
-                .iter()
-                .flat_map(|region| {
-                    let (mins, maxs) = (region.bounds.mins, region.bounds.maxs);
-                    [mins.x, maxs.x, mins.y, maxs.y, mins.z, maxs.z]
-                })
-                .collect(),
-            mesh.regions().iter().map(|region| region.volume).collect(),
-        ),
-        None => (
-            file.domain.regions.iter().flatten().copied().collect(),
-            file.domain
-                .regions
-                .iter()
-                .map(|region| {
-                    (region[1] - region[0]).abs()
-                        * (region[3] - region[2]).abs()
-                        * (region[5] - region[4]).abs()
-                })
-                .collect(),
-        ),
-    };
-
-    let domain_vertices: Vec<Point2<f64>> = file
-        .domain
-        .polygon_boundary
-        .iter()
-        .map(|&[x, y]| Point2::new(x, y))
+        .map(|region| region.volume)
         .collect();
 
     debug!(
-        "Input: h = {}, layer volumes {:?} m^3, region volumes {:?} m^3, {} polygon boundary vertices",
-        file.h,
-        layer_volumes,
-        region_volumes,
-        domain_vertices.len()
+        "Input: h = {}, region volumes {:?} m^3",
+        file.h, region_volumes
     );
 
     let stop_condition = file.generation.stop_condition;
@@ -468,7 +355,7 @@ fn build_input(
         .iter()
         .enumerate()
         .map(|(i, section)| {
-            build_user_fracture(section, eps, &domain_center)
+            build_user_fracture(section, eps, &domain_mesh.center())
                 .map_err(|message| invalid_input(format!("user_fracture {}: {}", i + 1, message)))
         })
         .collect::<Result<Vec<_>, _>>()?;
@@ -477,11 +364,7 @@ fn build_input(
         stop_condition,
         h: file.h,
         eps,
-        layers: &layers,
-        regions: &regions,
-        domain_mesh: domain_mesh.as_ref(),
-        domain_size: &domain_size,
-        domain_size_increase: &domain_size_increase,
+        domain_mesh: &domain_mesh,
     };
 
     let mut families = Vec::with_capacity(file.families.len());
@@ -496,8 +379,8 @@ fn build_input(
     let input = Input {
         stop_condition,
         n_poly,
-        domain_size,
-        domain_volume,
+        domain_size: domain_mesh.size(),
+        domain_volume: domain_mesh.volume(),
         domain_mesh,
         domain_boundary_mode: if file.domain.truncate_fractures {
             DomainBoundaryMode::Truncate
@@ -519,11 +402,7 @@ fn build_input(
         remove_fractures_less_than: file.generation.remove_fractures_less_than,
         output_rejected_fractures: file.output.rejected_fractures,
         rejects_per_fracture: file.generation.rejects_per_fracture,
-        layers,
-        layer_volumes,
-        regions,
         region_volumes,
-        domain_vertices,
         ignore_boundary_faces: file.clusters.ignore_boundary_faces,
         user_fractures,
     };
@@ -542,11 +421,7 @@ struct FamilyContext<'a> {
     stop_condition: StopCondition,
     h: f64,
     eps: f64,
-    layers: &'a [f64],
-    regions: &'a [f64],
-    domain_mesh: Option<&'a Rc<DomainMesh>>,
-    domain_size: &'a Vector3<f64>,
-    domain_size_increase: &'a Vector3<f64>,
+    domain_mesh: &'a Rc<DomainMesh>,
 }
 
 fn build_family(
@@ -554,16 +429,7 @@ fn build_family(
     id: usize,
     context: &FamilyContext,
 ) -> Result<FractureFamily, String> {
-    if section.layer > context.layers.len() / 2 {
-        return Err(format!("layer {} is not defined", section.layer));
-    }
-    let region_id = match context.domain_mesh {
-        Some(mesh) => find_mesh_region_id(section.region, mesh.regions())?,
-        None => section.region,
-    };
-    if region_id > context.regions.len() / 6 {
-        return Err(format!("region {} is not defined", section.region));
-    }
+    let region_id = find_mesh_region_id(section.region, context.domain_mesh.regions())?;
 
     let mut builder = FractureFamilyBuilder::default();
 
@@ -573,13 +439,8 @@ fn build_family(
         .radius(build_radius_distribution(&section.radius, 3.0 * context.h))
         .aspect_ratio(section.aspect_ratio)
         .orientation(build_orientation(&section.orientation, context.eps)?)
-        .layer_id(section.layer)
         .region_id(region_id)
-        .layers(context.layers)
-        .regions(context.regions)
-        .domain_size(context.domain_size)
-        .domain_size_increase(context.domain_size_increase)
-        .domain_mesh(context.domain_mesh.cloned());
+        .domain_mesh(context.domain_mesh.clone());
 
     if let Some(beta) = section.beta {
         builder.beta(beta.to_radians());
@@ -751,19 +612,16 @@ fn build_user_fracture(
 }
 
 #[cfg(test)]
-mod tests {
+pub mod test_inputs {
     use super::*;
     use crate::domain_mesh::test_meshes::l_shaped_mesh;
-    use crate::fracture::fracture_family::PositionSampler;
-    use crate::structures::RadiusFunction;
 
-    const GENERAL_OPTIONS: &str = r#"
+    pub const GENERAL_OPTIONS: &str = r#"
         seed = 12345
         h = 0.1
 
         [domain]
-        size = [10.0, 10.0, 10.0]
-        size_increase = [1.0, 1.0, 1.0]
+        mesh = "domain.vtu"
         truncate_fractures = true
 
         [generation]
@@ -790,12 +648,29 @@ mod tests {
         rejected_fractures = false
     "#;
 
+    /// Reads the sections with the L-shaped mesh as the domain. The mesh has
+    /// the regions 1 and 2, and its center is (15, 25, 35).
+    pub fn parse(sections: &[&str]) -> Result<(Input, FractureFamilyCollection), DfngenError> {
+        build_input(parse_input_file(&sections.concat())?, l_shaped_mesh())
+    }
+
+    /// The input of `GENERAL_OPTIONS`
+    pub fn general_input() -> Input {
+        parse(&[GENERAL_OPTIONS]).unwrap().0
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::test_inputs::{parse, GENERAL_OPTIONS};
+    use super::*;
+    use crate::structures::RadiusFunction;
+
     const RECTANGLE_FAMILY: &str = r#"
         [[family]]
         number_of_points = 4
         probability = 0.6
         aspect_ratio = 1.5
-        layer = 0
         region = 0
         radius = { distribution = "log_normal", log_mean = 0.5, sd = 0.4, min = 1.0, max = 4.0 }
         orientation = { trend = 90.0, plunge = 30.0, kappa = 10.0 }
@@ -806,31 +681,11 @@ mod tests {
         number_of_points = 8
         probability = 0.4
         aspect_ratio = 1.0
-        layer = 0
         region = 0
         beta = 90.0
         radius = { distribution = "truncated_power_law", alpha = 2.5, min = 1.0, max = 5.0 }
         orientation = { theta = 0.0, phi = 0.0, kappa = 8.0 }
     "#;
-
-    fn parse(sections: &[&str]) -> Result<(Input, FractureFamilyCollection), DfngenError> {
-        parse_input(&sections.concat(), Path::new(""))
-    }
-
-    /// Builds the input with the L-shaped mesh as the domain. The mesh has
-    /// the regions 1 and 2, and its center is (15, 25, 35).
-    fn parse_with_mesh(
-        sections: &[&str],
-    ) -> Result<(Input, FractureFamilyCollection), DfngenError> {
-        build_input(
-            toml::from_str(&sections.concat()).unwrap(),
-            Some(l_shaped_mesh()),
-        )
-    }
-
-    fn general_options_without_size() -> String {
-        GENERAL_OPTIONS.replace("size = [10.0, 10.0, 10.0]", "")
-    }
 
     fn parse_user_fracture(user_fracture: &str) -> Result<UserFracture, DfngenError> {
         let (mut input, _) = parse(&[GENERAL_OPTIONS, "[[user_fracture]]\n", user_fracture])?;
@@ -855,40 +710,29 @@ mod tests {
     }
 
     #[test]
-    fn test_input_without_size_and_mesh_is_rejected() {
-        let message = error_message(parse(&[&general_options_without_size()]));
+    fn test_input_without_mesh_is_rejected() {
+        let options = GENERAL_OPTIONS.replace("mesh = \"domain.vtu\"", "");
 
-        assert!(
-            message.contains("domain.size or domain.mesh is necessary"),
-            "{message}"
-        );
+        let message = error_message(parse(&[&options]));
+
+        assert!(message.contains("missing field `mesh`"), "{message}");
     }
 
     #[test]
-    fn test_input_with_size_and_mesh_is_rejected() {
-        let message = error_message(parse_with_mesh(&[GENERAL_OPTIONS]));
-
-        assert!(
-            message.contains("domain.size cannot be used with domain.mesh"),
-            "{message}"
+    fn test_input_with_domain_size_is_rejected() {
+        let options = GENERAL_OPTIONS.replace(
+            "truncate_fractures = true",
+            "truncate_fractures = true\nsize = [10.0, 10.0, 10.0]",
         );
-    }
 
-    #[test]
-    fn test_input_with_layers_and_mesh_is_rejected() {
-        let options = general_options_without_size()
-            .replace("[generation]", "layers = [[-5.0, 0.0]]\n[generation]");
-        let message = error_message(parse_with_mesh(&[&options]));
+        let message = error_message(parse(&[&options]));
 
-        assert!(
-            message.contains("cannot be used with domain.mesh"),
-            "{message}"
-        );
+        assert!(message.contains("unknown field `size`"), "{message}");
     }
 
     #[test]
     fn test_mesh_gives_the_domain_size_and_volume() {
-        let (input, _) = parse_with_mesh(&[&general_options_without_size()]).unwrap();
+        let (input, _) = parse(&[GENERAL_OPTIONS]).unwrap();
 
         assert_eq!(
             (input.domain_size, input.domain_volume.round()),
@@ -897,45 +741,17 @@ mod tests {
     }
 
     #[test]
-    fn test_domain_volume_without_mesh_is_the_box_volume() {
-        let (input, _) = parse(&[GENERAL_OPTIONS]).unwrap();
-
-        assert_eq!(input.domain_volume, 1000.);
-    }
-
-    #[test]
     fn test_family_region_selects_the_mesh_region_with_that_value() {
         let family = RECTANGLE_FAMILY.replace("region = 0", "region = 2");
-        let (_, families) = parse_with_mesh(&[&general_options_without_size(), &family]).unwrap();
+        let (_, families) = parse(&[GENERAL_OPTIONS, &family]).unwrap();
 
         assert_eq!(families.families[0].region_id, 2);
     }
 
     #[test]
-    fn test_family_with_mesh_samples_its_positions_in_its_mesh_region() {
-        let family = RECTANGLE_FAMILY.replace("region = 0", "region = 2");
-        let (_, families) = parse_with_mesh(&[&general_options_without_size(), &family]).unwrap();
-
-        assert!(matches!(
-            families.families[0].position_sampler,
-            PositionSampler::Mesh { region_id: 2, .. }
-        ));
-    }
-
-    #[test]
-    fn test_family_without_mesh_samples_its_positions_in_a_box() {
-        let (_, families) = parse(&[GENERAL_OPTIONS, RECTANGLE_FAMILY]).unwrap();
-
-        assert!(matches!(
-            families.families[0].position_sampler,
-            PositionSampler::Box(_)
-        ));
-    }
-
-    #[test]
     fn test_family_with_region_which_the_mesh_does_not_have_is_rejected() {
         let family = RECTANGLE_FAMILY.replace("region = 0", "region = 3");
-        let message = error_message(parse_with_mesh(&[&general_options_without_size(), &family]));
+        let message = error_message(parse(&[GENERAL_OPTIONS, &family]));
 
         assert!(
             message.contains("no cell of the domain mesh has the region 3"),
@@ -945,8 +761,8 @@ mod tests {
 
     #[test]
     fn test_user_fracture_coordinates_are_moved_by_the_mesh_center() {
-        let (input, _) = parse_with_mesh(&[
-            &general_options_without_size(),
+        let (input, _) = parse(&[
+            GENERAL_OPTIONS,
             "[[user_fracture]]\nvertices = [[15.0, 25.0, 35.0], [16.0, 25.0, 35.0], [16.0, 26.0, 35.0]]",
         ])
         .unwrap();
@@ -962,18 +778,6 @@ mod tests {
         let (input, _) = parse(&[GENERAL_OPTIONS]).unwrap();
 
         assert_eq!(input.eps, 0.1 * 1e-8);
-    }
-
-    #[test]
-    fn test_layer_volume_uses_domain_cross_section() {
-        let options = GENERAL_OPTIONS.replace(
-            "[generation]",
-            "layers = [[-5.0, 0.0], [0.0, 2.0]]\n[generation]",
-        );
-
-        let (input, _) = parse(&[&options]).unwrap();
-
-        assert_eq!(input.layer_volumes, vec![500., 200.]);
     }
 
     #[test]
@@ -1138,15 +942,6 @@ mod tests {
         let message = error_message(parse(&[&options, ELLIPSE_FAMILY]));
 
         assert!(message.contains("p32_target is necessary"), "{}", message);
-    }
-
-    #[test]
-    fn test_family_in_undefined_layer_is_rejected() {
-        let family = ELLIPSE_FAMILY.replace("layer = 0", "layer = 1");
-
-        let message = error_message(parse(&[GENERAL_OPTIONS, &family]));
-
-        assert!(message.contains("layer 1 is not defined"), "{}", message);
     }
 
     #[test]

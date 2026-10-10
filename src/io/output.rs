@@ -19,21 +19,15 @@ fn create_file(path: String) -> io::Result<BufWriter<File>> {
 
 /// Moves a point from the coordinates of the generation to those of the output
 ///
-/// With a domain mesh, the generation has the center of the mesh at the origin,
-/// and the output has the coordinates of the mesh file.
+/// The generation has the center of the domain mesh at the origin, and the
+/// output has the coordinates of the mesh file.
 ///
 /// # Arguments
 ///
 /// * `point` - Point in the coordinates of the generation
-/// * `mesh_center` - Center of the domain mesh, if the domain has a mesh
-pub fn to_output_coordinates(
-    point: &Point3<f64>,
-    mesh_center: Option<&Vector3<f64>>,
-) -> Point3<f64> {
-    match mesh_center {
-        Some(mesh_center) => point + mesh_center,
-        None => *point,
-    }
+/// * `mesh_center` - Center of the domain mesh
+pub fn to_output_coordinates(point: &Point3<f64>, mesh_center: &Vector3<f64>) -> Point3<f64> {
+    point + mesh_center
 }
 
 /// Polygons which remain after isolated fracture removal, in output order.
@@ -71,8 +65,7 @@ pub fn write_output(
     info!("{}", output);
     std::fs::create_dir_all(output)?;
 
-    let mesh_center = input.domain_mesh.as_ref().map(|mesh| mesh.center());
-    let mesh_center = mesh_center.as_ref();
+    let mesh_center = &input.domain_mesh.center();
 
     let mut vtk_file = create_file(format!("{}/fractures.vtp", output))?;
     let boundary_face_counts: Vec<usize> = accepted_poly
@@ -200,14 +193,14 @@ fn intersecting_fracture_ids(
 /// * `final_fractures` - Vector array of indices of fractures left after isolated fracture removal
 /// * `accepted_poly` - Vector array of all accetped fractures
 /// * `int_pts` - Vector array of all intersections
-/// * `mesh_center` - Center of the domain mesh, if the domain has a mesh
+/// * `mesh_center` - Center of the domain mesh
 /// * `output` - Path to output folder
 fn write_triple_pts(
     triple_points: &[Point3<f64>],
     final_fractures: &[usize],
     accepted_poly: &[Poly],
     int_pts: &[IntersectionPoints],
-    mesh_center: Option<&Vector3<f64>>,
+    mesh_center: &Vector3<f64>,
     output: &str,
 ) -> io::Result<()> {
     let mut file = create_file(format!("{}/triple_points.dat", output))?;
@@ -428,14 +421,14 @@ pub fn find_boundary_face_lines(
 /// * `final_fractures` - Vector array of indices of fractures left after isolated fracture removal
 /// * `accepted_poly` - Vector array of all accetped fractures (before isolated fracture removal)
 /// * `int_pts` - Vector array of all intersections
-/// * `mesh_center` - Center of the domain mesh, if the domain has a mesh
+/// * `mesh_center` - Center of the domain mesh
 /// * `output` - Path to output folder
 fn write_intersection_list(
     input: &Input,
     final_fractures: &[usize],
     accepted_poly: &[Poly],
     int_pts: &[IntersectionPoints],
-    mesh_center: Option<&Vector3<f64>>,
+    mesh_center: &Vector3<f64>,
     output: &str,
 ) -> io::Result<()> {
     info!("Writing Intersection List (intersection_list.dat)");
@@ -486,14 +479,14 @@ fn write_intersection_list(
 /// * `fract2` - Fracture 2
 /// * `point1` - First endpoint
 /// * `point2` - Second endpoint
-/// * `mesh_center` - Center of the domain mesh, if the domain has a mesh
+/// * `mesh_center` - Center of the domain mesh
 fn write_mid_point(
     fp: &mut impl Write,
     fract1: isize,
     fract2: isize,
     point1: &Point3<f64>,
     point2: &Point3<f64>,
-    mesh_center: Option<&Vector3<f64>>,
+    mesh_center: &Vector3<f64>,
 ) -> io::Result<()> {
     let mid_point = to_output_coordinates(&center(point1, point2), mesh_center);
 
@@ -512,10 +505,11 @@ fn write_mid_point(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::io::input::test_inputs::general_input;
 
     const EPS: f64 = 1e-9;
 
-    fn write_mid_point_of_a_line_on_the_x_axis(mesh_center: Option<&Vector3<f64>>) -> String {
+    fn write_mid_point_of_a_line_on_the_x_axis(mesh_center: &Vector3<f64>) -> String {
         let mut line = Vec::new();
         write_mid_point(
             &mut line,
@@ -530,17 +524,9 @@ mod tests {
     }
 
     #[test]
-    fn test_mid_point_without_mesh_has_the_generation_coordinates() {
-        assert_eq!(
-            write_mid_point_of_a_line_on_the_x_axis(None),
-            "1 2 2.0000000000 0.0000000000 0.0000000000 2.0000000000\n"
-        );
-    }
-
-    #[test]
     fn test_mid_point_with_mesh_has_the_mesh_coordinates() {
         assert_eq!(
-            write_mid_point_of_a_line_on_the_x_axis(Some(&Vector3::new(10., 20., 30.))),
+            write_mid_point_of_a_line_on_the_x_axis(&Vector3::new(10., 20., 30.)),
             "1 2 12.0000000000 20.0000000000 30.0000000000 2.0000000000\n"
         );
     }
@@ -572,7 +558,7 @@ mod tests {
             domain_size: Vector3::new(1., 10., 10.),
             eps: EPS,
             domain_boundary_mode: DomainBoundaryMode::KeepWhole,
-            ..Default::default()
+            ..general_input()
         };
 
         let lines = find_boundary_face_lines_for_mode(&rectangle, &input);

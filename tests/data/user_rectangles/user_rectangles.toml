@@ -2,8 +2,7 @@ seed = 12345
 h = 0.1
 
 [domain]
-size = [10.0, 10.0, 10.0]
-size_increase = [1.0, 1.0, 1.0]
+mesh = "user_rectangles.vtu"
 truncate_fractures = true
 
 [generation]
