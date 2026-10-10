@@ -332,6 +332,11 @@ fn check_dist_to_old_intersections(
             int_pts_list[poly2.intersection_index[i]].p1,
             int_pts_list[poly2.intersection_index[i]].p2,
         ];
+
+        if are_segments_farther_than(&intersection, &int2, min_distance) {
+            continue;
+        }
+
         let (dist, _) = line_seg_to_line_seg(&intersection, &int2);
 
         if dist < (min_distance - eps) && dist > eps {
@@ -377,6 +382,11 @@ fn check_dist_to_new_intersections(
 
     for tmp_int in temp_int_pts {
         let int2 = [tmp_int.p1, tmp_int.p2];
+
+        if are_segments_farther_than(&intersection, &int2, min_distance) {
+            continue;
+        }
+
         let (dist, pt) = line_seg_to_line_seg(&intersection, &int2);
 
         if dist < min_distance && dist > eps {
@@ -791,6 +801,12 @@ fn check_close_edge(
     for i in 0..number_of_nodes {
         // Edge from the vertex to the next one. The last edge closes the polygon.
         let edge = [poly1.vertices[i], poly1.vertices[(i + 1) % number_of_nodes]];
+
+        if are_segments_farther_than(&edge, &line, min_dist) {
+            // All distances between this edge and the intersection are larger than min_dist
+            continue;
+        }
+
         let mut end_pts_to_edge = [
             point_to_line_seg(&line[0], &edge, eps),
             point_to_line_seg(&line[1], &edge, eps),
@@ -855,6 +871,49 @@ fn check_close_edge(
     false
 }
 
+/// Fast check for two line segments which are far from each other
+///
+/// The distance between the bounding boxes of two segments is not larger than
+/// the distance between the segments. Thus this check finds most of the far
+/// pairs without the calculation of the exact distance.
+///
+/// # Arguments
+///
+/// * `line1` - Line 1 defined by two end points
+/// * `line2` - Line 2 defined by two end points
+/// * `limit` - Distance limit
+///
+/// # Returns
+///
+/// true - The distance between the segments is larger than `limit`
+/// false - The distance can be larger or smaller than `limit`
+fn are_segments_farther_than(
+    line1: &[Point3<f64>; 2],
+    line2: &[Point3<f64>; 2],
+    limit: f64,
+) -> bool {
+    // The margin makes the check safe against rounding of the exact distance
+    const RELATIVE_MARGIN: f64 = 1e-6;
+
+    let mut squared_box_distance = 0.;
+
+    for axis in 0..3 {
+        let (min1, max1) = (
+            line1[0][axis].min(line1[1][axis]),
+            line1[0][axis].max(line1[1][axis]),
+        );
+        let (min2, max2) = (
+            line2[0][axis].min(line2[1][axis]),
+            line2[0][axis].max(line2[1][axis]),
+        );
+        let gap = (min1 - max2).max(min2 - max1).max(0.);
+        squared_box_distance += gap * gap;
+    }
+
+    let limit_with_margin = limit * (1. + RELATIVE_MARGIN);
+    squared_box_distance > limit_with_margin * limit_with_margin
+}
+
 /// Closest Distance from Line Seg to Line Seg
 ///
 /// # Arguments
@@ -915,6 +974,11 @@ fn check_for_triple_intersections(
             int_pts_list[intersection_index].p1,
             int_pts_list[intersection_index].p2,
         ];
+
+        if are_segments_farther_than(&int_end_pts, &line, h) {
+            continue;
+        }
+
         let (mut dist1, pt) = line_seg_to_line_seg(&int_end_pts, &line); // distance and pt of intersection
 
         if dist1 >= h {
@@ -1042,6 +1106,56 @@ mod tests {
             "expected {expected:?}, found {:?}",
             actual.as_slice()
         );
+    }
+
+    /// A segment of length 2 along x, and a segment along y at the given
+    /// distance from it in z
+    fn crossed_segments(z_distance: f64) -> ([Point3<f64>; 2], [Point3<f64>; 2]) {
+        (
+            [Point3::new(-1., 0., 0.), Point3::new(1., 0., 0.)],
+            [
+                Point3::new(0., -1., z_distance),
+                Point3::new(0., 1., z_distance),
+            ],
+        )
+    }
+
+    #[test]
+    fn test_segments_with_a_box_distance_above_the_limit_are_far() {
+        let (line1, line2) = crossed_segments(2.);
+
+        assert!(are_segments_farther_than(&line1, &line2, 1.));
+    }
+
+    #[test]
+    fn test_segments_with_a_distance_below_the_limit_are_not_far() {
+        let (line1, line2) = crossed_segments(0.5);
+
+        assert!(!are_segments_farther_than(&line1, &line2, 1.));
+    }
+
+    #[test]
+    fn test_segments_with_a_distance_equal_to_the_limit_are_not_far() {
+        let (line1, line2) = crossed_segments(1.);
+
+        assert!(!are_segments_farther_than(&line1, &line2, 1.));
+    }
+
+    #[test]
+    fn test_far_segments_with_touching_boxes_are_not_found_as_far() {
+        // The distance is sqrt(2), but the bounding boxes have the corner (1, 1, 0) in common
+        let line1 = [Point3::new(0., 0., 0.), Point3::new(1., 1., 0.)];
+        let line2 = [Point3::new(1., 3., 0.), Point3::new(3., 1., 0.)];
+
+        assert!(!are_segments_farther_than(&line1, &line2, 1.));
+    }
+
+    #[test]
+    fn test_far_check_agrees_with_the_exact_distance() {
+        let (line1, line2) = crossed_segments(3.);
+        let (exact_distance, _) = line_seg_to_line_seg(&line1, &line2);
+
+        assert!(are_segments_farther_than(&line1, &line2, 2.) && exact_distance > 2.);
     }
 
     #[test]
