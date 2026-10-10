@@ -344,6 +344,8 @@ impl Stats {
     pub fn new() -> Self {
         Self {
             next_group_num: 1,
+            // Counter of the rejects before the first accepted fracture
+            rejects_per_attempt: vec![0],
             ..Default::default()
         }
     }
@@ -574,7 +576,6 @@ mod tests {
     fn insert_two_equal_rectangles(keep_rejected_fractures: bool) -> DFNGen {
         let opts = poly_options(keep_rejected_fractures);
         let mut dfngen = DFNGen::new();
-        dfngen.pstats.rejects_per_attempt.push(0);
 
         for poly_id in 1..=2 {
             let mut rectangle = Poly::new(4, 1., 1.);
@@ -590,7 +591,6 @@ mod tests {
     fn insert_square_into_l_shaped_mesh(center: [f64; 3]) -> DFNGen {
         let opts = poly_options(false);
         let mut dfngen = DFNGen::new();
-        dfngen.pstats.rejects_per_attempt.push(0);
 
         let mut square = Poly::new(4, 2f64.sqrt(), 1.);
         square.normal = Vector3::new(0., 0., 1.);
@@ -621,6 +621,13 @@ mod tests {
         assert_eq!(dfngen.accepted_poly.len(), 1);
         assert_eq!(dfngen.rejected_poly.len(), 1);
         assert_ne!(dfngen.rejected_poly[0].reject_code, 0);
+    }
+
+    #[test]
+    fn test_reject_after_the_first_accepted_fracture_is_counted_for_the_second_attempt() {
+        let dfngen = insert_two_equal_rectangles(false);
+
+        assert_eq!(dfngen.pstats.rejects_per_attempt, [0, 1]);
     }
 
     #[test]

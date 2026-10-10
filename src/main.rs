@@ -114,6 +114,10 @@ fn main() -> Result<(), DfngenError> {
         )?;
     }
 
+    // Remove last element off the rejects per attempt counter.
+    // It will have one extra item due to how each element is initialized.
+    dfngen.pstats.rejects_per_attempt.pop();
+
     // The close to node check is inside of the close to edge check function
     // for optimization (only need do intersection close to node on one condition)
     // On close to node rejections, close to edge is counted as well.
@@ -313,9 +317,6 @@ fn prepare_radii_lists(
             .map(|fracture_family| fracture_family.radii_list.len()),
     );
 
-    // Init first rejects per insertion attempt counter
-    pstats.rejects_per_attempt.push(0);
-
     Ok(())
 }
 
@@ -489,10 +490,6 @@ fn insert_stochastic_fractures(
             );
         }
     }
-
-    // Remove last element off the rejects per attempt counter.
-    // It will have one extra item due to how each element is initialized.
-    dfngen.pstats.rejects_per_attempt.pop();
 
     Ok(())
 }
