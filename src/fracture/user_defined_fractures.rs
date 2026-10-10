@@ -15,7 +15,7 @@ pub fn insert_user_defined_fractures(
     dfngen: &mut DFNGen,
 ) -> usize {
     for (i, fracture) in fractures.iter().enumerate() {
-        dfngen.insert_poly(fracture.to_poly(), i + 1, poly_opts);
+        dfngen.insert_poly(fracture.to_poly(), i + 1, fracture.region_id, poly_opts);
     }
 
     fractures.len()
@@ -26,6 +26,11 @@ pub fn insert_user_defined_fractures(
 #[derive(Debug)]
 pub struct UserFracture {
     pub vertices: Vec<[f64; 3]>,
+
+    /// Region of the domain mesh which the fracture must intersect. 0 is any
+    /// region, greater than 0 is the position of the region in
+    /// `DomainMesh::regions` plus 1.
+    pub region_id: usize,
 }
 
 impl UserFracture {
@@ -89,6 +94,7 @@ mod tests {
     fn test_triangle_by_vertices_has_its_normal() {
         let triangle = UserFracture {
             vertices: vec![[0., 0., 0.], [1., 0., 0.], [1., 1., 0.]],
+            region_id: 0,
         };
 
         assert_eq!(triangle.to_poly().normal, Vector3::new(0., 0., 1.));

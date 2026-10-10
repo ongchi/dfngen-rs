@@ -379,22 +379,45 @@ impl DFNGen {
         }
     }
 
-    pub fn insert_poly(&mut self, mut new_poly: Poly, poly_id: usize, opts: &PolyOptions) {
+    /// Inserts a user-defined fracture, or rejects it.
+    ///
+    /// # Arguments
+    ///
+    /// * `new_poly` - The fracture
+    /// * `poly_id` - Number of the fracture in its file, from 1
+    /// * `region_id` - Region of the domain mesh which the fracture must intersect, 0 = any region
+    /// * `opts` - Options of the generation
+    pub fn insert_poly(
+        &mut self,
+        mut new_poly: Poly,
+        poly_id: usize,
+        region_id: usize,
+        opts: &PolyOptions,
+    ) {
         if new_poly.domain_truncation(
             opts.h,
             opts.eps,
             &opts.domain_size,
             opts.domain_boundary_mode,
-        ) || !opts.domain_mesh.intersects_polygon(&new_poly.vertices)
+        ) || !opts
+            .domain_mesh
+            .intersects_polygon(&new_poly.vertices, region_id)
         {
-            // Poly completely outside domain, or it intersects no cell of the domain mesh
+            // Poly completely outside domain, or it intersects no cell of its region of the domain mesh
             self.pstats.rejection_reasons.outside += 1;
             self.pstats.rejected_poly_count += 1;
             self.pstats.rejected_user_fracture.push(poly_id);
-            warn!(
-                "User-defined fracture {}: rejected for being outside the defined domain.",
-                poly_id
-            );
+            if region_id == 0 {
+                warn!(
+                    "User-defined fracture {}: rejected for being outside the defined domain.",
+                    poly_id
+                );
+            } else {
+                warn!(
+                    "User-defined fracture {}: rejected for being outside its region of the domain.",
+                    poly_id
+                );
+            }
             return;
         }
 
@@ -580,7 +603,7 @@ mod tests {
         for poly_id in 1..=2 {
             let mut rectangle = Poly::new(4, 1., 1.);
             rectangle.normal = Vector3::new(0., 0., 1.);
-            dfngen.insert_poly(rectangle, poly_id, &opts);
+            dfngen.insert_poly(rectangle, poly_id, 0, &opts);
         }
 
         dfngen
@@ -589,13 +612,19 @@ mod tests {
     /// Inserts a horizontal square with sides of 2 into the L-shaped domain mesh.
     /// The mesh has no cell where x and y are positive.
     fn insert_square_into_l_shaped_mesh(center: [f64; 3]) -> DFNGen {
+        insert_square_into_region(center, 0)
+    }
+
+    /// As `insert_square_into_l_shaped_mesh`, for a square which must intersect the region.
+    /// Region 1 is where y is negative, and region 2 is where x is negative and y is positive.
+    fn insert_square_into_region(center: [f64; 3], region_id: usize) -> DFNGen {
         let opts = poly_options(false);
         let mut dfngen = DFNGen::new();
 
         let mut square = Poly::new(4, 2f64.sqrt(), 1.);
         square.normal = Vector3::new(0., 0., 1.);
         square.translate(Vector3::from(center));
-        dfngen.insert_poly(square, 1, &opts);
+        dfngen.insert_poly(square, 1, region_id, &opts);
 
         dfngen
     }
@@ -605,6 +634,20 @@ mod tests {
         let dfngen = insert_square_into_l_shaped_mesh([0.5, 0.5, 0.]);
 
         assert_eq!(dfngen.accepted_poly.len(), 1);
+    }
+
+    #[test]
+    fn test_user_fracture_which_intersects_a_cell_of_its_region_is_accepted() {
+        let dfngen = insert_square_into_region([2.5, -2.5, 0.], 1);
+
+        assert_eq!(dfngen.accepted_poly.len(), 1);
+    }
+
+    #[test]
+    fn test_user_fracture_which_intersects_only_cells_of_another_region_is_rejected() {
+        let dfngen = insert_square_into_region([2.5, -2.5, 0.], 2);
+
+        assert_eq!(dfngen.pstats.rejected_user_fracture, [1]);
     }
 
     #[test]

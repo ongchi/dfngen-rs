@@ -104,8 +104,9 @@ definition of the domain. `tests/data/mesh_domain` is an example, and
   are sampled in the cells, uniform by volume. A fracture with its center in
   the mesh can have a part outside the mesh; the fracture is cut only at the
   bounding box.
-- A user-defined fracture is rejected only if it intersects no cell. Its center
-  can be outside the mesh.
+- A user-defined fracture is rejected only if it intersects no cell (or no
+  cell of its region, see "User-defined fractures"). Its center can be outside
+  the mesh.
 - The volume for P32 is the sum of the cell volumes.
 - All coordinates in the input file and in the output files are the coordinates
   of the mesh file.
@@ -153,8 +154,17 @@ must be before the first table (`[domain]`) of the input file.
 - A polygon must have 3 points or more. The fractures are inserted in the
   order of the cells.
 - The coordinates are those of the mesh file.
-- The point data and the cell data of the file are ignored. Thus
-  `fractures.vtp` of a run can be the user-defined fractures of a new run.
+- The cell data array `region` (optional) gives the region of each fracture:
+  one integer of 0 or more for each cell of the file, as in the mesh file. A
+  fracture with the region N (N > 0) is accepted only if it intersects a cell
+  of the mesh with the region N. If not, it is rejected as a fracture outside
+  the domain. The fracture is not cut at the region: a part of it can be in
+  other regions. A fracture with the region 0, or a file without the array, is
+  checked against all cells. A region value which no cell of the mesh has is
+  an error. `tests/data/mesh_domain` is an example.
+- The point data and the other cell data of the file are ignored. Thus
+  `fractures.vtp` of a run can be the user-defined fractures of a new run. It
+  has no `region` array, so its fractures have the region 0.
 - Cells which are not polygons (vertices, lines, strips) are ignored with a
   warning.
 - A user-defined fracture has no radius in its file. `x_radius`, `y_radius` and

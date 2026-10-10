@@ -4,18 +4,30 @@ use roxmltree::{Document, Node};
 use tracing::warn;
 
 use crate::error::DfngenError;
-use crate::fracture::user_defined_fractures::UserFracture;
-use crate::io::vtu::{find_child, find_data_array, read_values};
+use crate::io::vtu::{find_child, find_data_array, read_regions, read_values, REGION_ARRAY};
 
-/// Cell kinds of a PolyData file which are not fractures
-const IGNORED_CELL_ELEMENTS: [&str; 3] = ["Verts", "Lines", "Strips"];
+/// Cell kinds of a PolyData file which are not fractures. The cell data of
+/// a file is in the order of these kinds, with the polygons before the strips.
+const CELL_ELEMENTS_BEFORE_POLYGONS: [&str; 2] = ["Verts", "Lines"];
+const CELL_ELEMENTS_AFTER_POLYGONS: [&str; 1] = ["Strips"];
+
+/// A polygon cell of the user-defined fracture file
+#[derive(Debug)]
+pub struct FracturePolygon {
+    /// Vertices in the coordinates of the file
+    pub vertices: Vec<[f64; 3]>,
+
+    /// Value of the cell data array `region`, 0 if the file has no such array
+    pub region: u64,
+}
 
 /// Reads the user-defined fractures from a VTK XML PolyData file (`.vtp`, ASCII)
 ///
 /// Each polygon cell is one fracture, with the points of the cell as its
-/// vertices. The fractures are in the order of the cells. The point data and
-/// the cell data of the file are ignored.
-pub fn read_user_fractures(path: &Path) -> Result<Vec<UserFracture>, DfngenError> {
+/// vertices. The fractures are in the order of the cells. The cell data array
+/// `region` (optional) gives the region of each fracture. The point data and
+/// the other cell data of the file are ignored.
+pub fn read_user_fractures(path: &Path) -> Result<Vec<FracturePolygon>, DfngenError> {
     let invalid_file =
         |message: String| DfngenError::InvalidInput(format!("{}: {}", path.display(), message));
 
@@ -29,7 +41,7 @@ pub fn read_user_fractures(path: &Path) -> Result<Vec<UserFracture>, DfngenError
     parse_user_fractures(&text).map_err(invalid_file)
 }
 
-fn parse_user_fractures(text: &str) -> Result<Vec<UserFracture>, String> {
+fn parse_user_fractures(text: &str) -> Result<Vec<FracturePolygon>, String> {
     let document = Document::parse(text).map_err(|e| e.to_string())?;
     let root = document.root_element();
 
@@ -52,7 +64,7 @@ fn parse_user_fractures(text: &str) -> Result<Vec<UserFracture>, String> {
 ///
 /// * `piece` - `Piece` element
 /// * `fracture_count` - Number of fractures in the pieces before this one, for the error messages
-fn read_piece(piece: Node, fracture_count: usize) -> Result<Vec<UserFracture>, String> {
+fn read_piece(piece: Node, fracture_count: usize) -> Result<Vec<FracturePolygon>, String> {
     let points_element = find_child(piece, "Points")?;
     let polys_element = find_child(piece, "Polys")?;
 
@@ -66,14 +78,20 @@ fn read_piece(piece: Node, fracture_count: usize) -> Result<Vec<UserFracture>, S
         return Err("the points must have 3 coordinates each".to_string());
     }
 
-    for tag_name in IGNORED_CELL_ELEMENTS {
-        if has_cells(piece, tag_name)? {
-            warn!(
-                "The {} cells of the user-defined fracture file are ignored. Only polygons are fractures.",
-                tag_name
-            );
-        }
-    }
+    let cell_count_before_polygons = count_ignored_cells(piece, &CELL_ELEMENTS_BEFORE_POLYGONS)?;
+    let cell_count_after_polygons = count_ignored_cells(piece, &CELL_ELEMENTS_AFTER_POLYGONS)?;
+
+    let regions = match piece
+        .children()
+        .find(|node| node.has_tag_name("CellData"))
+        .and_then(|cell_data| find_data_array(cell_data, REGION_ARRAY).ok())
+    {
+        Some(region_array) => read_regions(
+            region_array,
+            cell_count_before_polygons + offsets.len() + cell_count_after_polygons,
+        )?,
+        None => Vec::new(),
+    };
 
     let mut fractures = Vec::with_capacity(offsets.len());
     let mut cell_start = 0;
@@ -99,8 +117,12 @@ fn read_piece(piece: Node, fracture_count: usize) -> Result<Vec<UserFracture>, S
             ));
         }
 
-        fractures.push(UserFracture {
+        fractures.push(FracturePolygon {
             vertices: point_ids.iter().map(|&id| points[id]).collect(),
+            region: regions
+                .get(cell_count_before_polygons + cell)
+                .copied()
+                .unwrap_or(0),
         });
 
         cell_start = cell_end;
@@ -109,17 +131,31 @@ fn read_piece(piece: Node, fracture_count: usize) -> Result<Vec<UserFracture>, S
     Ok(fractures)
 }
 
-/// True if the piece has cells of the kind which the element gives.
-fn has_cells(piece: Node, tag_name: &str) -> Result<bool, String> {
-    let Some(element) = piece.children().find(|node| node.has_tag_name(tag_name)) else {
-        return Ok(false);
-    };
-    let Ok(offsets_array) = find_data_array(element, "offsets") else {
-        return Ok(false);
-    };
-    let offsets: Vec<usize> = read_values(offsets_array)?;
+/// Number of cells of the given kinds in the piece. These cells are not
+/// fractures, and each kind which has cells gives a warning.
+fn count_ignored_cells(piece: Node, tag_names: &[&str]) -> Result<usize, String> {
+    let mut cell_count = 0;
 
-    Ok(!offsets.is_empty())
+    for &tag_name in tag_names {
+        let Some(offsets_array) = piece
+            .children()
+            .find(|node| node.has_tag_name(tag_name))
+            .and_then(|element| find_data_array(element, "offsets").ok())
+        else {
+            continue;
+        };
+        let offsets: Vec<usize> = read_values(offsets_array)?;
+
+        if !offsets.is_empty() {
+            warn!(
+                "The {} cells of the user-defined fracture file are ignored. Only polygons are fractures.",
+                tag_name
+            );
+        }
+        cell_count += offsets.len();
+    }
+
+    Ok(cell_count)
 }
 
 #[cfg(test)]
@@ -237,22 +273,58 @@ mod tests {
         assert!(message.contains("not a VTK PolyData"), "{message}");
     }
 
+    fn region_cell_data(values: &str) -> String {
+        format!(
+            r#"<CellData>
+            <DataArray type="Int64" Name="region" format="ascii">{values}</DataArray>
+            </CellData>"#
+        )
+    }
+
+    fn regions(file: &str) -> Vec<u64> {
+        parse_user_fractures(file)
+            .unwrap()
+            .iter()
+            .map(|fracture| fracture.region)
+            .collect()
+    }
+
     #[test]
-    fn test_piece_with_lines_has_cells_of_that_kind() {
-        let lines = r#"<Lines>
+    fn test_region_array_gives_the_region_of_each_fracture() {
+        let file = square_and_triangle_file(&region_cell_data("2 0"));
+
+        assert_eq!(regions(&file), [2, 0]);
+    }
+
+    #[test]
+    fn test_file_without_region_array_gives_the_region_0() {
+        assert_eq!(regions(&square_and_triangle_file("")), [0, 0]);
+    }
+
+    #[test]
+    fn test_region_array_with_one_value_for_two_cells_is_rejected() {
+        let message = error_message(&square_and_triangle_file(&region_cell_data("2")));
+
+        assert!(
+            message.contains("the region array must have one value for each cell"),
+            "{message}"
+        );
+    }
+
+    #[test]
+    fn test_region_of_a_polygon_is_after_the_values_of_the_line_cells() {
+        let line_and_regions = format!(
+            r#"<Lines>
             <DataArray type="Int64" Name="connectivity" format="ascii">0 1</DataArray>
             <DataArray type="Int64" Name="offsets" format="ascii">2</DataArray>
-            </Lines>"#;
-        let file = square_and_triangle_file(lines);
-        let document = Document::parse(&file).unwrap();
-        let piece = document
-            .descendants()
-            .find(|node| node.has_tag_name("Piece"))
-            .unwrap();
+            </Lines>
+            {}"#,
+            region_cell_data("7 2 1")
+        );
 
         assert_eq!(
-            (has_cells(piece, "Lines"), has_cells(piece, "Strips")),
-            (Ok(true), Ok(false))
+            regions(&square_and_triangle_file(&line_and_regions)),
+            [2, 1]
         );
     }
 }

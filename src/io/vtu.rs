@@ -8,7 +8,7 @@ use crate::domain_mesh::{DomainMesh, MeshTetrahedron};
 use crate::error::DfngenError;
 
 /// Name of the cell data array which gives the region of each cell
-const REGION_ARRAY: &str = "region";
+pub(super) const REGION_ARRAY: &str = "region";
 
 /// Reads the domain from a VTK XML UnstructuredGrid file (`.vtu`, ASCII)
 ///
@@ -107,7 +107,7 @@ fn read_piece(piece: Node) -> Result<Vec<MeshTetrahedron>, String> {
 
 /// Reads the `region` array: one integer of 0 or more for each cell.
 /// The array can have a real type, but each value must be a whole number.
-fn read_regions(region_array: Node, cell_count: usize) -> Result<Vec<u64>, String> {
+pub(super) fn read_regions(region_array: Node, cell_count: usize) -> Result<Vec<u64>, String> {
     let values: Vec<f64> = read_values(region_array)?;
 
     if values.len() != cell_count {

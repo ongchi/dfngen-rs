@@ -327,8 +327,9 @@ impl DomainMesh {
         point
     }
 
-    /// True if the convex polygon has a point in a cell.
-    pub fn intersects_polygon(&self, vertices: &[Point3<f64>]) -> bool {
+    /// True if the convex polygon has a point in a cell of the region.
+    /// `region_id` 0 means a cell of any region.
+    pub fn intersects_polygon(&self, vertices: &[Point3<f64>], region_id: usize) -> bool {
         let mut near_tetrahedra: Vec<usize> = self
             .grid
             .cells_in(&Aabb::from_points(vertices))
@@ -338,9 +339,11 @@ impl DomainMesh {
         near_tetrahedra.sort();
         near_tetrahedra.dedup();
 
-        near_tetrahedra
-            .iter()
-            .any(|&i| self.tetrahedra[i].intersects_polygon(vertices))
+        near_tetrahedra.iter().any(|&i| {
+            let tetrahedron = &self.tetrahedra[i];
+            (region_id == 0 || tetrahedron.region_id == region_id)
+                && tetrahedron.intersects_polygon(vertices)
+        })
     }
 }
 
@@ -563,12 +566,12 @@ mod tests {
     #[test]
     fn test_polygon_with_its_center_outside_the_mesh_intersects_a_cell() {
         // The center is in the empty corner, and the square goes 0.5 into the cells
-        assert!(l_shaped_mesh().intersects_polygon(&square([0.5, 0.5, 0.])));
+        assert!(l_shaped_mesh().intersects_polygon(&square([0.5, 0.5, 0.]), 0));
     }
 
     #[test]
     fn test_polygon_in_the_empty_corner_intersects_no_cell() {
-        assert!(!l_shaped_mesh().intersects_polygon(&square([2.5, 2.5, 0.])));
+        assert!(!l_shaped_mesh().intersects_polygon(&square([2.5, 2.5, 0.]), 0));
     }
 
     #[test]
@@ -578,6 +581,16 @@ mod tests {
             .map(|vertex| Point3::new(vertex.x * 100., vertex.y * 100., 0.))
             .collect();
 
-        assert!(l_shaped_mesh().intersects_polygon(&large_square));
+        assert!(l_shaped_mesh().intersects_polygon(&large_square, 0));
+    }
+
+    #[test]
+    fn test_polygon_in_region_1_intersects_a_cell_of_region_1() {
+        assert!(l_shaped_mesh().intersects_polygon(&square([2.5, -2.5, 0.]), 1));
+    }
+
+    #[test]
+    fn test_polygon_in_region_1_intersects_no_cell_of_region_2() {
+        assert!(!l_shaped_mesh().intersects_polygon(&square([2.5, -2.5, 0.]), 2));
     }
 }

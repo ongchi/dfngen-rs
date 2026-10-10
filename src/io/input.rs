@@ -13,7 +13,7 @@ use crate::fracture::fracture_family::{
 };
 use crate::fracture::poly::DomainBoundaryMode;
 use crate::fracture::user_defined_fractures::UserFracture;
-use crate::io::vtp::read_user_fractures;
+use crate::io::vtp::{read_user_fractures, FracturePolygon};
 use crate::io::vtu::read_domain_mesh;
 use crate::structures::RadiusDistribution;
 
@@ -286,16 +286,16 @@ fn parse_input_file(text: &str) -> Result<InputFile, DfngenError> {
     toml::from_str(text).map_err(|e| invalid_input(e.to_string()))
 }
 
-/// Position in the mesh regions (starts at 1) of the region value of a family.
-/// 0 is the whole mesh.
-fn find_mesh_region_id(region_value: usize, mesh_regions: &[MeshRegion]) -> Result<usize, String> {
+/// Position in the mesh regions (starts at 1) of the region value of a family
+/// or of a user-defined fracture. 0 is the whole mesh.
+fn find_mesh_region_id(region_value: u64, mesh_regions: &[MeshRegion]) -> Result<usize, String> {
     if region_value == 0 {
         return Ok(0);
     }
 
     mesh_regions
         .iter()
-        .position(|region| region.value == region_value as u64)
+        .position(|region| region.value == region_value)
         .map(|position| position + 1)
         .ok_or(format!(
             "no cell of the domain mesh has the region {}",
@@ -309,11 +309,11 @@ fn find_mesh_region_id(region_value: usize, mesh_regions: &[MeshRegion]) -> Resu
 ///
 /// * `file` - Content of the TOML input file
 /// * `domain_mesh` - Domain mesh of `domain.mesh`
-/// * `user_fractures` - User-defined fractures, in the coordinates of the mesh file
+/// * `fracture_polygons` - User-defined fractures, as their file gives them
 fn build_input(
     file: InputFile,
     domain_mesh: DomainMesh,
-    mut user_fractures: Vec<UserFracture>,
+    fracture_polygons: Vec<FracturePolygon>,
 ) -> Result<(Input, FractureFamilyCollection), DfngenError> {
     let eps = file.h * 1e-8;
     let domain_mesh = Rc::new(domain_mesh);
@@ -347,14 +347,15 @@ fn build_input(
         (_, n_poly) => n_poly.unwrap_or(0),
     };
 
-    // The generation has the center of the mesh at the origin
-    let domain_center = domain_mesh.center();
-    for vertex in user_fractures
-        .iter_mut()
-        .flat_map(|fracture| &mut fracture.vertices)
-    {
-        *vertex = (Vector3::from(*vertex) - domain_center).into();
-    }
+    let user_fractures = fracture_polygons
+        .iter()
+        .enumerate()
+        .map(|(i, polygon)| {
+            build_user_fracture(polygon, &domain_mesh).map_err(|message| {
+                invalid_input(format!("user-defined fracture {}: {}", i + 1, message))
+            })
+        })
+        .collect::<Result<Vec<_>, _>>()?;
 
     let family_context = FamilyContext {
         stop_condition,
@@ -412,6 +413,25 @@ fn build_input(
     ))
 }
 
+/// Moves a polygon of the user-defined fracture file to the coordinates of
+/// the generation (the center of the mesh at the origin), and finds its region
+/// in the mesh.
+fn build_user_fracture(
+    polygon: &FracturePolygon,
+    domain_mesh: &DomainMesh,
+) -> Result<UserFracture, String> {
+    let domain_center = domain_mesh.center();
+
+    Ok(UserFracture {
+        vertices: polygon
+            .vertices
+            .iter()
+            .map(|&vertex| (Vector3::from(vertex) - domain_center).into())
+            .collect(),
+        region_id: find_mesh_region_id(polygon.region, domain_mesh.regions())?,
+    })
+}
+
 /// Values of the input file which each family needs.
 struct FamilyContext<'a> {
     stop_condition: StopCondition,
@@ -425,7 +445,7 @@ fn build_family(
     id: usize,
     context: &FamilyContext,
 ) -> Result<FractureFamily, String> {
-    let region_id = find_mesh_region_id(section.region, context.domain_mesh.regions())?;
+    let region_id = find_mesh_region_id(section.region as u64, context.domain_mesh.regions())?;
 
     let mut builder = FractureFamilyBuilder::default();
 
@@ -694,20 +714,46 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_user_fracture_coordinates_are_moved_by_the_mesh_center() {
-        let triangle = UserFracture {
+    /// Builds the input with one triangle in the L-shaped mesh as the
+    /// user-defined fracture. The first vertex is the center of the mesh.
+    fn parse_with_triangle_of_region(
+        region: u64,
+    ) -> Result<(Input, FractureFamilyCollection), DfngenError> {
+        let triangle = FracturePolygon {
             vertices: vec![[15., 25., 35.], [16., 25., 35.], [16., 26., 35.]],
+            region,
         };
 
-        let (input, _) = build_input(
+        build_input(
             parse_input_file(GENERAL_OPTIONS).unwrap(),
             l_shaped_mesh(),
             vec![triangle],
         )
-        .unwrap();
+    }
+
+    #[test]
+    fn test_user_fracture_coordinates_are_moved_by_the_mesh_center() {
+        let (input, _) = parse_with_triangle_of_region(0).unwrap();
 
         assert_eq!(input.user_fractures[0].vertices[0], [0., 0., 0.]);
+    }
+
+    #[test]
+    fn test_user_fracture_region_selects_the_mesh_region_with_that_value() {
+        let (input, _) = parse_with_triangle_of_region(2).unwrap();
+
+        assert_eq!(input.user_fractures[0].region_id, 2);
+    }
+
+    #[test]
+    fn test_user_fracture_with_region_which_the_mesh_does_not_have_is_rejected() {
+        let message = error_message(parse_with_triangle_of_region(3));
+
+        assert!(
+            message
+                .contains("user-defined fracture 1: no cell of the domain mesh has the region 3"),
+            "{message}"
+        );
     }
 
     #[test]
