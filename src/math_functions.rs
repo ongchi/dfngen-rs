@@ -1,20 +1,5 @@
 use tracing::{error, warn};
 
-/// Used for ORing arrays of bool for boundary face codes
-/// Expectes array size is 6.
-/// ORs dest with src, then saves to dest.
-/// e.g destArray = destArray ^ srcArray
-///
-/// # Arguments
-///
-/// * `dest` - Destination array
-/// * `src` - Source array
-pub fn or(dest: &mut [bool; 6], src: &[bool; 6]) {
-    for (d, s) in dest.iter_mut().zip(src.iter()) {
-        *d |= *s
-    }
-}
-
 /// There are several spots in the code which used to use standard
 /// deviation to know how to sort a list of points.
 /// To increase performance, the standard deviation is now calculated without

@@ -84,28 +84,10 @@ fn clip_to_domain(
     vertices
 }
 
-/// Finds the domain faces (+x, -x, +y, -y, +z, -z) on which a polygon has a vertex
-fn find_domain_faces(vertices: &[Point3<f64>], eps: f64, half_domain: &Vector3<f64>) -> [bool; 6] {
-    let mut faces = [false; 6];
-
-    for vertex in vertices {
-        for axis in 0..3 {
-            if vertex[axis] >= half_domain[axis] - eps {
-                faces[2 * axis] = true;
-            } else if vertex[axis] <= -half_domain[axis] + eps {
-                faces[2 * axis + 1] = true;
-            }
-        }
-    }
-
-    faces
-}
-
 impl Poly {
     /// Check of the polygon against the box domain
     ///
-    /// Finds the domain faces which the polygon crosses. The vertices of the
-    /// polygon do not change: a fracture is not cut at the domain.
+    /// The vertices of the polygon do not change: a fracture is not cut at the domain.
     ///
     /// # Arguments
     ///
@@ -118,7 +100,7 @@ impl Poly {
     /// false - If the polygon has a part with 3 vertices or more in the domain
     /// true - If rejected, because the part in the domain has less than 3 vertices
     pub fn check_box_domain(
-        &mut self,
+        &self,
         min_feature_size: f64,
         eps: f64,
         domain_size: &Vector3<f64>,
@@ -129,22 +111,13 @@ impl Poly {
                 .all(|axis| vertex[axis] <= half_domain[axis] && vertex[axis] >= -half_domain[axis])
         };
 
-        // A polygon is not rebuilt for a new translation. Thus the faces of
-        // the last translation must be removed here.
-        self.faces = [false; 6];
-
         if self.vertices.iter().all(is_inside_domain) {
             return false;
         }
 
         let part_in_domain = clip_to_domain(&self.vertices, min_feature_size, eps, &half_domain);
-        let is_rejected = part_in_domain.len() < 3;
 
-        if !is_rejected {
-            self.faces = find_domain_faces(&part_in_domain, eps, &half_domain);
-        }
-
-        is_rejected
+        part_in_domain.len() < 3
     }
 }
 
@@ -181,14 +154,6 @@ mod tests {
     }
 
     #[test]
-    fn test_fracture_is_connected_to_the_face_which_it_crosses() {
-        let (square, _) = square_in_domain_of_size_10(4.5);
-
-        // Only the +x face
-        assert_eq!(square.faces, [true, false, false, false, false, false]);
-    }
-
-    #[test]
     fn test_fracture_with_a_part_in_the_domain_is_accepted() {
         let (_, is_rejected) = square_in_domain_of_size_10(4.5);
 
@@ -200,15 +165,5 @@ mod tests {
         let (_, is_rejected) = square_in_domain_of_size_10(7.);
 
         assert!(is_rejected);
-    }
-
-    #[test]
-    fn test_fracture_loses_the_faces_of_its_last_position() {
-        let (mut square, _) = square_in_domain_of_size_10(4.5);
-        square.translate(Vector3::new(-4.5, 0., 0.));
-
-        square.check_box_domain(MIN_FEATURE_SIZE, EPS, &Vector3::new(10., 10., 10.));
-
-        assert_eq!(square.faces, [false; 6]);
     }
 }

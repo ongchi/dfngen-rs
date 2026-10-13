@@ -2,20 +2,19 @@ use tracing::info;
 
 use crate::{
     error,
-    math_functions::or,
     structures::{FractureGroups, GroupData, Stats},
 };
 
 use super::poly::Poly;
 
 //     This code goes through all the polygons accepted into the domain and returns the indexes to those polygons
-//     which match the users boundary faces option.
+//     which stay.
 //     Isoloated fractures and Polygons with no intersections are removed
 //
 // groupData structure:
 // ***********************
-//     groupData keeps information as to how many polygons are in the group or cluster. It also keeps
-//     track of the boundary faces which the cluster is in contact with. There is also a valid variable (0 or 1).
+//     groupData keeps information as to how many polygons are in the group or cluster.
+//     There is also a valid variable (0 or 1).
 //     If a polygon connects two different groups, one of the groups is merged together with the other. The one which
 //     nolonger exists has it's valid variable set to 0.
 //
@@ -33,20 +32,16 @@ use super::poly::Poly;
 //     polygons from a group we must search the fractGroups array for all matching groups
 //
 
-/// Get Matching Fracture Clusters
+/// Get Fracture Clusters
 ///
-/// Uses boundaryFaces input option to get the wanted fracture cluster before writing output files.
-///
-/// NOTE: 'boundaryFaces' array is a global variable
+/// Gets the wanted fracture clusters before writing output files.
 ///
 /// # Returns
 ///
-/// Vector of indices to fractures which remained after isolated and non-matching boundary faces fracture removal.
+/// Vector of indices to fractures which remained after isolated fracture removal.
 pub fn get_cluster(
     keep_isolated_fractures: bool,
     keep_only_largest_cluster: bool,
-    ignore_boundary_faces: bool,
-    boundary_faces: &[bool; 6],
     pstats: &Stats,
 ) -> Vec<usize> {
     // The max number of groups is pstats.nextGroupNum - 1
@@ -65,20 +60,9 @@ pub fn get_cluster(
         // Get matching groups from pstats.groupData[]
         for i in 0..pstats.group_data.len() {
             // If the data is valid, meaning that group still exists (hasn't been merged to a new group) and
-            // if the group has more than 1 fracture meaning there are intersections and
-            // the cluster matches the requirements of the user's boundaryFaces option
-            if !ignore_boundary_faces {
-                if pstats.group_data[i].valid
-                    && pstats.group_data[i].size > 1
-                    && faces_match(boundary_faces, &pstats.group_data[i].faces)
-                {
-                    matching_groups.push(i + 1); //save matching group number
-                }
-            } else {
-                // Get all cluster groups
-                if pstats.group_data[i].valid && pstats.group_data[i].size > 1 {
-                    matching_groups.push(i + 1); // Save matching group number
-                }
+            // if the group has more than 1 fracture meaning there are intersections
+            if pstats.group_data[i].valid && pstats.group_data[i].size > 1 {
+                matching_groups.push(i + 1); // Save matching group number
             }
         }
 
@@ -105,32 +89,6 @@ pub fn get_cluster(
     final_poly_list
 }
 
-/// Test if Boundary Faces Option Match User's Desired Boundary Faces
-///
-/// Compares the user's faces option to a fracture cluster
-///
-/// # Arguments
-///
-/// * `faces_option` - Boundary faces user input option array ('boundaryFaces' in input file)
-/// * `faces` - Fracture cluter's boundary faces array.
-///   Similar to 'boundaryFaces' input option, but denotes which faces the fracture cluster connects to.
-///
-/// # Returns
-///
-/// * `bool`
-///   false - If faces meet user's facesOption requirements
-///   true - If faces do not meet requirements
-fn faces_match(faces_option: &[bool; 6], faces: &[bool; 6]) -> bool {
-    for i in 0..6 {
-        // If the user specified the face, check if faces match
-        if faces_option[i] & !(faces_option[i] & faces[i]) {
-            return false;
-        }
-    }
-
-    true
-}
-
 /// Assign New Polygon to a Cluster
 ///
 /// Assigns a new polygon/fracture to a new cluster group number.
@@ -144,11 +102,9 @@ fn faces_match(faces_option: &[bool; 6], faces: &[bool; 6]) -> bool {
 pub fn assign_group(new_poly: &mut Poly, pstats: &mut Stats, new_poly_index: usize) {
     new_poly.group_num = pstats.next_group_num;
     let mut new_group_data = GroupData::new(); // Keeps fracture cluster data
-                                               // Copy newPoly faces info to groupData
-    or(&mut new_group_data.faces, &new_poly.faces);
-    // Incriment groupData's poly count
+                                               // Incriment groupData's poly count
     new_group_data.size += 1;
-    pstats.group_data.push(new_group_data); // Save boundary face information to permanent location
+    pstats.group_data.push(new_group_data);
     let mut new_group = FractureGroups::new(pstats.next_group_num); // 'newPoly' had no intersections, put it in a new group
     pstats.next_group_num += 1;
     new_group.poly_list.push(new_poly_index); // Save index (number) of newPoly
@@ -198,8 +154,7 @@ pub fn update_groups(
     // NOTE: Groups start at 1, but array starts at zero hence the groupNum-1 for index
     let group_index = new_poly.group_num - 1;
 
-    // Add newPoly to its group: boundary face info, size, and list of polygons
-    or(&mut pstats.group_data[group_index].faces, &new_poly.faces);
+    // Add newPoly to its group: size and list of polygons
     pstats.group_data[group_index].size += 1;
 
     match pstats
@@ -215,11 +170,6 @@ pub fn update_groups(
     for &gid in encountered_groups {
         if pstats.group_data[gid - 1].valid {
             pstats.group_data[group_index].size += pstats.group_data[gid - 1].size;
-            let encountered_faces = pstats.group_data[gid - 1].faces;
-            or(
-                &mut pstats.group_data[group_index].faces,
-                &encountered_faces,
-            );
             // Mark merged groups group data as invalid
             pstats.group_data[gid - 1].valid = false;
         }

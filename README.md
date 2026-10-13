@@ -36,8 +36,6 @@ triple_intersections = true
 check_user_fractures = true        # optional, default true; false = no FRAM for two user-defined fractures (see below)
 
 [clusters]
-boundary_faces = [true, true, false, false, false, false]  # +x, -x, +y, -y, +z, -z
-ignore_boundary_faces = true
 keep_only_largest = false
 keep_isolated_fractures = false
 
@@ -77,8 +75,6 @@ Each fracture is whole: the domain does not cut it. Thus:
 
 - A fracture can have vertices outside the domain. A fracture with no part in
   the domain is rejected.
-- A fracture which crosses a domain face is connected to that face for
-  `clusters.boundary_faces`. A fracture which only touches the face is not.
 - FRAM also checks the intersections outside the domain, and they are written.
 - The area and the P32 values include the part outside the domain. Thus a `p32`
   run stops with a lower intensity in the domain than `p32_target`.
@@ -95,8 +91,8 @@ definition of the domain. `tests/data/mesh_domain` is an example, and
   "Ascii" in the save dialog. In PyVista, use `mesh.save("domain.vtu", binary=False)`.
 - The cells can be tetrahedra, voxels, hexahedra, wedges and pyramids (VTK
   types 10 to 14).
-- The bounding box of the mesh is the box domain: `clusters.boundary_faces`
-  uses this box. The mesh can be at any position.
+- The bounding box of the mesh is the box domain: a fracture with no part
+  in this box is rejected. The mesh can be at any position.
 - The center of each stochastic fracture is in a cell of the mesh. The centers
   are sampled in the cells, uniform by volume. A fracture with its center in
   the mesh can have a part outside the mesh; the fracture is not cut.

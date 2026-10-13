@@ -215,10 +215,6 @@ def convert_general_options(
         f"relaxed = {boolean(dat.flag('rFram'))}",
         f"triple_intersections = {boolean(dat.flag('tripleIntersections'))}",        "",
         "[clusters]",
-        "boundary_faces = ["
-        + ", ".join(boolean(int(face) != 0) for face in dat.list("boundaryFaces"))
-        + "]",
-        f"ignore_boundary_faces = {boolean(dat.flag('ignoreBoundaryFaces'))}",
         f"keep_only_largest = {boolean(dat.flag('keepOnlyLargestCluster'))}",
         f"keep_isolated_fractures = {boolean(dat.flag('keepIsolatedFractures'))}",
         "",

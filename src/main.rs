@@ -158,37 +158,16 @@ fn main() -> Result<(), DfngenError> {
     }
 
     // Remove any isolated fractures and return
-    // a list of polygon indices matching the users
-    // boundaryFaces option. If input option
+    // a list of polygon indices. If input option
     // keepOnlyLargestCluster = 1, return largest
-    // cluster matching users boundaryFaces option
-    // If ignoreBoundaryFaces input option is on,
-    // DFN will keep all fractures with intersections.
+    // cluster. DFN will keep all fractures with intersections.
     let mut final_fractures = get_cluster(
         input.keep_isolated_fractures,
         input.keep_only_largest_cluster,
-        input.ignore_boundary_faces,
-        &input.boundary_faces,
         &dfngen.pstats,
     );
     // Sort fracture indices to retain order by acceptance
     final_fractures.sort();
-    // Error check for no boundary connection
-    let mut print_connectivity_error = false;
-
-    if final_fractures.is_empty() && !input.ignore_boundary_faces {
-        print_connectivity_error = true;
-        // There is no fracture network which connects the boundary faces of the user.
-        // Ignore the boundary faces, to report the statistics of the network before the error.
-        final_fractures = get_cluster(
-            input.keep_isolated_fractures,
-            input.keep_only_largest_cluster,
-            true,
-            &input.boundary_faces,
-            &dfngen.pstats,
-        );
-        final_fractures.sort();
-    }
 
     if final_fractures.is_empty() {
         error!("DFN Generation has finished, however there are no intersecting fractures. Please adjust input parameters.");
@@ -203,15 +182,6 @@ fn main() -> Result<(), DfngenError> {
         &final_fractures,
         dom_vol,
     );
-
-    if print_connectivity_error {
-        error!("DFN generation has finished but the formed",);
-        error!("fracture network does not make a connection between",);
-        error!("the user's specified boundary faces.");
-        error!("Try increasing the fracture density, shrinking the domain",);
-        error!("or consider using the 'clusters.ignore_boundary_faces' option.",);
-        return Err(DfngenError::NoBoundaryConnection);
-    }
 
     report_intersection_statistics(&dfngen);
     report_rejection_statistics(&dfngen.pstats);

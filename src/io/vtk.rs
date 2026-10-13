@@ -39,8 +39,8 @@ pub fn write_fractures_vtk(
 
 /// Writes the removed fractures as polygons in VTK XML PolyData format (`.vtp`, ASCII)
 ///
-/// A removed fracture is an accepted fracture which is isolated, or does not
-/// connect the boundary faces. One polygon cell is written for each of them, with
+/// A removed fracture is an accepted fracture which the cluster analysis did
+/// not keep. One polygon cell is written for each of them, with
 /// the cell data of `write_accepted_cell_data`.
 ///
 /// # Arguments

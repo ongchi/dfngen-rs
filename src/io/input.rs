@@ -74,24 +74,8 @@ pub struct Input {
     ///     True  - On (default)
     pub check_user_fractures: bool,
 
-    /// DFN will only keep clusters with connections to
-    /// domain boundaries which are set to 1:
-    ///
-    /// boundaryFaces[0] = +X domain boundary
-    /// boundaryFaces[1] = -X domain boundary
-    /// boundaryFaces[2] = +Y domain boundary
-    /// boundaryFaces[3] = -Y domain boundary
-    /// boundaryFaces[4] = +Z domain boundary
-    /// boundaryFaces[5] = -Z domain boundary
-    pub boundary_faces: [bool; 6],
-
-    /// 0 - Keep any clusters which connects the specified
-    ///     boundary faces in boundaryFaces option below
-    /// 1 - Keep only the largest cluster which connects
-    ///     the specified boundary faces in boundaryFaces option below.
-    ///
-    /// If ignoreBoundaryFaces is also set to 1, DFNGen will keep the largest
-    /// cluster which connects at least any two sides of the domain.
+    /// 0 - Keep each cluster of 2 or more fractures
+    /// 1 - Keep only the largest cluster
     pub keep_only_largest_cluster: bool,
 
     /// 0 - remove isolated fractures and clusters
@@ -136,11 +120,6 @@ pub struct Input {
     /// Volume of each region of the domain mesh, in the order of
     /// `DomainMesh::regions`.
     pub region_volumes: Vec<f64>,
-
-    /// False - Use boundaryFaces option.
-    /// True  - Ignore boundaryFaces option, keep all clusters
-    ///         and remove fractures with no intersections
-    pub ignore_boundary_faces: bool,
 
     /// User-defined fractures, in the order of their file. The vertices have
     /// the coordinates of the generation.
@@ -189,8 +168,6 @@ struct FramSection {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct ClustersSection {
-    boundary_faces: [bool; 6],
-    ignore_boundary_faces: bool,
     keep_only_largest: bool,
     keep_isolated_fractures: bool,
 }
@@ -395,7 +372,6 @@ fn build_input(
         r_fram: file.fram.relaxed,
         triple_intersections: file.fram.triple_intersections,
         check_user_fractures: file.fram.check_user_fractures.unwrap_or(true),
-        boundary_faces: file.clusters.boundary_faces,
         keep_only_largest_cluster: file.clusters.keep_only_largest,
         keep_isolated_fractures: file.clusters.keep_isolated_fractures,
         print_reject_reasons: file.output.print_reject_reasons,
@@ -405,7 +381,6 @@ fn build_input(
         output_rejected_fractures: file.output.rejected_fractures,
         rejects_per_fracture: file.generation.rejects_per_fracture,
         region_volumes,
-        ignore_boundary_faces: file.clusters.ignore_boundary_faces,
         user_fractures,
     };
 
@@ -603,8 +578,6 @@ pub mod test_inputs {
         triple_intersections = true
 
         [clusters]
-        boundary_faces = [true, true, false, false, false, false]
-        ignore_boundary_faces = true
         keep_only_largest = false
         keep_isolated_fractures = false
 

@@ -56,16 +56,6 @@ pub struct Poly {
     /// Vertices of the polygon, in order around its boundary.
     pub vertices: Vec<Point3<f64>>,
 
-    /// The faces array contains flags (true/false) which denote which sides, if any, the polygon is touching.
-    /// True (not zero) - Polygon is touching a domain boundary.
-    /// False (0) - Polygon is not touching a domain boundary.
-    /// Index Key:
-    /// [0]: -x face, [1]: +x face
-    /// [2]: -y face, [3]: +y face
-    /// [4]: -z face, [5]: +z face
-    /// Touching boundary faces of the fractures group, not neccesarily the faces of the fracture
-    pub faces: [bool; 6],
-
     /// List of indices to the permanent intersection array ('intPts' in main()) which belong to this polygon.
     pub intersection_index: Vec<usize>,
 }
@@ -85,7 +75,6 @@ impl Default for Poly {
             // Intersects nothing until assign_bounding_box() sets it
             bounding_box: Aabb::new_invalid(),
             vertices: Vec::new(),
-            faces: [false; 6],
             intersection_index: Vec::new(),
         }
     }

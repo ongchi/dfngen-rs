@@ -104,12 +104,6 @@ pub struct GroupData {
     /// Valid bit, True if group this structures data is still valid, false otherwise.
     /// Data can become invalid when fracture cluster groups merge together.
     pub valid: bool,
-    /// Domain boundary sides/faces that this cluster connects to..
-    /// Index Key:
-    /// [0]: -x face, [1]: +x face
-    /// [2]: -y face, [3]: +y face
-    /// [4]: -z face, [5]: +z face
-    pub faces: [bool; 6],
 }
 
 /// Rejection reason counters.
@@ -326,8 +320,7 @@ impl FractureGroups {
 }
 
 impl GroupData {
-    /// Initializes size to zero, valid to true,
-    /// and zeros (set to false) the faces array.
+    /// Initializes size to zero and valid to true.
     pub fn new() -> Self {
         Self {
             valid: true,

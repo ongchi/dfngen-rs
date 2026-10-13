@@ -16,8 +16,6 @@ relaxed = false
 triple_intersections = false
 
 [clusters]
-boundary_faces = [false, false, true, true, false, false]
-ignore_boundary_faces = false
 keep_only_largest = true
 keep_isolated_fractures = false
 
