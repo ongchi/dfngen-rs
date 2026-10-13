@@ -4,7 +4,6 @@ user_fractures = "upstream_calibrate_p32_from_p10_user_fractures.vtp"
 
 [domain]
 mesh = "upstream_calibrate_p32_from_p10.vtu"
-truncate_fractures = true
 
 [generation]
 stop_condition = "p32"

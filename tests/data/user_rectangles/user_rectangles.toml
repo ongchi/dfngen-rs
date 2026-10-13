@@ -4,7 +4,6 @@ user_fractures = "user_rectangles_user_fractures.vtp"
 
 [domain]
 mesh = "user_rectangles.vtu"
-truncate_fractures = true
 
 [generation]
 stop_condition = "n_poly"

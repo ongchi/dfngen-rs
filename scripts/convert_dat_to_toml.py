@@ -201,7 +201,6 @@ def convert_general_options(
         "",
         "[domain]",
         f'mesh = "{mesh_file_name}"',
-        "truncate_fractures = true",
     ]
 
     lines += ["", "[generation]"]

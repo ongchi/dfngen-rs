@@ -11,7 +11,7 @@ use crate::distribution::{LogNormalSampling, TruncExp, TruncLogNormal, TruncPowe
 use crate::domain_mesh::DomainMesh;
 use crate::error::DfngenError;
 use crate::fracture::insert_shape::print_reject_reason;
-use crate::fracture::poly::{DomainBoundaryMode, Poly};
+use crate::fracture::poly::Poly;
 use crate::fracture::user_defined_fractures::DomainCheck;
 
 /// A fracture which was not accepted, with the FRAM reject code of its last attempt.
@@ -168,9 +168,6 @@ pub struct Stats {
     /// Total number of polygon/fracture re-translations. This variable is updated
     /// as the DFN is generated.
     pub retranslated_poly_count: u32,
-
-    /// Total number of fractures that have been truncated against the domain.
-    pub truncated: usize,
 
     /// Total area of fractures before isolated fracture removal. Variable is set in main() after
     /// DFN generation has completed.
@@ -395,12 +392,7 @@ impl DFNGen {
         domain_check: DomainCheck,
         opts: &PolyOptions,
     ) {
-        let is_outside_box_domain = new_poly.domain_truncation(
-            opts.h,
-            opts.eps,
-            &opts.domain_size,
-            opts.domain_boundary_mode,
-        );
+        let is_outside_box_domain = new_poly.check_box_domain(opts.h, opts.eps, &opts.domain_size);
         let is_rejected = match domain_check {
             // Poly completely outside domain, or it intersects no cell of its region of the domain mesh
             DomainCheck::Regions(region_ids) => {
@@ -409,10 +401,7 @@ impl DFNGen {
                         .domain_mesh
                         .intersects_polygon_in_any_region(&new_poly.vertices, region_ids)
             }
-            // The truncation left no polygon. A whole polygon is kept.
-            DomainCheck::FractureIsInDomain => {
-                is_outside_box_domain && opts.domain_boundary_mode == DomainBoundaryMode::Truncate
-            }
+            DomainCheck::FractureIsInDomain => false,
         };
 
         if is_rejected {
@@ -445,10 +434,6 @@ impl DFNGen {
 
         if reject_code == 0 {
             // If intersection is ok (FRAM passed all tests)
-            if new_poly.truncated {
-                self.pstats.truncated += 1;
-            }
-
             // Incriment counter of accepted polys
             self.pstats.accepted_poly_count += 1;
             // Calculate poly's area
@@ -541,7 +526,6 @@ pub struct PolyOptions {
     pub h: f64,
     pub eps: f64,
     pub domain_size: Vector3<f64>,
-    pub domain_boundary_mode: DomainBoundaryMode,
     /// The cells which make the domain.
     pub domain_mesh: Rc<DomainMesh>,
     pub r_fram: bool,
@@ -600,7 +584,6 @@ mod tests {
             h: 0.1,
             eps: 1e-9,
             domain_size: Vector3::new(10., 10., 10.),
-            domain_boundary_mode: DomainBoundaryMode::Truncate,
             domain_mesh: Rc::new(l_shaped_mesh()),
             r_fram: false,
             disable_fram: false,

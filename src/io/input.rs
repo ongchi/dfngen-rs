@@ -11,7 +11,6 @@ use crate::error::DfngenError;
 use crate::fracture::fracture_family::{
     FractureFamily, FractureFamilyBuilder, FractureFamilyCollection,
 };
-use crate::fracture::poly::DomainBoundaryMode;
 use crate::fracture::user_defined_fractures::UserFracture;
 use crate::io::vtp::{read_user_fractures, FracturePolygon};
 use crate::io::vtu::read_domain_mesh;
@@ -45,9 +44,6 @@ pub struct Input {
 
     /// The cells which make the domain.
     pub domain_mesh: Rc<DomainMesh>,
-
-    /// What to do with the part of a fracture which is outside the domain.
-    pub domain_boundary_mode: DomainBoundaryMode,
 
     /// Minimum feature size, FRAM parameter.
     pub h: f64,
@@ -174,8 +170,6 @@ struct DomainSection {
     /// Path of an ASCII `.vtu` file which gives the domain.
     /// A relative path starts at the folder of the input file.
     mesh: String,
-    /// True: cut each fracture at the domain boundary. False: keep it whole.
-    truncate_fractures: bool,
 }
 
 #[derive(Deserialize)]
@@ -400,11 +394,6 @@ fn build_input(
         domain_size: domain_mesh.size(),
         domain_volume: domain_mesh.volume(),
         domain_mesh,
-        domain_boundary_mode: if file.domain.truncate_fractures {
-            DomainBoundaryMode::Truncate
-        } else {
-            DomainBoundaryMode::KeepWhole
-        },
         h: file.h,
         eps,
         radii_list_increase: file.generation.radii_list_increase,
@@ -604,7 +593,6 @@ pub mod test_inputs {
 
         [domain]
         mesh = "domain.vtu"
-        truncate_fractures = true
 
         [generation]
         stop_condition = "n_poly"
@@ -638,11 +626,6 @@ pub mod test_inputs {
             l_shaped_mesh(),
             Vec::new(),
         )
-    }
-
-    /// The input of `GENERAL_OPTIONS`
-    pub fn general_input() -> Input {
-        parse(&[GENERAL_OPTIONS]).unwrap().0
     }
 }
 
@@ -701,8 +684,8 @@ mod tests {
     #[test]
     fn test_input_with_domain_size_is_rejected() {
         let options = GENERAL_OPTIONS.replace(
-            "truncate_fractures = true",
-            "truncate_fractures = true\nsize = [10.0, 10.0, 10.0]",
+            "mesh = \"domain.vtu\"",
+            "mesh = \"domain.vtu\"\nsize = [10.0, 10.0, 10.0]",
         );
 
         let message = error_message(parse(&[&options]));
@@ -945,32 +928,17 @@ mod tests {
     }
 
     #[test]
-    fn test_truncate_fractures_true_gives_the_truncate_mode() {
-        let (input, _) = parse(&[GENERAL_OPTIONS]).unwrap();
-
-        assert_eq!(input.domain_boundary_mode, DomainBoundaryMode::Truncate);
-    }
-
-    #[test]
-    fn test_truncate_fractures_false_gives_the_keep_whole_mode() {
-        let options =
-            GENERAL_OPTIONS.replace("truncate_fractures = true", "truncate_fractures = false");
-
-        let (input, _) = parse(&[&options]).unwrap();
-
-        assert_eq!(input.domain_boundary_mode, DomainBoundaryMode::KeepWhole);
-    }
-
-    #[test]
-    fn test_input_without_truncate_fractures_is_rejected() {
-        let options = GENERAL_OPTIONS.replace("truncate_fractures = true", "");
+    fn test_input_with_truncate_fractures_is_rejected() {
+        let options = GENERAL_OPTIONS.replace(
+            "mesh = \"domain.vtu\"",
+            "mesh = \"domain.vtu\"\ntruncate_fractures = false",
+        );
 
         let message = error_message(parse(&[&options]));
 
         assert!(
-            message.contains("missing field `truncate_fractures`"),
-            "{}",
-            message
+            message.contains("unknown field `truncate_fractures`"),
+            "{message}"
         );
     }
 

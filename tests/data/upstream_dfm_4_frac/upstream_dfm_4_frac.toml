@@ -4,7 +4,6 @@ user_fractures = "upstream_dfm_4_frac_user_fractures.vtp"
 
 [domain]
 mesh = "upstream_dfm_4_frac.vtu"
-truncate_fractures = true
 
 [generation]
 stop_condition = "p32"
@@ -20,7 +19,7 @@ triple_intersections = false
 
 [clusters]
 boundary_faces = [true, true, false, false, false, false]
-ignore_boundary_faces = false
+ignore_boundary_faces = true
 keep_only_largest = true
 keep_isolated_fractures = false
 

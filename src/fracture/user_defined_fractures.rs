@@ -41,14 +41,10 @@ pub fn insert_user_defined_fractures(
 fn is_piece_in_domain(fracture: &UserFracture, opts: &PolyOptions) -> bool {
     let mut poly = fracture.to_poly();
 
-    !poly.domain_truncation(
-        opts.h,
-        opts.eps,
-        &opts.domain_size,
-        opts.domain_boundary_mode,
-    ) && opts
-        .domain_mesh
-        .intersects_polygon_in_any_region(&poly.vertices, &fracture.region_ids)
+    !poly.check_box_domain(opts.h, opts.eps, &opts.domain_size)
+        && opts
+            .domain_mesh
+            .intersects_polygon_in_any_region(&poly.vertices, &fracture.region_ids)
 }
 
 /// Domain check of a user-defined fracture at its insertion.
@@ -59,7 +55,7 @@ pub enum DomainCheck<'a> {
     Regions(&'a [usize]),
 
     /// The polygon is a piece of a fracture which has a piece in the domain.
-    /// It is rejected only if the domain truncation leaves no polygon.
+    /// It is not rejected as outside the domain.
     FractureIsInDomain,
 }
 

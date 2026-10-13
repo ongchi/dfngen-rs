@@ -1,9 +1,8 @@
-seed = 104
+seed = 1
 h = 1.0
 
 [domain]
 mesh = "upstream_finite_matrix_diffusion.vtu"
-truncate_fractures = true
 
 [generation]
 stop_condition = "p32"

@@ -3,7 +3,6 @@ h = 0.1
 
 [domain]
 mesh = "stochastic_npoly.vtu"
-truncate_fractures = true
 
 [generation]
 stop_condition = "n_poly"

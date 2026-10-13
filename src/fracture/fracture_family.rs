@@ -17,7 +17,7 @@ use super::poly::Poly;
 pub struct FractureFamily {
     pub id: usize,
 
-    /// Number of vertices of each fracture before fracture-domain truncation.
+    /// Number of vertices of each fracture.
     pub number_of_points: usize,
 
     pub radius: RadiusDistribution,

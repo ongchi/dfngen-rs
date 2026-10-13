@@ -4,7 +4,6 @@ user_fractures = "all_input_options_user_fractures.vtp"
 
 [domain]
 mesh = "all_input_options.vtu"
-truncate_fractures = false
 
 [generation]
 stop_condition = "n_poly"

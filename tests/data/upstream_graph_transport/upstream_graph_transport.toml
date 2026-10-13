@@ -3,7 +3,6 @@ h = 1.0
 
 [domain]
 mesh = "upstream_graph_transport.vtu"
-truncate_fractures = true
 
 [generation]
 stop_condition = "p32"

@@ -6,7 +6,7 @@ use std::{
 use parry3d_f64::na::{center, distance, Point3, Vector3};
 use tracing::info;
 
-use crate::fracture::poly::{DomainBoundaryMode, Poly};
+use crate::fracture::poly::Poly;
 use crate::io::input::Input;
 use crate::io::vtk::{
     write_fractures_vtk, write_rejected_fractures_vtk, write_removed_fractures_vtk,
@@ -68,17 +68,7 @@ pub fn write_output(
     let mesh_center = &input.domain_mesh.center();
 
     let mut vtk_file = create_file(format!("{}/fractures.vtp", output))?;
-    let boundary_face_counts: Vec<usize> = accepted_poly
-        .iter()
-        .map(|poly| find_boundary_face_lines_for_mode(poly, input).len())
-        .collect();
-    write_fractures_vtk(
-        final_fractures,
-        accepted_poly,
-        &boundary_face_counts,
-        mesh_center,
-        &mut vtk_file,
-    )?;
+    write_fractures_vtk(final_fractures, accepted_poly, mesh_center, &mut vtk_file)?;
     vtk_file.flush()?;
 
     let removed_fractures: Vec<usize> = (0..accepted_poly.len())
@@ -90,7 +80,6 @@ pub fn write_output(
         write_removed_fractures_vtk(
             &removed_fractures,
             accepted_poly,
-            &boundary_face_counts,
             mesh_center,
             &mut removed_file,
         )?;
@@ -104,14 +93,7 @@ pub fn write_output(
     }
 
     adjust_int_fract_ids(final_fractures, accepted_poly, int_pts);
-    write_intersection_list(
-        input,
-        final_fractures,
-        accepted_poly,
-        int_pts,
-        mesh_center,
-        output,
-    )?;
+    write_intersection_list(final_fractures, accepted_poly, int_pts, mesh_center, output)?;
     write_rejection_stats(pstats, output)?;
     write_user_rejected_fracture_information(pstats, output)?;
     write_connectivity(final_fractures, accepted_poly, int_pts, output)?;
@@ -332,99 +314,16 @@ fn write_rejects_per_attempt(pstats: &Stats, output: &str) -> io::Result<()> {
     file.flush()
 }
 
-/// Domain boundary faces as `(axis, id of the + face, id of the - face)`.
-/// The ids are the negated FEHM face numbers:
-/// top / Z+ / 1, bottom / Z- / 2, left / X- / 3, front / Y+ / 4, right / X+ / 5, back / Y- / 6
-const BOUNDARY_FACE_IDS: [(usize, isize, isize); 3] = [(0, -5, -3), (1, -4, -6), (2, -1, -2)];
-
-/// Finds the lines where a fracture meets the domain boundary faces, if the
-/// fractures are truncated
-///
-/// A whole fracture has no edge on a domain face, thus it has no such line.
-fn find_boundary_face_lines_for_mode(poly: &Poly, input: &Input) -> Vec<(isize, usize, usize)> {
-    match input.domain_boundary_mode {
-        DomainBoundaryMode::Truncate => {
-            find_boundary_face_lines(poly, &input.domain_size, input.eps)
-        }
-        DomainBoundaryMode::KeepWhole => Vec::new(),
-    }
-}
-
-/// Finds the lines where a fracture meets the domain boundary faces
-///
-/// There is at most one line for each face: between the first vertex found
-/// on the face and the first other vertex on the same face.
-///
-/// # Arguments
-///
-/// * `poly` - Fracture
-/// * `domain_size` - Domain size in x, y, z
-/// * `eps` - Epsilon value for floating point comparisons
-///
-/// # Returns
-///
-/// `(face id, index of the first vertex, index of the second vertex)` for each line
-pub fn find_boundary_face_lines(
-    poly: &Poly,
-    domain_size: &Vector3<f64>,
-    eps: f64,
-) -> Vec<(isize, usize, usize)> {
-    let half_domain = domain_size * 0.5;
-    let number_of_nodes = poly.vertices.len();
-    let mut is_face_found = [[false; 2]; 3];
-    let mut lines = Vec::new();
-
-    for k in 0..number_of_nodes {
-        for (axis, plus_face_id, minus_face_id) in BOUNDARY_FACE_IDS {
-            let is_on_plus_face =
-                |vertex: usize| poly.vertices[vertex][axis] >= half_domain[axis] - eps;
-            let is_on_minus_face =
-                |vertex: usize| poly.vertices[vertex][axis] <= -half_domain[axis] + eps;
-
-            let (side, face_id) = if is_on_plus_face(k) {
-                (0, plus_face_id)
-            } else if is_on_minus_face(k) {
-                (1, minus_face_id)
-            } else {
-                continue;
-            };
-
-            if is_face_found[axis][side] {
-                continue;
-            }
-
-            let other_vertex = (0..number_of_nodes).find(|&kk| {
-                kk != k
-                    && if side == 0 {
-                        is_on_plus_face(kk)
-                    } else {
-                        is_on_minus_face(kk)
-                    }
-            });
-
-            if let Some(kk) = other_vertex {
-                lines.push((face_id, k, kk));
-                is_face_found[axis][side] = true;
-            }
-        }
-    }
-
-    lines
-}
-
 /// Writes intersection_list.dat, the intersections between the final fractures
-/// and between a final fracture and a domain boundary face
 ///
 /// # Arguments
 ///
-/// * `input` - Input structure, contains all user input
 /// * `final_fractures` - Vector array of indices of fractures left after isolated fracture removal
 /// * `accepted_poly` - Vector array of all accetped fractures (before isolated fracture removal)
 /// * `int_pts` - Vector array of all intersections
 /// * `mesh_center` - Center of the domain mesh
 /// * `output` - Path to output folder
 fn write_intersection_list(
-    input: &Input,
     final_fractures: &[usize],
     accepted_poly: &[Poly],
     int_pts: &[IntersectionPoints],
@@ -453,17 +352,6 @@ fn write_intersection_list(
                     mesh_center,
                 )?;
             }
-        }
-
-        for (face_id, k, kk) in find_boundary_face_lines_for_mode(poly, input) {
-            write_mid_point(
-                &mut int_file,
-                fracture_id as isize,
-                face_id,
-                &poly.vertices[k],
-                &poly.vertices[kk],
-                mesh_center,
-            )?;
         }
     }
 
@@ -505,9 +393,6 @@ fn write_mid_point(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::io::input::test_inputs::general_input;
-
-    const EPS: f64 = 1e-9;
 
     fn write_mid_point_of_a_line_on_the_x_axis(mesh_center: &Vector3<f64>) -> String {
         let mut line = Vec::new();
@@ -529,40 +414,5 @@ mod tests {
             write_mid_point_of_a_line_on_the_x_axis(&Vector3::new(10., 20., 30.)),
             "1 2 12.0000000000 20.0000000000 30.0000000000 2.0000000000\n"
         );
-    }
-
-    #[test]
-    fn test_fracture_inside_the_domain_meets_no_boundary_face() {
-        let rectangle = Poly::new(4, std::f64::consts::SQRT_2, 2.);
-
-        let lines = find_boundary_face_lines(&rectangle, &Vector3::new(10., 10., 10.), EPS);
-
-        assert!(lines.is_empty());
-    }
-
-    #[test]
-    fn test_fracture_with_two_vertices_on_a_face_meets_that_face() {
-        // The rectangle has x = 1 at vertices 0 and 3, and x = -1 at vertices 1 and 2
-        let rectangle = Poly::new(4, std::f64::consts::SQRT_2, 2.);
-
-        let lines = find_boundary_face_lines(&rectangle, &Vector3::new(2., 10., 10.), EPS);
-
-        assert_eq!(lines, [(-5, 0, 3), (-3, 1, 2)]);
-    }
-
-    #[test]
-    fn test_whole_fracture_across_a_face_gives_no_boundary_face_line() {
-        // The rectangle has x = 1 at vertices 0 and 3, and x = -1 at vertices 1 and 2
-        let rectangle = Poly::new(4, std::f64::consts::SQRT_2, 2.);
-        let input = Input {
-            domain_size: Vector3::new(1., 10., 10.),
-            eps: EPS,
-            domain_boundary_mode: DomainBoundaryMode::KeepWhole,
-            ..general_input()
-        };
-
-        let lines = find_boundary_face_lines_for_mode(&rectangle, &input);
-
-        assert!(lines.is_empty());
     }
 }

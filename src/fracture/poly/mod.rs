@@ -1,6 +1,4 @@
-mod domain_truncation;
-
-pub use domain_truncation::DomainBoundaryMode;
+mod box_domain;
 
 use parry3d_f64::bounding_volume::Aabb;
 use parry3d_f64::na::{center, Point3, Rotation3, Vector3};
@@ -34,16 +32,16 @@ pub struct Poly {
     /// Polygon area (Not calculated until after DFN generation has completed).
     pub area: f64,
 
-    /// X-radius before fracture-domain truncation.
+    /// X-radius.
     /// X-radius is equal to the value generated from randum distributions or given by the user
     /// in the case of constant distributions and user-defined fractures.
     pub xradius: f64,
 
-    /// Y-radius before fracture-domain truncation.
+    /// Y-radius.
     /// Y-radius is equal to x-radius * aspect ratio (yradius = aspectRatio * xradius).
     pub yradius: f64,
 
-    /// Aspect ratio of polygon before fracture-domain truncation. Must be value greater than zero.
+    /// Aspect ratio of polygon. Must be value greater than zero.
     pub aspect_ratio: f64,
 
     /// Translation of polygon. This variable is set while building the polygon.
@@ -68,10 +66,6 @@ pub struct Poly {
     /// Touching boundary faces of the fractures group, not neccesarily the faces of the fracture
     pub faces: [bool; 6],
 
-    /// True if the polygon has been truncated, false otherwise. This variable is used for re-translating polygons.
-    /// If the polygon has been truncated, it must be re-built. Otherwise, it can simply be given a new translation. */
-    pub truncated: bool,
-
     /// List of indices to the permanent intersection array ('intPts' in main()) which belong to this polygon.
     pub intersection_index: Vec<usize>,
 }
@@ -92,7 +86,6 @@ impl Default for Poly {
             bounding_box: Aabb::new_invalid(),
             vertices: Vec::new(),
             faces: [false; 6],
-            truncated: false,
             intersection_index: Vec::new(),
         }
     }
@@ -141,7 +134,7 @@ impl Poly {
 
     /// Assign Poly's Area
     ///
-    /// Calculate exact area of polygon (after truncation)
+    /// Calculate exact area of polygon
     ///
     /// Splits the polygon into triangles around a point inside of it,
     /// and sums the areas of the triangles.

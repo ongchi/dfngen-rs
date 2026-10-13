@@ -22,7 +22,6 @@ user_fractures = "fractures.vtp"   # optional; the file with the user-defined fr
 
 [domain]
 mesh = "domain.vtu"                # the mesh file which gives the domain (see below)
-truncate_fractures = true          # false = keep each fracture whole (see below)
 
 [generation]
 stop_condition = "n_poly"          # or "p32"
@@ -76,17 +75,15 @@ error after 1000 rejected values. `"inverse_cdf"` uses one random number for eac
 radius, also when `[min, max]` is in a tail of the distribution. The two methods
 give different networks for the same seed.
 
-`domain.truncate_fractures = false` keeps each fracture whole. Then:
+Each fracture is whole: the domain does not cut it. Thus:
 
 - A fracture can have vertices outside the domain. A fracture with no part in
-  the domain is rejected, as with truncation.
+  the domain is rejected.
 - A fracture which crosses a domain face is connected to that face for
-  `clusters.boundary_faces`.
+  `clusters.boundary_faces`. A fracture which only touches the face is not.
 - FRAM also checks the intersections outside the domain, and they are written.
 - The area and the P32 values include the part outside the domain. Thus a `p32`
   run stops with a lower intensity in the domain than `p32_target`.
-- `truncated` and `boundary_face_count` are 0, and `intersection_list.dat` has no
-  line between a fracture and a domain face.
 
 ### Domain mesh
 
@@ -99,12 +96,11 @@ definition of the domain. `tests/data/mesh_domain` is an example, and
   "Ascii" in the save dialog. In PyVista, use `mesh.save("domain.vtu", binary=False)`.
 - The cells can be tetrahedra, voxels, hexahedra, wedges and pyramids (VTK
   types 10 to 14).
-- The bounding box of the mesh is the box domain: `truncate_fractures` and
-  `clusters.boundary_faces` use this box. The mesh can be at any position.
+- The bounding box of the mesh is the box domain: `clusters.boundary_faces`
+  uses this box. The mesh can be at any position.
 - The center of each stochastic fracture is in a cell of the mesh. The centers
   are sampled in the cells, uniform by volume. A fracture with its center in
-  the mesh can have a part outside the mesh; the fracture is cut only at the
-  bounding box.
+  the mesh can have a part outside the mesh; the fracture is not cut.
 - A user-defined fracture is rejected only if it intersects no cell (or no
   cell of its region, see "User-defined fractures"). Its center can be outside
   the mesh.
@@ -153,9 +149,7 @@ Shape of a stochastic fracture: a family makes
 a regular polygon with `number_of_points` vertices on a circle of the given
 radius. The polygon is then scaled in one direction by `aspect_ratio`.
 Many points give an ellipse. 4 points give a rectangle: its half sides are
-`radius / sqrt(2)` and `radius * aspect_ratio / sqrt(2)`. Because of rounding,
-a corner of such a rectangle can be a little outside a domain face which it
-must only touch. Then the domain cuts the rectangle.
+`radius / sqrt(2)` and `radius * aspect_ratio / sqrt(2)`.
 
 Order of the fractures: the user-defined fractures are inserted first, in the
 order of their file. The number of a family is its position in the input file.
@@ -201,9 +195,7 @@ must be before the first table (`[domain]`) of the input file.
     domain (it intersects a cell of the mesh, or of its regions), no piece of
     the fracture is rejected as outside the domain. Thus an accepted piece
     can be fully outside the mesh or in cells of another region, and its
-    area is in the total area and in P32. With `truncate_fractures = true`, a
-    piece with no part in the bounding box of the mesh has no polygon after
-    the cut and is rejected.
+    area is in the total area and in P32.
 
   The pieces must not cross each other; the code does not check this. FRAM
   accepts or rejects each piece alone: with `check_user_fractures = true`, it
@@ -272,7 +264,7 @@ of such a run is approximate.
 | `fractures.vtp` | The final fractures as polygons with their properties (VTK PolyData, for ParaView or PyVista). See below. |
 | `fractures_removed.vtp` | The accepted fractures which are not final fractures, as polygons with their properties (VTK PolyData). Written only if a fracture was removed. See below. |
 | `connectivity.dat` | Line N: numbers of the final fractures which intersect final fracture N. |
-| `intersection_list.dat` | One line for each intersection: the two fracture numbers, mid point and length. A negative number is a domain face: -1 top, -2 bottom, -3 left, -4 front, -5 right, -6 back. |
+| `intersection_list.dat` | One line for each intersection: the two fracture numbers, mid point and length. |
 | `triple_points.dat` | Coordinates of the triple intersection points. Written only if `triple_intersections = true`. |
 | `rejections.dat` | Number of rejected fractures for each rejection reason. |
 | `rejectsPerAttempt.dat` | Line N: number of rejected attempts before accepted fracture N. |
@@ -291,11 +283,9 @@ in 3D. Cell N is final fracture N.
 | `family` | 0 user-defined fracture, > 0 stochastic family. |
 | `user_fracture_id` | Value of the `fracture_id` array of the user-defined fracture file. -1 for a stochastic fracture and for a file without the array. |
 | `cluster` | Number of the connected group of fractures. |
-| `truncated` | 1 if the domain cut the fracture, else 0. |
 | `intersection_count` | Number of intersections with other accepted fractures. |
-| `boundary_face_count` | Number of domain faces which the fracture meets (at least two vertices on the face). For a final fracture, this is the number of its lines with a domain face in `intersection_list.dat`. |
-| `x_radius`, `y_radius`, `aspect_ratio` | Size before truncation. |
-| `area` | Area after truncation. |
+| `x_radius`, `y_radius`, `aspect_ratio` | Size. |
+| `area` | Area. |
 | `normal` | Unit normal vector. |
 | `translation` | Translation of the fracture center from the origin. |
 
@@ -320,8 +310,7 @@ then has no valid polygon.
 | `family` | Same numbers as in `fractures.vtp`. |
 | `user_fracture_id` | Same values as in `fractures.vtp`. |
 | `reject_code` | Reason for the rejection of the last attempt. See the table below. |
-| `truncated` | 1 if the domain cut the fracture, else 0. |
-| `x_radius`, `y_radius`, `aspect_ratio` | Size before truncation. |
+| `x_radius`, `y_radius`, `aspect_ratio` | Size. |
 | `normal` | Unit normal vector. |
 | `translation` | Translation of the fracture center from the origin. |
 

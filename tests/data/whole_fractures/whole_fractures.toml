@@ -3,7 +3,6 @@ h = 0.1
 
 [domain]
 mesh = "whole_fractures.vtu"
-truncate_fractures = false
 
 [generation]
 stop_condition = "n_poly"

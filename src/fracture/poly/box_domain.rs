@@ -3,16 +3,6 @@ use parry3d_f64::query::details::clip_halfspace_polygon;
 
 use crate::fracture::poly::Poly;
 
-/// What to do with the part of a fracture which is outside the domain
-#[derive(Default, Debug, Clone, Copy, PartialEq, Eq)]
-pub enum DomainBoundaryMode {
-    /// Cut the fracture at the domain boundary.
-    #[default]
-    Truncate,
-    /// Keep the fracture whole.
-    KeepWhole,
-}
-
 /// Cuts a polygon with the 6 sides of the domain, then removes a vertex of each
 /// edge which is shorter than 2h
 ///
@@ -112,45 +102,33 @@ fn find_domain_faces(vertices: &[Point3<f64>], eps: f64, half_domain: &Vector3<f
 }
 
 impl Poly {
-    /// Domain Truncation
+    /// Check of the polygon against the box domain
     ///
-    /// Finds the part of the polygon which is in the domain, and the domain faces
-    /// which the polygon touches. With `DomainBoundaryMode::Truncate`, the polygon
-    /// becomes that part. With `DomainBoundaryMode::KeepWhole`, the vertices of
-    /// the polygon do not change.
+    /// Finds the domain faces which the polygon crosses. The vertices of the
+    /// polygon do not change: a fracture is not cut at the domain.
     ///
     /// # Arguments
     ///
     /// * `h` - Minimum feature size
     /// * `eps` - Epsilon value for floating point comparisons
     /// * `domain_size` - Domain size in x, y, z
-    /// * `mode` - What to do with the part outside the domain
     ///
     /// # Returns
     ///
     /// false - If the polygon has a part with 3 vertices or more in the domain
     /// true - If rejected, because the part in the domain has less than 3 vertices
-    pub fn domain_truncation(
-        &mut self,
-        h: f64,
-        eps: f64,
-        domain_size: &Vector3<f64>,
-        mode: DomainBoundaryMode,
-    ) -> bool {
+    pub fn check_box_domain(&mut self, h: f64, eps: f64, domain_size: &Vector3<f64>) -> bool {
         let half_domain = domain_size * 0.5;
         let is_inside_domain = |vertex: &Point3<f64>| {
             (0..3)
                 .all(|axis| vertex[axis] <= half_domain[axis] && vertex[axis] >= -half_domain[axis])
         };
 
-        if mode == DomainBoundaryMode::KeepWhole {
-            // A whole polygon is not rebuilt for a new translation. Thus the
-            // faces of the last translation must be removed here.
-            self.faces = [false; 6];
-        }
+        // A polygon is not rebuilt for a new translation. Thus the faces of
+        // the last translation must be removed here.
+        self.faces = [false; 6];
 
         if self.vertices.iter().all(is_inside_domain) {
-            // Truncation is not necessary
             return false;
         }
 
@@ -159,11 +137,6 @@ impl Poly {
 
         if !is_rejected {
             self.faces = find_domain_faces(&part_in_domain, eps, &half_domain);
-        }
-
-        if mode == DomainBoundaryMode::Truncate {
-            self.truncated = true;
-            self.vertices = part_in_domain;
         }
 
         is_rejected
@@ -178,11 +151,11 @@ mod tests {
     const EPS: f64 = 1e-9;
 
     /// A square with sides of 2 in the plane z = 0 and with its center on the x axis
-    fn square_in_domain_of_size_10(center_x: f64, mode: DomainBoundaryMode) -> (Poly, bool) {
+    fn square_in_domain_of_size_10(center_x: f64) -> (Poly, bool) {
         let mut square = Poly::new(4, std::f64::consts::SQRT_2, 1.);
         square.translate(Vector3::new(center_x, 0., 0.));
 
-        let is_rejected = square.domain_truncation(H, EPS, &Vector3::new(10., 10., 10.), mode);
+        let is_rejected = square.check_box_domain(H, EPS, &Vector3::new(10., 10., 10.));
 
         (square, is_rejected)
     }
@@ -195,66 +168,40 @@ mod tests {
     }
 
     #[test]
-    fn test_truncated_fracture_ends_at_the_face_which_it_crosses() {
-        let (square, _) = square_in_domain_of_size_10(4.5, DomainBoundaryMode::Truncate);
-
-        assert!((max_x(&square) - 5.).abs() < EPS);
-    }
-
-    #[test]
-    fn test_truncated_fracture_is_marked_as_truncated() {
-        let (square, _) = square_in_domain_of_size_10(4.5, DomainBoundaryMode::Truncate);
-
-        assert!(square.truncated);
-    }
-
-    #[test]
-    fn test_whole_fracture_keeps_its_vertices_when_it_crosses_a_face() {
-        let (square, _) = square_in_domain_of_size_10(4.5, DomainBoundaryMode::KeepWhole);
+    fn test_fracture_keeps_its_vertices_when_it_crosses_a_face() {
+        let (square, _) = square_in_domain_of_size_10(4.5);
 
         assert!((max_x(&square) - 5.5).abs() < EPS);
     }
 
     #[test]
-    fn test_whole_fracture_is_connected_to_the_face_which_it_crosses() {
-        let (square, _) = square_in_domain_of_size_10(4.5, DomainBoundaryMode::KeepWhole);
+    fn test_fracture_is_connected_to_the_face_which_it_crosses() {
+        let (square, _) = square_in_domain_of_size_10(4.5);
 
         // Only the +x face
         assert_eq!(square.faces, [true, false, false, false, false, false]);
     }
 
     #[test]
-    fn test_whole_fracture_is_not_marked_as_truncated() {
-        let (square, _) = square_in_domain_of_size_10(4.5, DomainBoundaryMode::KeepWhole);
-
-        assert!(!square.truncated);
-    }
-
-    #[test]
-    fn test_whole_fracture_with_a_part_in_the_domain_is_accepted() {
-        let (_, is_rejected) = square_in_domain_of_size_10(4.5, DomainBoundaryMode::KeepWhole);
+    fn test_fracture_with_a_part_in_the_domain_is_accepted() {
+        let (_, is_rejected) = square_in_domain_of_size_10(4.5);
 
         assert!(!is_rejected);
     }
 
     #[test]
-    fn test_whole_fracture_outside_the_domain_is_rejected() {
-        let (_, is_rejected) = square_in_domain_of_size_10(7., DomainBoundaryMode::KeepWhole);
+    fn test_fracture_outside_the_domain_is_rejected() {
+        let (_, is_rejected) = square_in_domain_of_size_10(7.);
 
         assert!(is_rejected);
     }
 
     #[test]
-    fn test_whole_fracture_loses_the_faces_of_its_last_position() {
-        let (mut square, _) = square_in_domain_of_size_10(4.5, DomainBoundaryMode::KeepWhole);
+    fn test_fracture_loses_the_faces_of_its_last_position() {
+        let (mut square, _) = square_in_domain_of_size_10(4.5);
         square.translate(Vector3::new(-4.5, 0., 0.));
 
-        square.domain_truncation(
-            H,
-            EPS,
-            &Vector3::new(10., 10., 10.),
-            DomainBoundaryMode::KeepWhole,
-        );
+        square.check_box_domain(H, EPS, &Vector3::new(10., 10., 10.));
 
         assert_eq!(square.faces, [false; 6]);
     }

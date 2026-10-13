@@ -12,7 +12,7 @@ use crate::math_functions::{cumsum, index_from_prob_and_p32_status, remove_famil
 /// Estimate Number of Fractures When P32 Option is Used
 ///
 /// Inserts fractures into domain with FRAM disabled
-/// Simply inserts and truncates fractures on the domain
+/// Simply inserts fractures into the domain
 /// until reqired P32 is met.
 /// Used to estimate and generate radii lists for each fracture
 /// family.
@@ -76,19 +76,10 @@ pub fn dry_run(
             )
         };
 
-        // Truncate poly if needed
-        // Returns 1 if poly is outside of domain or truncated to less than 3 vertices
-        // Vector for storing intersection boundaries
         let mut reject = false;
 
-        while new_poly.domain_truncation(
-            input.h,
-            input.eps,
-            &input.domain_size,
-            input.domain_boundary_mode,
-        ) {
-            // Poly is completely outside domain, or was truncated to
-            // less than 3 vertices due to vertices being too close together
+        while new_poly.check_box_domain(input.h, input.eps, &input.domain_size) {
+            // Poly is completely outside domain
             reject_counter += 1; // Counter for re-trying a new translation
 
             // Test if newPoly has reached its limit of insertion attempts
@@ -98,7 +89,6 @@ pub fn dry_run(
             } else {
                 // Retranslate poly and try again, preserving normal, size, and shape
                 re_translate_poly(
-                    input.eps,
                     &mut new_poly,
                     &frac_families.families[family_index],
                     generator.clone(),

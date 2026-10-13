@@ -18,13 +18,11 @@ use crate::structures::RejectedFracture;
 ///
 /// * `final_fractures` - Sorted indices of fractures left after isolated fracture removal
 /// * `accepted_poly` - All accepted fractures
-/// * `boundary_face_counts` - `boundary_face_count` of each accepted fracture
 /// * `mesh_center` - Center of the domain mesh
 /// * `output` - File to write to
 pub fn write_fractures_vtk(
     final_fractures: &[usize],
     accepted_poly: &[Poly],
-    boundary_face_counts: &[usize],
     mesh_center: &Vector3<f64>,
     output: &mut impl Write,
 ) -> io::Result<()> {
@@ -33,13 +31,7 @@ pub fn write_fractures_vtk(
 
     writeln!(output, r#"<CellData Normals="normal">"#)?;
     write_data_array(output, "fracture_id", "Int32", 1, 1..=final_fractures.len())?;
-    write_accepted_cell_data(
-        output,
-        final_fractures,
-        accepted_poly,
-        boundary_face_counts,
-        mesh_center,
-    )?;
+    write_accepted_cell_data(output, final_fractures, accepted_poly, mesh_center)?;
     writeln!(output, "</CellData>")?;
 
     write_file_end(output)
@@ -55,13 +47,11 @@ pub fn write_fractures_vtk(
 ///
 /// * `removed_fractures` - Sorted indices of the accepted fractures which were removed
 /// * `accepted_poly` - All accepted fractures
-/// * `boundary_face_counts` - `boundary_face_count` of each accepted fracture
 /// * `mesh_center` - Center of the domain mesh
 /// * `output` - File to write to
 pub fn write_removed_fractures_vtk(
     removed_fractures: &[usize],
     accepted_poly: &[Poly],
-    boundary_face_counts: &[usize],
     mesh_center: &Vector3<f64>,
     output: &mut impl Write,
 ) -> io::Result<()> {
@@ -72,13 +62,7 @@ pub fn write_removed_fractures_vtk(
     write_geometry(output, &polys, mesh_center)?;
 
     writeln!(output, r#"<CellData Normals="normal">"#)?;
-    write_accepted_cell_data(
-        output,
-        removed_fractures,
-        accepted_poly,
-        boundary_face_counts,
-        mesh_center,
-    )?;
+    write_accepted_cell_data(output, removed_fractures, accepted_poly, mesh_center)?;
     writeln!(output, "</CellData>")?;
 
     write_file_end(output)
@@ -90,11 +74,9 @@ pub fn write_removed_fractures_vtk(
 /// * `family` - Family number: 0 user-defined fracture, > 0 stochastic family
 /// * `user_fracture_id` - Value of the `fracture_id` array of the user-defined fracture file, -1 if none
 /// * `cluster` - Number of the connected group of fractures
-/// * `truncated` - 1 if the fracture was cut by the domain, else 0
 /// * `intersection_count` - Number of intersections with other accepted fractures
-/// * `boundary_face_count` - Number of domain boundary faces which the fracture meets
-/// * `x_radius`, `y_radius`, `aspect_ratio` - Size before truncation
-/// * `area` - Area after truncation
+/// * `x_radius`, `y_radius`, `aspect_ratio` - Size
+/// * `area` - Area
 /// * `normal` - Unit normal vector
 /// * `translation` - Translation of the fracture center from the origin
 ///
@@ -103,13 +85,11 @@ pub fn write_removed_fractures_vtk(
 /// * `output` - File to write to
 /// * `fractures` - Indices of the accepted fractures to write
 /// * `accepted_poly` - All accepted fractures
-/// * `boundary_face_counts` - `boundary_face_count` of each accepted fracture
 /// * `mesh_center` - Center of the domain mesh
 fn write_accepted_cell_data(
     output: &mut impl Write,
     fractures: &[usize],
     accepted_poly: &[Poly],
-    boundary_face_counts: &[usize],
     mesh_center: &Vector3<f64>,
 ) -> io::Result<()> {
     let polys: Vec<&Poly> = fractures.iter().map(|&i| &accepted_poly[i]).collect();
@@ -138,24 +118,10 @@ fn write_accepted_cell_data(
     )?;
     write_data_array(
         output,
-        "truncated",
-        "Int32",
-        1,
-        polys.iter().map(|poly| poly.truncated as u8),
-    )?;
-    write_data_array(
-        output,
         "intersection_count",
         "Int32",
         1,
         polys.iter().map(|poly| poly.intersection_index.len()),
-    )?;
-    write_data_array(
-        output,
-        "boundary_face_count",
-        "Int32",
-        1,
-        fractures.iter().map(|&i| boundary_face_counts[i]),
     )?;
     write_real_array(output, "x_radius", &polys, |poly| poly.xradius)?;
     write_real_array(output, "y_radius", &polys, |poly| poly.yradius)?;
@@ -172,8 +138,7 @@ fn write_accepted_cell_data(
 /// * `family` - Family number: 0 user-defined fracture, > 0 stochastic family
 /// * `user_fracture_id` - Value of the `fracture_id` array of the user-defined fracture file, -1 if none
 /// * `reject_code` - FRAM reject code of the last attempt
-/// * `truncated` - 1 if the fracture was cut by the domain, else 0
-/// * `x_radius`, `y_radius`, `aspect_ratio` - Size before truncation
+/// * `x_radius`, `y_radius`, `aspect_ratio` - Size
 /// * `normal` - Unit normal vector
 /// * `translation` - Translation of the fracture center from the origin
 ///
@@ -208,13 +173,6 @@ pub fn write_rejected_fractures_vtk(
         "Int32",
         1,
         rejected_poly.iter().map(|rejected| rejected.reject_code),
-    )?;
-    write_data_array(
-        output,
-        "truncated",
-        "Int32",
-        1,
-        polys.iter().map(|poly| poly.truncated as u8),
     )?;
     write_real_array(output, "x_radius", &polys, |poly| poly.xradius)?;
     write_real_array(output, "y_radius", &polys, |poly| poly.yradius)?;
@@ -371,9 +329,9 @@ mod tests {
     use super::*;
     use crate::fracture::user_defined_fractures::USER_FRACTURE_FAMILY;
 
-    /// A rectangle, an ellipse with 6 nodes and an ellipse with 8 nodes, with their
-    /// boundary face counts. The rectangle was removed; the ellipses are final fractures.
-    fn three_accepted_fractures() -> (Vec<Poly>, [usize; 3]) {
+    /// A rectangle, an ellipse with 6 nodes and an ellipse with 8 nodes.
+    /// The rectangle was removed; the ellipses are final fractures.
+    fn three_accepted_fractures() -> Vec<Poly> {
         let mut rectangle = Poly::new(4, 1., 2.);
         rectangle.family_num = USER_FRACTURE_FAMILY;
         rectangle.user_fracture_id = Some(7);
@@ -384,7 +342,7 @@ mod tests {
         let mut large_ellipse = Poly::new(8, 5., 1.);
         large_ellipse.family_num = 1;
 
-        (vec![rectangle, small_ellipse, large_ellipse], [0, 2, 1])
+        vec![rectangle, small_ellipse, large_ellipse]
     }
 
     fn write_final_fractures() -> String {
@@ -392,32 +350,18 @@ mod tests {
     }
 
     fn write_final_fractures_of_mesh(mesh_center: &Vector3<f64>) -> String {
-        let (accepted_poly, boundary_face_counts) = three_accepted_fractures();
+        let accepted_poly = three_accepted_fractures();
 
         let mut output = Vec::new();
-        write_fractures_vtk(
-            &[1, 2],
-            &accepted_poly,
-            &boundary_face_counts,
-            mesh_center,
-            &mut output,
-        )
-        .unwrap();
+        write_fractures_vtk(&[1, 2], &accepted_poly, mesh_center, &mut output).unwrap();
         String::from_utf8(output).unwrap()
     }
 
     fn write_removed_fractures() -> String {
-        let (accepted_poly, boundary_face_counts) = three_accepted_fractures();
+        let accepted_poly = three_accepted_fractures();
 
         let mut output = Vec::new();
-        write_removed_fractures_vtk(
-            &[0],
-            &accepted_poly,
-            &boundary_face_counts,
-            &Vector3::zeros(),
-            &mut output,
-        )
-        .unwrap();
+        write_removed_fractures_vtk(&[0], &accepted_poly, &Vector3::zeros(), &mut output).unwrap();
         String::from_utf8(output).unwrap()
     }
 
@@ -500,7 +444,6 @@ mod tests {
 
         assert_eq!(data_array(&file, "x_radius"), ["3", "5"]);
         assert_eq!(data_array(&file, "area"), ["20", "0"]);
-        assert_eq!(data_array(&file, "boundary_face_count"), ["2", "1"]);
         assert_eq!(data_array(&file, "normal"), ["0 0 1", "0 0 1"]);
     }
 

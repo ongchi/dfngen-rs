@@ -4,7 +4,6 @@ user_fractures = "mesh_domain_user_fractures.vtp"
 
 [domain]
 mesh = "mesh_domain.vtu"
-truncate_fractures = false
 
 [generation]
 stop_condition = "n_poly"

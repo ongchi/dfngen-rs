@@ -62,7 +62,6 @@ fn main() -> Result<(), DfngenError> {
         h: input.h,
         eps: input.eps,
         domain_size: input.domain_size,
-        domain_boundary_mode: input.domain_boundary_mode,
         domain_mesh: input.domain_mesh.clone(),
         r_fram: input.r_fram,
         disable_fram: input.disable_fram,
@@ -380,15 +379,8 @@ fn insert_stochastic_fractures(
 
         // Re-translate the polygon until it is accepted or reaches its reject limit
         loop {
-            // Truncate poly if needed
-            if new_poly.domain_truncation(
-                input.h,
-                input.eps,
-                &input.domain_size,
-                input.domain_boundary_mode,
-            ) {
-                // Poly was completely outside domain, or was truncated to less than
-                // 3 vertices due to vertices being too close together
+            if new_poly.check_box_domain(input.h, input.eps, &input.domain_size) {
+                // Poly was completely outside domain
                 dfngen.pstats.rejection_reasons.outside += 1;
 
                 if reject_counter >= input.rejects_per_fracture {
@@ -398,7 +390,6 @@ fn insert_stochastic_fractures(
 
                 // Retranslate poly and try again, preserving normal, size, and shape
                 re_translate_poly(
-                    input.eps,
                     &mut new_poly,
                     &frac_fam_col.families[family_index],
                     generator.clone(),
@@ -422,10 +413,6 @@ fn insert_stochastic_fractures(
                 dfngen.pstats.accepted_from_fam[family_index] += 1;
                 // Make new rejection counter for next fracture attempt
                 dfngen.pstats.rejects_per_attempt.push(0);
-
-                if new_poly.truncated {
-                    dfngen.pstats.truncated += 1;
-                }
 
                 new_poly.assign_area();
 
@@ -484,7 +471,6 @@ fn insert_stochastic_fractures(
 
             dfngen.pstats.retranslated_poly_count += 1;
             re_translate_poly(
-                input.eps,
                 &mut new_poly,
                 &frac_fam_col.families[family_index],
                 generator.clone(),
@@ -554,7 +540,6 @@ fn report_statistics_before_removal(
 ) {
     info!("Statistics Before Isolated Fractures Removed:",);
     info!("Fractures: {}", dfngen.accepted_poly.len());
-    info!("Truncated: {}", dfngen.pstats.truncated);
 
     let areas = sum_areas(dfngen.accepted_poly.iter(), frac_fam_col.families.len());
     dfngen.pstats.area_before_removal = areas.total;
