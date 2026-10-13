@@ -14,10 +14,65 @@ use crate::fracture::insert_shape::print_reject_reason;
 use crate::fracture::poly::Poly;
 use crate::fracture::user_defined_fractures::DomainCheck;
 
-/// A fracture which was not accepted, with the FRAM reject code of its last attempt.
+/// Reason why FRAM rejected a fracture
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RejectReason {
+    /// Intersection shorter than `min_feature_size`
+    ShortIntersection,
+    /// Intersection too near to another intersection
+    CloseToIntersection,
+    /// Fracture too near to an edge of another fracture
+    CloseToEdge,
+    /// Intersecting fractures are in the same plane
+    SamePlane,
+    /// Triple intersection, and the input does not permit triple intersections
+    TripleIntersectionNotAllowed,
+    /// Intersection too near to a previous intersection
+    CloseToPreviousIntersection,
+    /// Triple intersection with an angle that is too small
+    TripleAngleTooSmall,
+    /// Triple intersection point too near to an end point of an intersection
+    TriplePointCloseToEndpoint,
+    /// Triple intersection point too near to another triple intersection point
+    TriplePointCloseToTriplePoint,
+}
+
+impl RejectReason {
+    /// Number of the reason in `fractures_rejected.vtp` and in the log
+    pub fn code(self) -> i32 {
+        match self {
+            Self::ShortIntersection => -2,
+            Self::CloseToIntersection => -5,
+            Self::CloseToEdge => -6,
+            Self::SamePlane => -7,
+            Self::TripleIntersectionNotAllowed => -10,
+            Self::CloseToPreviousIntersection => -11,
+            Self::TripleAngleTooSmall => -12,
+            Self::TriplePointCloseToEndpoint => -13,
+            Self::TriplePointCloseToTriplePoint => -14,
+        }
+    }
+
+    /// Text of the reason for the log
+    pub fn description(self) -> &'static str {
+        match self {
+            Self::ShortIntersection => "Intersection of length < min_feature_size.",
+            Self::CloseToIntersection => "Intersection too close to another intersection.",
+            Self::CloseToEdge => "Fracture too close to another fracture's edge.",
+            Self::SamePlane => "Fractures intersecting on same plane",
+            Self::TripleIntersectionNotAllowed => "Rejected triple intersection due to triple intersections being turned off in input file.",
+            Self::CloseToPreviousIntersection => "Fracture's intersection landed too close to a previous intersection.",
+            Self::TripleAngleTooSmall => "Fracture created a triple intersection with an angle too small.",
+            Self::TriplePointCloseToEndpoint => "Fracture created a triple intersection with the triple intersection point too close to an intersection's endpoint.",
+            Self::TriplePointCloseToTriplePoint => "Fracture created a triple intersection with the triple intersection point too close to another triple intersection point.",
+        }
+    }
+}
+
+/// A fracture which was not accepted, with the FRAM reject reason of its last attempt.
 pub struct RejectedFracture {
     pub poly: Poly,
-    pub reject_code: i32,
+    pub reason: RejectReason,
 }
 
 /// Intersections structure.
@@ -423,7 +478,7 @@ impl DFNGen {
 
         new_poly.assign_bounding_box();
         // Line of intersection and FRAM
-        let reject_code = intersection_checking(
+        let fram_result = intersection_checking(
             opts,
             &mut new_poly,
             &mut self.accepted_poly,
@@ -432,7 +487,20 @@ impl DFNGen {
             &mut self.triple_points,
         );
 
-        if reject_code == 0 {
+        if let Err(reject_reason) = fram_result {
+            self.pstats.rejects_per_attempt[self.pstats.accepted_poly_count] += 1;
+            self.pstats.rejected_poly_count += 1;
+            self.pstats.rejected_user_fracture.push(poly_id);
+
+            print_reject_reason(reject_reason, &new_poly);
+
+            if opts.keep_rejected_fractures {
+                self.rejected_poly.push(RejectedFracture {
+                    poly: new_poly,
+                    reason: reject_reason,
+                });
+            }
+        } else {
             // If intersection is ok (FRAM passed all tests)
             // Incriment counter of accepted polys
             self.pstats.accepted_poly_count += 1;
@@ -441,19 +509,6 @@ impl DFNGen {
             // Add new rejectsPerAttempt counter
             self.pstats.rejects_per_attempt.push(0);
             self.accepted_poly.push(new_poly); // Save newPoly to accepted polys list
-        } else {
-            self.pstats.rejects_per_attempt[self.pstats.accepted_poly_count] += 1;
-            self.pstats.rejected_poly_count += 1;
-            self.pstats.rejected_user_fracture.push(poly_id);
-
-            print_reject_reason(reject_code, &new_poly);
-
-            if opts.keep_rejected_fractures {
-                self.rejected_poly.push(RejectedFracture {
-                    poly: new_poly,
-                    reject_code,
-                });
-            }
         }
     }
 
@@ -500,7 +555,7 @@ impl DFNGen {
             new_poly.intersection_index.clear(); // Remove ref to old intersections
 
             // Find line of intersection and FRAM check
-            let reject_code = intersection_checking(
+            let fram_result = intersection_checking(
                 opts,
                 &mut new_poly,
                 &mut final_poly_list,
@@ -509,7 +564,7 @@ impl DFNGen {
                 &mut self.triple_points,
             );
 
-            if reject_code == 0 {
+            if fram_result.is_ok() {
                 // Intersections and triple points are saved within intersection_checking()
                 final_poly_list.push(new_poly);
             } else {
@@ -593,6 +648,24 @@ mod tests {
         }
     }
 
+    #[test]
+    fn test_reject_reasons_have_the_numbers_of_the_readme_table() {
+        let codes = [
+            RejectReason::ShortIntersection,
+            RejectReason::CloseToIntersection,
+            RejectReason::CloseToEdge,
+            RejectReason::SamePlane,
+            RejectReason::TripleIntersectionNotAllowed,
+            RejectReason::CloseToPreviousIntersection,
+            RejectReason::TripleAngleTooSmall,
+            RejectReason::TriplePointCloseToEndpoint,
+            RejectReason::TriplePointCloseToTriplePoint,
+        ]
+        .map(RejectReason::code);
+
+        assert_eq!(codes, [-2, -5, -6, -7, -10, -11, -12, -13, -14]);
+    }
+
     /// Inserts the same rectangle two times. FRAM rejects the second one.
     fn insert_two_equal_rectangles(keep_rejected_fractures: bool) -> DFNGen {
         let opts = poly_options(keep_rejected_fractures);
@@ -668,7 +741,7 @@ mod tests {
 
         assert_eq!(dfngen.accepted_poly.len(), 1);
         assert_eq!(dfngen.rejected_poly.len(), 1);
-        assert_ne!(dfngen.rejected_poly[0].reject_code, 0);
+        assert_eq!(dfngen.rejected_poly[0].reason, RejectReason::CloseToEdge);
     }
 
     #[test]

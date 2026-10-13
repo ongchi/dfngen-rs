@@ -338,7 +338,7 @@ fn insert_stochastic_fractures(
 
             new_poly.assign_bounding_box();
             // Find line of intersection and FRAM check
-            let reject_code = intersection_checking(
+            let fram_result = intersection_checking(
                 poly_opts,
                 &mut new_poly,
                 &mut dfngen.accepted_poly,
@@ -347,7 +347,7 @@ fn insert_stochastic_fractures(
                 &mut dfngen.triple_points,
             );
 
-            if reject_code == 0 {
+            let Err(reject_reason) = fram_result else {
                 dfngen.pstats.accepted_poly_count += 1;
                 dfngen.pstats.accepted_from_fam[family_index] += 1;
                 // Make new rejection counter for next fracture attempt
@@ -385,7 +385,7 @@ fn insert_stochastic_fractures(
                 // Intersections and triple points are saved within intersection_checking()
                 dfngen.accepted_poly.push(new_poly);
                 break;
-            }
+            };
 
             reject_counter += 1;
             // Inc reject counter for current attempt
@@ -393,7 +393,7 @@ fn insert_stochastic_fractures(
             dfngen.pstats.rejects_per_attempt[dfngen.pstats.accepted_poly_count] += 1;
 
             if input.print_reject_reasons {
-                print_reject_reason(reject_code, &new_poly);
+                print_reject_reason(reject_reason, &new_poly);
             }
 
             if reject_counter >= input.rejects_per_fracture {
@@ -403,7 +403,7 @@ fn insert_stochastic_fractures(
                 if poly_opts.keep_rejected_fractures {
                     dfngen.rejected_poly.push(RejectedFracture {
                         poly: new_poly,
-                        reject_code,
+                        reason: reject_reason,
                     });
                 }
 

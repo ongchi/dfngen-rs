@@ -11,7 +11,7 @@ use crate::{
         user_defined_fractures::USER_FRACTURE_FAMILY,
     },
     math_functions::{max_elmt_idx, sorted_index, sum_deviation},
-    structures::{IntersectionPoints, PolyOptions, Stats, TriplePtTempData},
+    structures::{IntersectionPoints, PolyOptions, RejectReason, Stats, TriplePtTempData},
 };
 
 // Check if two vectors are parallel
@@ -209,7 +209,7 @@ fn find_intersections(flag: &mut i32, poly1: &Poly, poly2: &Poly, eps: f64) -> I
 ///
 /// # Returns
 ///
-/// * `i32` - 0 if accepted, 1 if rejected
+/// The reject reason, if the intersection is rejected
 #[allow(clippy::too_many_arguments)]
 fn fram(
     min_feature_size: f64,
@@ -226,12 +226,12 @@ fn fram(
     triple_points: &[Point3<f64>],
     temp_int_pts: &[IntersectionPoints],
     accepted_poly: &[Poly],
-) -> i32 {
+) -> Result<(), RejectReason> {
     /******* Check for intersection of length less than min_feature_size *******/
     if (int_pts.p1 - int_pts.p2).magnitude() < min_feature_size {
         //std::cout<<"\nrejectCode = -2: Intersection of length <= min_feature_size.\n";
         pstats.rejection_reasons.short_intersection += 1;
-        return -2;
+        return Err(RejectReason::ShortIntersection);
     }
 
     if !r_fram {
@@ -249,13 +249,13 @@ fn fram(
         ) {
             // std::cout<<"\nrejectCode = -6: Fracture too close to another fracture's edge.\n";
             pstats.rejection_reasons.close_to_edge += 1;
-            return -6;
+            return Err(RejectReason::CloseToEdge);
         }
 
         if check_close_edge(poly2, int_pts, shrink_limit, pstats, min_feature_size, eps) {
             // std::cout<<"\nrejectCode = -6: Fracture too close to another fracture's edge.\n";
             pstats.rejection_reasons.close_to_edge += 1;
-            return -6;
+            return Err(RejectReason::CloseToEdge);
         }
 
         /******* Intersection to Intersection Distance Checks ********/
@@ -264,7 +264,7 @@ fn fram(
 
         if check_dist_to_old_intersections(int_pts_list, int_pts, poly2, min_feature_size, eps) {
             pstats.rejection_reasons.inter_close_to_inter += 1;
-            return -5;
+            return Err(RejectReason::CloseToIntersection);
         }
 
         // Check distance from new intersection to intersections already
@@ -280,14 +280,13 @@ fn fram(
             eps,
         ) {
             pstats.rejection_reasons.inter_close_to_inter += 1;
-            return -5;
+            return Err(RejectReason::CloseToIntersection);
         }
     }
 
     /*************** Triple Intersection Checks *************/
-    // NOTE: for debugging, there are several rejection codes for triple intersections
-    // -14 <= rejCode <= -10 are for triple intersection rejections
-    let rej_code = check_for_triple_intersections(
+    // NOTE: for debugging, there are several reject reasons for triple intersections
+    let triple_result = check_for_triple_intersections(
         min_feature_size,
         eps,
         triple_intersections,
@@ -299,9 +298,9 @@ fn fram(
         triple_points,
     );
 
-    if rej_code != 0 && !r_fram {
+    if triple_result.is_err() && !r_fram {
         pstats.rejection_reasons.triple += 1;
-        return rej_code;
+        return triple_result;
     }
 
     // Check if polys intersect on same plane
@@ -311,10 +310,10 @@ fn fram(
     {
         // The intersection has already been found so we know that if the
         // normals are the same they must be on the same plane
-        return -7;
+        return Err(RejectReason::SamePlane);
     }
 
-    0
+    Ok(())
 }
 
 /// FRAM CHECK
@@ -563,9 +562,8 @@ fn shrink_intersection(
 ///
 /// # Returns
 ///
-/// * `i32`
-///   0 - Fracture had no intersections or features violating the minimum feature size (Passed all FRAM tests)
-///   1 - Otherwise
+/// `Ok` if the fracture had no intersections or features violating the minimum feature size
+/// (passed all FRAM tests), or the reject reason of FRAM
 pub fn intersection_checking(
     opts: &PolyOptions,
     new_poly: &mut Poly,
@@ -573,7 +571,7 @@ pub fn intersection_checking(
     int_pts_list: &mut Vec<IntersectionPoints>,
     pstats: &mut Stats,
     triple_points: &mut Vec<Point3<f64>>,
-) -> i32 {
+) -> Result<(), RejectReason> {
     // List of fractures which new fracture intersected.
     // Used to update fractures intersections and
     // intersection count if newPoly is accepted
@@ -610,16 +608,16 @@ pub fn intersection_checking(
                 // Holds origintal intersection, used to update
                 // stats on how much intersections were shortened
                 temp_original_intersection.push(intersection.clone());
-                // FRAM returns 0 if no intersection problems.
+                // FRAM returns Ok if no intersection problems.
                 // 'count' is number of already accepted intersections on new poly
                 let is_user_fracture_pair = new_poly.family_num == USER_FRACTURE_FAMILY
                     && poly.family_num == USER_FRACTURE_FAMILY;
 
                 // The option can turn off FRAM for two user-defined fractures
-                let reject_code = if !opts.is_fram_enabled
+                let fram_result = if !opts.is_fram_enabled
                     || (is_user_fracture_pair && !opts.check_user_fractures)
                 {
-                    0
+                    Ok(())
                 } else {
                     fram(
                         opts.min_feature_size,
@@ -640,8 +638,8 @@ pub fn intersection_checking(
                 };
 
                 // If intersection is NOT rejected
-                if reject_code == 0 {
-                    // If FRAM returned 0, everything is OK
+                if fram_result.is_ok() {
+                    // If FRAM returned Ok, everything is OK
                     // Update group numbers, intersection indexes
                     intersection.fract1 = ii as isize; // ii is the intersecting fracture
                     intersection.fract2 = new_poly_index as isize; // newPolys ID/index in array of accpted polys, if accepted
@@ -656,7 +654,7 @@ pub fn intersection_checking(
                 } else {
                     // 'newPoly' rejected
                     // SAVE REJECTED POLYS HERE IF THIS FUNCTINALITY IS NEEDED
-                    return reject_code; // Break loop/function and return 1, poly is rejected
+                    return fram_result; // Break loop/function, poly is rejected
                 }
             }
         }
@@ -732,7 +730,7 @@ pub fn intersection_checking(
         }
     }
 
-    0
+    Ok(())
 }
 
 /// Puts `new_poly` into the group of `poly`, a fracture which it is connected to.
@@ -988,16 +986,13 @@ fn line_seg_to_line_seg(line1: &[Point3<f64>; 2], line2: &[Point3<f64>; 2]) -> (
 /// Check for Triple Intersection , get int. point
 ///
 /// Check for triple intersection features of less than min_feature_size.
-/// Returns rejection code if fracture is rejected,  zero if accepted
+/// Returns the reject reason if the fracture is rejected:
 ///
-/// Rejection codes:
-///     0 = poly accepted
-///     -10 = triple_intersectionsNotAllowed (rejected triple intersections
-///           due to triple intersections not allowed in input file)
-///     -11 = triple_closeToIntersection (newPoly's intersection landed too close to a previous intersection)
-///     -12 = triple_smallIntersectionAngle
-///     -13 = triple_closeEndPoint   (triple intersection point too close to an endpoint)
-///     -14 = triple_closeToTriplePt  (new triple point too close to previous triple point) */
+/// * `TripleIntersectionNotAllowed` - Triple intersections are not allowed in the input file
+/// * `CloseToPreviousIntersection` - newPoly's intersection landed too close to a previous intersection
+/// * `TripleAngleTooSmall` - Intersection angle too small
+/// * `TriplePointCloseToEndpoint` - Triple intersection point too close to an endpoint
+/// * `TriplePointCloseToTriplePoint` - New triple point too close to previous triple point
 #[allow(clippy::too_many_arguments)]
 fn check_for_triple_intersections(
     min_feature_size: f64,
@@ -1009,7 +1004,7 @@ fn check_for_triple_intersections(
     poly2: &Poly,
     temp_data: &mut Vec<TriplePtTempData>,
     triple_points: &[Point3<f64>],
-) -> i32 {
+) -> Result<(), RejectReason> {
     let min_dist = 1.5 * min_feature_size;
     let int_end_pts = [int_pts.p1, int_pts.p2]; //newest intersection
                                                 // Number of intersections already on poly2
@@ -1035,11 +1030,11 @@ fn check_for_triple_intersections(
         }
 
         if !triple_intersections && dist1 < min_feature_size {
-            return -10; // Triple intersections not allowed (user input option)
+            return Err(RejectReason::TripleIntersectionNotAllowed); // Triple intersections not allowed (user input option)
         }
 
         if dist1 > eps && dist1 < min_feature_size {
-            return -11; // Point too close to other intersection
+            return Err(RejectReason::CloseToPreviousIntersection); // Point too close to other intersection
         }
 
         // Overlaping intersections
@@ -1052,7 +1047,7 @@ fn check_for_triple_intersections(
 
             if !(-0.68199836..=0.68199836).contains(&dot_prod) {
                 //if angle is less than 47 deg or greater than 133, reject
-                return -12;
+                return Err(RejectReason::TripleAngleTooSmall);
             }
 
             // Check that the triple intersection point isn't too close to an endpoint
@@ -1060,14 +1055,14 @@ fn check_for_triple_intersections(
             let mut dist2 = distance(&pt, &int_end_pts[1]);
 
             if dist1 < min_feature_size || dist2 < min_feature_size {
-                return -13;
+                return Err(RejectReason::TriplePointCloseToEndpoint);
             }
 
             dist1 = distance(&pt, &line[0]);
             dist2 = distance(&pt, &line[1]);
 
             if dist1 < min_feature_size || dist2 < min_feature_size {
-                return -13;
+                return Err(RejectReason::TriplePointCloseToEndpoint);
             }
 
             // Check that the triple intersection point isn't too close to previous triple intersection points
@@ -1076,7 +1071,7 @@ fn check_for_triple_intersections(
                 dist1 = distance(&pt, &triple_points[idx]);
 
                 if dist1 < min_dist {
-                    return -14;
+                    return Err(RejectReason::TriplePointCloseToTriplePoint);
                 }
             }
 
@@ -1134,13 +1129,13 @@ fn check_for_triple_intersections(
                 let dist = distance(point1, point2);
 
                 if dist < min_dist && dist > eps {
-                    return -14;
+                    return Err(RejectReason::TriplePointCloseToTriplePoint);
                 }
             }
         }
     }
 
-    0
+    Ok(())
 }
 
 #[cfg(test)]

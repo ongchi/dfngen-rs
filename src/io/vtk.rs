@@ -137,7 +137,7 @@ fn write_accepted_cell_data(
 /// last attempt, with the cell data:
 /// * `family` - Family number: 0 user-defined fracture, > 0 stochastic family
 /// * `user_fracture_id` - Value of the `fracture_id` array of the user-defined fracture file, -1 if none
-/// * `reject_code` - FRAM reject code of the last attempt
+/// * `reject_code` - Number of the FRAM reject reason of the last attempt (`RejectReason::code`)
 /// * `x_radius`, `y_radius`, `aspect_ratio` - Size
 /// * `normal` - Unit normal vector
 /// * `translation` - Translation of the fracture center from the origin
@@ -172,7 +172,7 @@ pub fn write_rejected_fractures_vtk(
         "reject_code",
         "Int32",
         1,
-        rejected_poly.iter().map(|rejected| rejected.reject_code),
+        rejected_poly.iter().map(|rejected| rejected.reason.code()),
     )?;
     write_real_array(output, "x_radius", &polys, |poly| poly.xradius)?;
     write_real_array(output, "y_radius", &polys, |poly| poly.yradius)?;
@@ -328,6 +328,7 @@ fn write_user_fracture_id_array(output: &mut impl Write, polys: &[&Poly]) -> io:
 mod tests {
     use super::*;
     use crate::fracture::user_defined_fractures::USER_FRACTURE_FAMILY;
+    use crate::structures::RejectReason;
 
     /// A rectangle, an ellipse with 6 nodes and an ellipse with 8 nodes.
     /// The rectangle was removed; the ellipses are final fractures.
@@ -371,7 +372,7 @@ mod tests {
         rectangle.family_num = 0;
         let rejected = RejectedFracture {
             poly: rectangle,
-            reject_code: -6,
+            reason: RejectReason::CloseToEdge,
         };
 
         let mut output = Vec::new();
