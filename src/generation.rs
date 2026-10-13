@@ -460,10 +460,9 @@ fn sum_areas<'a>(polys: impl Iterator<Item = &'a Poly>, total_families: usize) -
     for poly in polys {
         summary.total += poly.area;
 
-        if poly.family_num >= 0 {
-            summary.per_family[poly.family_num as usize] += poly.area;
-        } else {
-            summary.user_defined += poly.area;
+        match poly.origin.family_index() {
+            Some(family_index) => summary.per_family[family_index] += poly.area,
+            None => summary.user_defined += poly.area,
         }
     }
 
@@ -555,9 +554,8 @@ fn report_statistics_after_removal(
     // Re-count number of accepted fracture per family after isloated fractures were removed
     let mut final_count_per_family = vec![0; total_families];
     for &i in final_fractures {
-        let fam_num = dfngen.accepted_poly[i].family_num;
-        if fam_num >= 0 {
-            final_count_per_family[fam_num as usize] += 1;
+        if let Some(family_index) = dfngen.accepted_poly[i].origin.family_index() {
+            final_count_per_family[family_index] += 1;
         }
     }
 

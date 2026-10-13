@@ -936,14 +936,14 @@ mod tests {
     fn test_family_beta_is_converted_to_radians() {
         let (_, families) = parse(&[GENERAL_OPTIONS, ELLIPSE_FAMILY]).unwrap();
 
-        assert_eq!(families.families[0].beta, std::f64::consts::FRAC_PI_2);
+        assert_eq!(families.families[0].beta, Some(std::f64::consts::FRAC_PI_2));
     }
 
     #[test]
     fn test_family_without_beta_has_uniform_rotation() {
         let (_, families) = parse(&[GENERAL_OPTIONS, RECTANGLE_FAMILY]).unwrap();
 
-        assert!(!families.families[0].beta_distribution);
+        assert_eq!(families.families[0].beta, None);
     }
 
     #[test]

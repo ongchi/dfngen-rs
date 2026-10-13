@@ -6,15 +6,36 @@ use parry3d_f64::shape::Triangle;
 
 use crate::cg::{is_parallel, rotation_between};
 
+/// Where a fracture comes from
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FractureOrigin {
+    /// Stochastic family, by its index in the families of the input file (starts at 0)
+    Family(usize),
+    /// User-defined fracture file
+    UserDefined,
+}
+
+impl FractureOrigin {
+    /// Index of the stochastic family, `None` for a user-defined fracture
+    pub fn family_index(self) -> Option<usize> {
+        match self {
+            Self::Family(index) => Some(index),
+            Self::UserDefined => None,
+        }
+    }
+
+    /// Family number of the output files: 0 for a user-defined fracture,
+    /// and the family index plus 1 for a stochastic family
+    pub fn output_number(self) -> usize {
+        self.family_index().map_or(0, |index| index + 1)
+    }
+}
+
 #[derive(Clone)]
 /// The Poly structre is used to create and store fracrures/polygons.
 pub struct Poly {
-    /// Contains the index of the 'shapeFamilies' array in main() from which the fracture was
-    /// created from. If the polygon was created from user defined input, it will be marked
-    /// with `USER_FRACTURE_FAMILY` (-1).
-    /// The stochastic family numbers start at 0 for the first family, and increase by
-    /// 1 for each addition family. Families are in the order of the input file.
-    pub family_num: isize,
+    /// Stochastic family or user-defined fracture file which the fracture comes from.
+    pub origin: FractureOrigin,
 
     /// Value of the `fracture_id` array of the user-defined fracture file.
     /// Polygons with the same value are pieces of one fracture. `None` for a
@@ -63,7 +84,7 @@ pub struct Poly {
 impl Default for Poly {
     fn default() -> Self {
         Self {
-            family_num: 0,
+            origin: FractureOrigin::Family(0),
             user_fracture_id: None,
             group_num: 0,
             area: 0.,

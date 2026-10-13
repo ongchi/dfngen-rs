@@ -7,8 +7,7 @@ use parry3d_f64::shape::Segment;
 use crate::{
     fracture::{
         cluster_groups::{assign_group, update_groups},
-        poly::Poly,
-        user_defined_fractures::USER_FRACTURE_FAMILY,
+        poly::{FractureOrigin, Poly},
     },
     math_functions::{max_elmt_idx, sorted_index, sum_deviation},
     structures::{IntersectionPoints, PolyOptions, RejectReason, Stats, TriplePtTempData},
@@ -76,25 +75,19 @@ fn check_bounding_box(poly1: &Poly, poly2: &Poly) -> bool {
 
 /// Find Intersections
 /// Finds intersection end points of two intersecting polygons (Poly 1 and Poly 2)
-/// Or, finds that polygons do not intersect (flag will = 0 )
 ///
 /// # Arguments
 ///
-/// * `flag` - The only flag which is currently used is '0'
-///   0 - no intersection,
-///   1 - intersection is completely inside poly 1,
-///   2 - intersection is completely inside poly 2,
-///   3 - intersection on both polys edges
 /// * `poly1` - Poly 1
 /// * `poly2` - Poly 2
 ///
-/// Return: Intersection end points, Valid only if flag != 0 */
-fn find_intersections(flag: &mut i32, poly1: &Poly, poly2: &Poly, eps: f64) -> IntersectionPoints {
+/// # Returns
+///
+/// The intersection with its end points, or `None` if the polygons do not intersect.
+/// The fractures of the intersection are not set.
+fn find_intersections(poly1: &Poly, poly2: &Poly, eps: f64) -> Option<IntersectionPoints> {
     // This code is mostly converted directly from the mathematica version.
     // Re-write may be worth doing for increased performance and code clarity
-    *flag = 0;
-
-    let mut int_pts = IntersectionPoints::new();
     // The 2 points where the boundary of poly2 crosses the plane of poly1,
     // then the 2 points where the boundary of poly1 crosses the plane of poly2
     let mut inters = [Point3::origin(); 4];
@@ -140,7 +133,7 @@ fn find_intersections(flag: &mut i32, poly1: &Poly, poly2: &Poly, eps: f64) -> I
 
         match count {
             // No intersection
-            0 => return int_pts,
+            0 => return None,
             // Happens only when a single vertex of F2 is on the plane
             1 => crossings[1] = crossings[0],
             _ => {}
@@ -166,20 +159,15 @@ fn find_intersections(flag: &mut i32, poly1: &Poly, poly2: &Poly, eps: f64) -> I
     // Points 0 and 1 are on the boundary of poly2, points 2 and 3 on the boundary of poly1.
     // If the smallest two points are on the boundary of the same poly, there is no intersection.
     if s[0] + s[1] == 1 || s[0] + s[1] == 5 {
-        return int_pts;
+        return None;
     }
 
     // The polygons intersect. The middle two points form the intersection.
-    int_pts.p1 = inters[s[1]];
-    int_pts.p2 = inters[s[2]];
-
-    *flag = match s[1] + s[2] {
-        1 => 1, // Intersection inside poly1
-        5 => 2, // Intersection inside poly2
-        _ => 3, // Intersection on edges
-    };
-
-    int_pts
+    Some(IntersectionPoints {
+        p1: inters[s[1]],
+        p2: inters[s[2]],
+        ..Default::default()
+    })
 }
 
 /// FRAM - Feature Rejection Algorithm for Meshing
@@ -405,7 +393,7 @@ fn check_dist_to_new_intersections(
         // `fract1` of an intersection on newPoly is the index of the other polygon.
         // The intersections with two pieces of one user-defined fracture can
         // touch, at the shared edge of the pieces.
-        if accepted_poly[tmp_int.fract1 as usize].is_piece_of_same_fracture(poly2) {
+        if accepted_poly[tmp_int.fract1].is_piece_of_same_fracture(poly2) {
             continue;
         }
 
@@ -588,9 +576,6 @@ pub fn intersection_checking(
     let mut temp_data = Vec::new();
 
     for (ii, poly) in accepted_poly.iter().enumerate() {
-        let mut flag = 0;
-        let mut intersection;
-
         if new_poly.is_piece_of_same_fracture(poly) {
             // Pieces of one user-defined fracture are always in the same group.
             // Their contact is not an intersection, and FRAM does not check it.
@@ -601,17 +586,14 @@ pub fn intersection_checking(
         // NOTE: findIntersections() searches bounding boxes
         // Bounding box search
         if check_bounding_box(new_poly, poly) {
-            intersection = find_intersections(&mut flag, new_poly, poly, opts.eps);
-
-            if flag != 0 {
-                // If flag != 0, intersection exists
+            if let Some(mut intersection) = find_intersections(new_poly, poly, opts.eps) {
                 // Holds origintal intersection, used to update
                 // stats on how much intersections were shortened
                 temp_original_intersection.push(intersection.clone());
                 // FRAM returns Ok if no intersection problems.
                 // 'count' is number of already accepted intersections on new poly
-                let is_user_fracture_pair = new_poly.family_num == USER_FRACTURE_FAMILY
-                    && poly.family_num == USER_FRACTURE_FAMILY;
+                let is_user_fracture_pair = new_poly.origin == FractureOrigin::UserDefined
+                    && poly.origin == FractureOrigin::UserDefined;
 
                 // The option can turn off FRAM for two user-defined fractures
                 let fram_result = if !opts.is_fram_enabled
@@ -641,9 +623,9 @@ pub fn intersection_checking(
                 if fram_result.is_ok() {
                     // If FRAM returned Ok, everything is OK
                     // Update group numbers, intersection indexes
-                    intersection.fract1 = ii as isize; // ii is the intersecting fracture
-                    intersection.fract2 = new_poly_index as isize; // newPolys ID/index in array of accpted polys, if accepted
-                                                                   // 'tempIntersectList' keeps all fracture #'s intersecting with newPoly
+                    intersection.fract1 = ii; // ii is the intersecting fracture
+                    intersection.fract2 = new_poly_index; // newPolys ID/index in array of accpted polys, if accepted
+                                                          // 'tempIntersectList' keeps all fracture #'s intersecting with newPoly
                     temp_intersect_list.push(ii); // Save fracture index to update if newPoly accepted
                                                   // Save index to polys intersections (intPts) array
                     new_poly.intersection_index.push(int_pts_index + count);

@@ -4,10 +4,7 @@ use parry3d_f64::na::{center, distance, Point3};
 
 use crate::structures::{DFNGen, PolyOptions};
 
-use super::poly::Poly;
-
-/// Family number of the user-defined fractures.
-pub const USER_FRACTURE_FAMILY: isize = -1;
+use super::poly::{FractureOrigin, Poly};
 
 /// Inserts the user-defined fractures in the order of their file.
 /// Returns the number of them.
@@ -78,7 +75,7 @@ pub struct UserFracture {
 impl UserFracture {
     pub fn to_poly(&self) -> Poly {
         let mut poly = Poly {
-            family_num: USER_FRACTURE_FAMILY,
+            origin: FractureOrigin::UserDefined,
             user_fracture_id: self.fracture_id,
             ..Default::default()
         };

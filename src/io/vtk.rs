@@ -106,7 +106,7 @@ fn write_accepted_cell_data(
         "family",
         "Int32",
         1,
-        polys.iter().map(|poly| poly.family_num + 1),
+        polys.iter().map(|poly| poly.origin.output_number()),
     )?;
     write_user_fracture_id_array(output, &polys)?;
     write_data_array(
@@ -164,7 +164,7 @@ pub fn write_rejected_fractures_vtk(
         "family",
         "Int32",
         1,
-        polys.iter().map(|poly| poly.family_num + 1),
+        polys.iter().map(|poly| poly.origin.output_number()),
     )?;
     write_user_fracture_id_array(output, &polys)?;
     write_data_array(
@@ -327,21 +327,21 @@ fn write_user_fracture_id_array(output: &mut impl Write, polys: &[&Poly]) -> io:
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::fracture::user_defined_fractures::USER_FRACTURE_FAMILY;
+    use crate::fracture::poly::FractureOrigin;
     use crate::structures::RejectReason;
 
     /// A rectangle, an ellipse with 6 nodes and an ellipse with 8 nodes.
     /// The rectangle was removed; the ellipses are final fractures.
     fn three_accepted_fractures() -> Vec<Poly> {
         let mut rectangle = Poly::new(4, 1., 2.);
-        rectangle.family_num = USER_FRACTURE_FAMILY;
+        rectangle.origin = FractureOrigin::UserDefined;
         rectangle.user_fracture_id = Some(7);
         let mut small_ellipse = Poly::new(6, 3., 1.);
-        small_ellipse.family_num = 0;
+        small_ellipse.origin = FractureOrigin::Family(0);
         small_ellipse.area = 20.;
         small_ellipse.translation = Vector3::new(1., 2., 3.);
         let mut large_ellipse = Poly::new(8, 5., 1.);
-        large_ellipse.family_num = 1;
+        large_ellipse.origin = FractureOrigin::Family(1);
 
         vec![rectangle, small_ellipse, large_ellipse]
     }
@@ -369,7 +369,7 @@ mod tests {
     /// Writes one rejected rectangle of the first stochastic family.
     fn write_rejected_rectangle() -> String {
         let mut rectangle = Poly::new(4, 1., 2.);
-        rectangle.family_num = 0;
+        rectangle.origin = FractureOrigin::Family(0);
         let rejected = RejectedFracture {
             poly: rectangle,
             reason: RejectReason::CloseToEdge,

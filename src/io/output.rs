@@ -92,14 +92,14 @@ pub fn write_output(network: &Network, create_file: &mut CreateFile) -> io::Resu
         rejected_file.flush()?;
     }
 
-    // The fracture numbers of the intersections change for the output. The network keeps its own.
-    let mut int_pts = network.dfn.intpts.clone();
-    adjust_int_fract_ids(final_fractures, accepted_poly, &mut int_pts);
+    let int_pts = &network.dfn.intpts;
+    let output_numbers = output_fracture_numbers(final_fractures, accepted_poly.len());
 
     write_intersection_list(
         final_fractures,
         accepted_poly,
-        &int_pts,
+        int_pts,
+        &output_numbers,
         mesh_center,
         &mut create_file("intersection_list.dat")?,
     )?;
@@ -115,7 +115,8 @@ pub fn write_output(network: &Network, create_file: &mut CreateFile) -> io::Resu
     write_connectivity(
         final_fractures,
         accepted_poly,
-        &int_pts,
+        int_pts,
+        &output_numbers,
         &mut create_file("connectivity.dat")?,
     )?;
     write_rejects_per_attempt(pstats, &mut create_file("rejectsPerAttempt.dat")?)?;
@@ -126,7 +127,7 @@ pub fn write_output(network: &Network, create_file: &mut CreateFile) -> io::Resu
             &network.dfn.triple_points,
             final_fractures,
             accepted_poly,
-            &int_pts,
+            int_pts,
             mesh_center,
             &mut create_file("triple_points.dat")?,
         )?;
@@ -135,57 +136,37 @@ pub fn write_output(network: &Network, create_file: &mut CreateFile) -> io::Resu
     Ok(())
 }
 
-/// Adjust the intersectins fracture numbers. The finalFracture list is the indexes of the final polygons.
-/// If finalFractures = {4, 2, 8}, the fracture ID's must be 1, 2, 3 respectively. Easiest way
-/// is to adjust the fracture ID's in the corresponding intersections first, before writing output files
-/// Use the negative value to keep to not loose track of what fracture id's are what (prevent aliasing).
-///
-/// EXAMPLE: For triple intersections, each intersection lists three fractures which intersect.
-/// Say fractures 1, 5, and 6 intersect and once adjusted the the fracture IDs become 1, 4, and 5.
-/// We access the intersection structure through the polygons, so for this particular
-/// intersection structure, it will be accessed three times (once for each polygon). If we adjust ID 5 to be id 4 during
-/// the second access, then during the thrid access, ID 4 may be aliasing another ID and be adjusted again.
-/// To prevent this, we use the negative value to prevent aliasing.
+/// Output number (starts at 1) of each accepted fracture, by its index.
+/// `None` for a fracture which is not a final fracture.
 ///
 /// # Arguments
 ///
-/// * `final_fractures` - Vector array of indices of fractures left after isolated fracture removal
-/// * `all_polys` - Vector array of all accepted polygons
-/// * `int_pts` - Vector array of all intersections
-fn adjust_int_fract_ids(
-    final_fractures: &[usize],
-    all_polys: &[Poly],
-    int_pts: &mut [IntersectionPoints],
-) {
+/// * `final_fractures` - Indices of the fractures left after isolated fracture removal
+/// * `accepted_count` - Number of accepted fractures
+fn output_fracture_numbers(final_fractures: &[usize], accepted_count: usize) -> Vec<Option<usize>> {
+    let mut output_numbers = vec![None; accepted_count];
+
     for (i, &poly_idx) in final_fractures.iter().enumerate() {
-        let new_id = -(i as isize + 1);
-
-        for &int_idx in &all_polys[poly_idx].intersection_index {
-            let intersection = &mut int_pts[int_idx];
-
-            if intersection.fract1 == poly_idx as isize {
-                intersection.fract1 = new_id;
-            } else if intersection.fract2 == poly_idx as isize {
-                intersection.fract2 = new_id;
-            }
-        }
+        output_numbers[poly_idx] = Some(i + 1);
     }
+
+    output_numbers
 }
 
-/// Returns the output ids `(own, other)` of the two fractures of an intersection,
-/// where `own` is the fracture with output id `fracture_id`.
-///
-/// NOTE: At this stage in the program, the fracture ID's have been changed to
-/// negative. See adjust_int_fract_ids() for more details.
-fn intersecting_fracture_ids(
+/// Output number of the other fracture of an intersection of the fracture `poly_idx`.
+/// `None` if the other fracture is not a final fracture.
+fn other_fracture_number(
     intersection: &IntersectionPoints,
-    fracture_id: usize,
-) -> (isize, isize) {
-    if -intersection.fract1 == fracture_id as isize {
-        (-intersection.fract1, -intersection.fract2)
+    poly_idx: usize,
+    output_numbers: &[Option<usize>],
+) -> Option<usize> {
+    let other_idx = if intersection.fract1 == poly_idx {
+        intersection.fract2
     } else {
-        (-intersection.fract2, -intersection.fract1)
-    }
+        intersection.fract1
+    };
+
+    output_numbers[other_idx]
 }
 
 /// Writes triple intersection points to file (triple_Points.dat)
@@ -283,6 +264,7 @@ fn write_connectivity(
     final_fractures: &[usize],
     accepted_poly: &[Poly],
     int_pts: &[IntersectionPoints],
+    output_numbers: &[Option<usize>],
     file: &mut impl Write,
 ) -> io::Result<()> {
     info!("Writing Connectivity Data (connectivity.dat)");
@@ -294,10 +276,12 @@ fn write_connectivity(
     // 1 2
     // Fracture 1 intersects frac 2 and 3, fract 2 intersects 1 and 3 etc
 
-    for (i, poly) in final_polys(final_fractures, accepted_poly).enumerate() {
-        for &int_idx in &poly.intersection_index {
-            let (_, other) = intersecting_fracture_ids(&int_pts[int_idx], i + 1);
-            write!(file, "{} ", other)?;
+    for &poly_idx in final_fractures {
+        for &int_idx in &accepted_poly[poly_idx].intersection_index {
+            if let Some(other) = other_fracture_number(&int_pts[int_idx], poly_idx, output_numbers)
+            {
+                write!(file, "{} ", other)?;
+            }
         }
 
         writeln!(file)?;
@@ -341,19 +325,22 @@ fn write_intersection_list(
     final_fractures: &[usize],
     accepted_poly: &[Poly],
     int_pts: &[IntersectionPoints],
+    output_numbers: &[Option<usize>],
     mesh_center: &Vector3<f64>,
     int_file: &mut impl Write,
 ) -> io::Result<()> {
     info!("Writing Intersection List (intersection_list.dat)");
     writeln!(int_file, "f1 f2 x y z length")?;
 
-    for (i, poly) in final_polys(final_fractures, accepted_poly).enumerate() {
-        let fracture_id = i + 1;
+    for (i, &poly_idx) in final_fractures.iter().enumerate() {
+        let fract1 = i + 1;
 
         // Write each intersection once, from the fracture with the smaller id
-        for &int_idx in &poly.intersection_index {
+        for &int_idx in &accepted_poly[poly_idx].intersection_index {
             let intersection = &int_pts[int_idx];
-            let (fract1, fract2) = intersecting_fracture_ids(intersection, fracture_id);
+            let Some(fract2) = other_fracture_number(intersection, poly_idx, output_numbers) else {
+                continue;
+            };
 
             if fract1 < fract2 {
                 write_mid_point(
@@ -383,8 +370,8 @@ fn write_intersection_list(
 /// * `mesh_center` - Center of the domain mesh
 fn write_mid_point(
     fp: &mut impl Write,
-    fract1: isize,
-    fract2: isize,
+    fract1: usize,
+    fract2: usize,
     point1: &Point3<f64>,
     point2: &Point3<f64>,
     mesh_center: &Vector3<f64>,

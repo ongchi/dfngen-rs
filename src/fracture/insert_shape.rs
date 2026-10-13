@@ -47,10 +47,10 @@ pub fn re_translate_poly(
 /// * `reject_reason` - Reason why FRAM rejected the poly
 /// * `new_poly` - Poly which was rejected
 pub fn print_reject_reason(reject_reason: RejectReason, new_poly: &Poly) {
-    if new_poly.family_num >= 0 {
+    if let Some(family_index) = new_poly.origin.family_index() {
         warn!(
             "Attempted fracture from family {} was rejected:",
-            new_poly.family_num
+            family_index
         );
     }
 

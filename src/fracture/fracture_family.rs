@@ -11,7 +11,7 @@ use crate::domain_mesh::DomainMesh;
 use crate::error::DfngenError;
 use crate::structures::RadiusDistribution;
 
-use super::poly::Poly;
+use super::poly::{FractureOrigin, Poly};
 
 /// FractureFamily holds the variables of one stochastic family of the input file.
 pub struct FractureFamily {
@@ -41,13 +41,9 @@ pub struct FractureFamily {
     /// Current P32 value for this family.
     pub current_p32: f64,
 
-    /// 'betaOption' is the rotation about the polygon's  normal vector
-    /// True - User Specified Rotation
-    /// False - Uniform Distribution
-    pub beta_distribution: bool,
-
-    /// 'beta' is the rotation, or twist, around z normal before 3d rotation in radians.
-    pub beta: f64,
+    /// Rotation, or twist, around the z normal before the 3d rotation, in radians.
+    /// `None` gives each fracture a uniform random rotation.
+    pub beta: Option<f64>,
 
     pub orientation: Fisher,
 
@@ -120,15 +116,12 @@ impl FractureFamily {
 
         // New polygon to build
         let mut new_poly = Poly::new(self.number_of_points, radius, self.aspect_ratio);
-        new_poly.family_num = fam_idx as isize;
+        new_poly.origin = FractureOrigin::Family(fam_idx);
 
-        // Initialize beta based on distrubution type: 0 = unifrom on [0,2PI], 1 = constant
-        let beta = if !self.beta_distribution {
+        let beta = self.beta.unwrap_or_else(|| {
             let uniform_dist = Uniform::new(0., 2. * std::f64::consts::PI).unwrap();
             generator.borrow_mut().sample(uniform_dist)
-        } else {
-            self.beta
-        };
+        });
 
         // Apply 2d rotation matrix, twist around origin
         // assumes polygon on x-y plane
@@ -225,8 +218,7 @@ impl FractureFamilyBuilder {
                 .ok_or("aspect ratio is required".to_string())?,
             p32_target: self.p32_target.unwrap_or(0.),
             current_p32: 0.,
-            beta_distribution: self.beta.is_some(),
-            beta: self.beta.unwrap_or(0.),
+            beta: self.beta,
             orientation: self
                 .orientation
                 .take()

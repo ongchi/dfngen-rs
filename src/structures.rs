@@ -87,11 +87,11 @@ pub struct RejectedFracture {
 pub struct IntersectionPoints {
     /// Fracture 1, index of fracture in the accpeted polygons list that this
     /// intersection belongs to ('fract1' and 'fract2' are in no particular order).
-    pub fract1: isize,
+    pub fract1: usize,
 
     /// Fracture 2, index of fracture in the accpeted polygons list that this
     /// intersection belongs to ('fract1' and 'fract2' are in no particular order).
-    pub fract2: isize,
+    pub fract2: usize,
 
     /// Intersection endpoint 1
     pub p1: Point3<f64>,
@@ -349,18 +349,6 @@ impl RadiusDistribution {
         };
 
         Ok(radius)
-    }
-}
-
-impl IntersectionPoints {
-    /// Initializes fract1 and fract2 to -1.
-    /// Sets intersectionShortened to false;
-    pub fn new() -> Self {
-        Self {
-            fract1: -1,
-            fract2: -1,
-            ..Default::default()
-        }
     }
 }
 
