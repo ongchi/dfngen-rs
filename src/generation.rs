@@ -308,7 +308,8 @@ fn insert_stochastic_fractures(
 
         // Re-translate the polygon until it is accepted or reaches its reject limit
         loop {
-            if new_poly.check_box_domain(input.min_feature_size, input.eps, &input.domain_size) {
+            if new_poly.is_outside_box_domain(input.min_feature_size, input.eps, &input.domain_size)
+            {
                 // Poly was completely outside domain
                 dfngen.pstats.rejection_reasons.outside += 1;
 

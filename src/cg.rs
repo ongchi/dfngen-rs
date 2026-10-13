@@ -54,22 +54,6 @@ pub fn rotation_between(from: &Vector3<f64>, to: &Vector3<f64>) -> Rotation3<f64
     })
 }
 
-/// Check Bounding Box***************************
-///
-/// Compares two polygons' bounding boxes, returns 1 if bounding boxes intersect
-///
-/// # Arguments
-///
-/// * `poly1` - Poly 1
-/// * `poly2` - Poly 2
-///
-/// # Returns
-///
-/// * `bool` - True if bounding boxes intersect, false otherwise
-fn check_bounding_box(poly1: &Poly, poly2: &Poly) -> bool {
-    poly1.bounding_box.intersects(&poly2.bounding_box)
-}
-
 /// Find Intersections
 /// Finds intersection end points of two intersecting polygons (Poly 1 and Poly 2)
 ///
@@ -250,7 +234,7 @@ fn fram(
         // Check distance from new intersection to other intersections on
         // poly2 (fracture newPoly is intersecting with)
 
-        if check_dist_to_old_intersections(
+        if is_too_close_to_old_intersections(
             accepted.intersections,
             int_pts,
             poly2,
@@ -264,7 +248,7 @@ fn fram(
         // Check distance from new intersection to intersections already
         // existing on newPoly
         // Also checks for undetected triple points
-        if check_dist_to_new_intersections(
+        if is_too_close_to_new_intersections(
             &candidate.intersections,
             int_pts,
             &candidate.triple_points,
@@ -319,7 +303,7 @@ fn fram(
 /// * `bool`
 ///   False - if not all distances are larger than minDistance or minDistance = 0 with triple intersection point
 ///   True - otherwise
-fn check_dist_to_old_intersections(
+fn is_too_close_to_old_intersections(
     int_pts_list: &[IntersectionPoints],
     int_pts: &IntersectionPoints,
     poly2: &Poly,
@@ -328,11 +312,8 @@ fn check_dist_to_old_intersections(
 ) -> bool {
     let intersection = [int_pts.p1, int_pts.p2];
 
-    for i in 0..poly2.intersection_index.len() {
-        let int2 = [
-            int_pts_list[poly2.intersection_index[i]].p1,
-            int_pts_list[poly2.intersection_index[i]].p2,
-        ];
+    for &index in &poly2.intersection_index {
+        let int2 = [int_pts_list[index].p1, int_pts_list[index].p2];
 
         if are_segments_farther_than(&intersection, &int2, min_distance) {
             continue;
@@ -374,7 +355,7 @@ fn check_dist_to_old_intersections(
 ///       the triple interersection exists in 'tempTriPts'. If not found, fracture will be rejected
 ///       Due to the shrinkIntersection algorithm, it may be possible for a triple intersection point
 ///       to exist on only one fracture. This check resolves this issue.
-fn check_dist_to_new_intersections(
+fn is_too_close_to_new_intersections(
     temp_int_pts: &[IntersectionPoints],
     int_pts: &IntersectionPoints,
     temp_tri_pts: &[TriplePtTempData],
@@ -406,20 +387,11 @@ fn check_dist_to_new_intersections(
         } else if dist < eps {
             // Make sure there is a triple intersection point
             // before accepting
-            let mut reject = true;
+            let has_triple_point = temp_tri_pts
+                .iter()
+                .any(|tmp_tri| is_same_point(&pt, &tmp_tri.triple_point, eps));
 
-            for tmp_tri in temp_tri_pts {
-                // If the triple point is found, continue with checks, else reject
-                if (pt.x - tmp_tri.triple_point.x).abs() < eps
-                    && (pt.y - tmp_tri.triple_point.y).abs() < eps
-                    && (pt.z - tmp_tri.triple_point.z).abs() < eps
-                {
-                    reject = false;
-                    break;
-                }
-            }
-
-            if reject {
+            if !has_triple_point {
                 return true;
             }
         }
@@ -465,31 +437,28 @@ fn shrink_intersection(
     let n = (2. * dist / global_min_dist).ceil();
     let step_size = 1. / n;
     let pt = int_pts.p1;
-    // Start step at first descrete point
-    let mut step;
+    let node_limit = n as i32;
+    let IntersectionPoints {
+        p1,
+        p2,
+        intersection_shortened,
+        ..
+    } = int_pts;
 
-    // Check both sides of intersection against edge
-    for i in 0..2 {
+    // Check both sides of intersection against edge: from p1 in the direction
+    // of p2, then from p2 in the direction of p1
+    for (start, step_to_next, end_point) in [(0., step_size, p1), (1., -step_size, p2)] {
         let mut node_count = 0;
-
-        if i == 0 {
-            step = 0.;
-        } else {
-            step = 1.;
-        }
+        // Start step at first descrete point
+        let mut step = start;
 
         let point = pt + vect * step;
         let first_pt_dist_to_edge = point_to_line_seg(&point, edge, eps);
         let mut first_pt = true;
 
-        while node_count <= n as i32 {
+        while node_count <= node_limit {
             node_count += 1;
-
-            if i == 0 {
-                step += step_size;
-            } else {
-                step -= step_size;
-            }
+            step += step_to_next;
 
             let pt_on_intersection = pt + vect * step;
             let dist = point_to_line_seg(&pt_on_intersection, edge, eps);
@@ -505,17 +474,12 @@ fn shrink_intersection(
             first_pt = false;
 
             if dist > global_min_dist {
-                if i == 0 {
-                    int_pts.p1 = pt_on_intersection;
-                } else {
-                    int_pts.p2 = pt_on_intersection;
-                }
-
-                int_pts.intersection_shortened = true;
+                *end_point = pt_on_intersection;
+                *intersection_shortened = true;
                 break;
             }
 
-            if node_count >= n as i32 {
+            if node_count >= node_limit {
                 // All nodes are bad, reject
                 return true;
             }
@@ -582,7 +546,7 @@ pub fn intersection_checking(
 
         // NOTE: findIntersections() searches bounding boxes
         // Bounding box search
-        if check_bounding_box(new_poly, poly) {
+        if new_poly.bounding_box.intersects(&poly.bounding_box) {
             if let Some(mut intersection) = find_intersections(new_poly, poly, opts.eps) {
                 // Used to update the statistics on how much the intersections were shortened
                 original_lengths.push((intersection.p1 - intersection.p2).magnitude());
@@ -669,12 +633,11 @@ pub fn intersection_checking(
     int_pts_list.extend(candidate.intersections);
 
     // Update poly's indexs to intersections list (intpts)
-    for i in 0..temp_intersect_list.len() {
-        // Update each intersected poly's intersection index
-        accepted_poly[temp_intersect_list[i]]
+    for (i, &poly_index) in temp_intersect_list.iter().enumerate() {
+        // int_pts_index + i is the position of the intersection in the permanent array
+        accepted_poly[poly_index]
             .intersection_index
             .push(int_pts_index + i);
-        // intPtsIndex+i will be the index position of the intersection once it is saved to the intersections array
     }
 
     // Fracture is now accepted.
@@ -690,8 +653,7 @@ pub fn intersection_checking(
             triple_points.push(tri_pt_tmp.triple_point);
 
             // Update index pointers to the triple intersection points
-            for ii in 0..tri_pt_tmp.int_index.len() {
-                let idx = tri_pt_tmp.int_index[ii];
+            for &idx in &tri_pt_tmp.int_index {
                 int_pts_list[idx].triple_points_idx.push(trip_index + j);
             }
         }
@@ -703,6 +665,13 @@ pub fn intersection_checking(
     clusters.add_connected(group, new_poly_index, &encountered_groups, accepted_poly);
 
     Ok(())
+}
+
+/// True if each coordinate of the two points differs by less than `eps`.
+fn is_same_point(point1: &Point3<f64>, point2: &Point3<f64>, eps: f64) -> bool {
+    (point1.x - point2.x).abs() < eps
+        && (point1.y - point2.y).abs() < eps
+        && (point1.z - point2.z).abs() < eps
 }
 
 /// Puts `new_poly` into the group of `poly`, a fracture which it is connected to.
@@ -819,11 +788,11 @@ fn check_close_edge(
     // vertices
     let mut on_edge_count = 0;
 
-    let number_of_nodes = poly1.vertices.len();
+    // Edge from each vertex to the next one. The last edge closes the polygon.
+    let next_vertices = poly1.vertices.iter().cycle().skip(1);
 
-    for i in 0..number_of_nodes {
-        // Edge from the vertex to the next one. The last edge closes the polygon.
-        let edge = [poly1.vertices[i], poly1.vertices[(i + 1) % number_of_nodes]];
+    for (&vertex, &next_vertex) in poly1.vertices.iter().zip(next_vertices) {
+        let edge = [vertex, next_vertex];
 
         if are_segments_farther_than(&edge, &line, min_dist) {
             // All distances between this edge and the intersection are larger than min_dist
@@ -837,7 +806,7 @@ fn check_close_edge(
             point_to_line_seg(&edge[1], &line, eps),
         ];
         // Sort smallest to largest
-        end_pts_to_edge.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        end_pts_to_edge.sort_by(f64::total_cmp);
 
         // If two smallest distances are < min_feature_size,
         // the line is almost parallel and closer to edge than min_feature_size, reject it
@@ -878,6 +847,7 @@ fn check_close_edge(
             // of the intersection to the poly vertices.
             // IF the intersecion is within the polygon, distances less than min_feature_size to
             // edges and vertices will be caught by lineSegToLineSeg() in this function.
+            // No short circuit: the node check also counts its rejects in the statistics
             if (on_edge_count >= 2)
                 & check_distance_from_nodes(poly1, int_pts, min_dist, pstats, eps)
             {
@@ -985,12 +955,9 @@ fn check_for_triple_intersections(
     let temp_data = &mut candidate.triple_points;
     let min_dist = 1.5 * min_feature_size;
     let int_end_pts = [int_pts.p1, int_pts.p2]; //newest intersection
-                                                // Number of intersections already on poly2
-    let n = poly2.intersection_index.len();
 
-    // Check new fracure's new intesrsection against previous intersections on poly2
-    for i in 0..n {
-        let intersection_index = poly2.intersection_index[i]; // Index to previous intersecction (old intersection)
+    // Check the new intersection of the new fracture against the previous intersections on poly2
+    for &intersection_index in &poly2.intersection_index {
         let line = [
             int_pts_list[intersection_index].p1,
             int_pts_list[intersection_index].p2,
@@ -1043,8 +1010,7 @@ fn check_for_triple_intersections(
             }
 
             // Check that the triple intersection point isn't too close to previous triple intersection points
-            for k in 0..int_pts_list[intersection_index].triple_points_idx.len() {
-                let idx = int_pts_list[intersection_index].triple_points_idx[k];
+            for &idx in &int_pts_list[intersection_index].triple_points_idx {
                 dist1 = distance(&pt, &triple_points[idx]);
 
                 if dist1 < min_dist {
@@ -1056,58 +1022,31 @@ fn check_for_triple_intersections(
             // do not save duplicate triple ponits
             // If duplicate point is found, a different intersection may still be needing an update
             // (three intersections per single triple intersection point )
-            let mut duplicate = false;
-            let mut k = 0;
+            let duplicate = temp_data
+                .iter_mut()
+                .find(|saved| is_same_point(&pt, &saved.triple_point, eps));
 
-            // See if the found triple pt is already saved
-            while k < temp_data.len() {
-                if (pt.x - temp_data[k].triple_point.x).abs() < eps
-                    && (pt.y - temp_data[k].triple_point.y).abs() < eps
-                    && (pt.z - temp_data[k].triple_point.z).abs() < eps
-                {
-                    duplicate = true;
-                    break;
-                }
-                k += 1;
-            }
-
-            // If it is a duplicate triple pt
-            if duplicate {
-                // The old fracture's intersection needs
-                // a reference to the new triple int pt
-                // Save the index to the old fractures intersection
-                // which needs updating. If newPoly is accpted
-                // the old fracture will be updated
-                temp_data[k].int_index.push(intersection_index2);
-            } else {
-                // Not a duplicate point
-                // Save temp triple point data, store to permanent at end if fracture is accepted
-                temp_data.push(TriplePtTempData {
+            match duplicate {
+                // The intersection of the old fracture needs a reference to the
+                // triple point. It gets the reference if the new fracture is accepted.
+                Some(saved) => saved.int_index.push(intersection_index2),
+                // Save the triple point. It goes into the DFN if the new fracture is accepted.
+                None => temp_data.push(TriplePtTempData {
                     triple_point: pt,
                     int_index: vec![intersection_index, intersection_index2],
-                });
+                }),
             }
         }
     }
 
     // Test distances to triple points on own line of intersection
     // If any triple points are found to be less than 'minDist' to each other, reject.
-    let trip_size = temp_data.len();
-    // Each tempData structure contains 1 triple pt and the intersection index of intersection it is on
+    for (k, first) in temp_data.iter().enumerate() {
+        for second in &temp_data[k + 1..] {
+            let dist = distance(&first.triple_point, &second.triple_point);
 
-    if trip_size != 0 {
-        let y = trip_size - 1;
-
-        for k in 0..y {
-            let point1 = &temp_data[k].triple_point;
-
-            for tri_pt_tmp in temp_data.iter().take(trip_size).skip(k + 1) {
-                let point2 = &tri_pt_tmp.triple_point;
-                let dist = distance(point1, point2);
-
-                if dist < min_dist && dist > eps {
-                    return Err(RejectReason::TriplePointCloseToTriplePoint);
-                }
+            if dist < min_dist && dist > eps {
+                return Err(RejectReason::TriplePointCloseToTriplePoint);
             }
         }
     }

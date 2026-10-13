@@ -371,7 +371,7 @@ impl DFNGen {
         opts: &PolyOptions,
     ) {
         let is_outside_box_domain =
-            new_poly.check_box_domain(opts.min_feature_size, opts.eps, &opts.domain_size);
+            new_poly.is_outside_box_domain(opts.min_feature_size, opts.eps, &opts.domain_size);
         let is_rejected = match domain_check {
             // Poly completely outside domain, or it intersects no cell of its region of the domain mesh
             DomainCheck::Regions(region_ids) => {

@@ -249,7 +249,7 @@ impl FractureFamilyCollection {
         generator: &mut Mt64,
     ) -> Result<(), DfngenError> {
         if force_large_fractures {
-            for shape in self.families.iter_mut() {
+            for shape in &mut self.families {
                 let radius = shape.radius.max;
                 shape.radii_list.push(radius);
             }
@@ -270,8 +270,8 @@ impl FractureFamilyCollection {
     /// This will allow the DFN gereration to start from largest to smallest
     /// fractures.
     pub fn sort_radii(&mut self) {
-        for ff in self.families.iter_mut() {
-            ff.radii_list.sort_by(|a, b| b.partial_cmp(a).unwrap())
+        for family in &mut self.families {
+            family.radii_list.sort_by(|a, b| b.total_cmp(a));
         }
     }
 }

@@ -45,7 +45,8 @@ pub fn max_elmt_idx(vec: &[f64]) -> usize {
 /// Array of sorted indicies to elements in 'v' sorted smallest to largest
 pub fn sorted_index(vec: &[f64]) -> Vec<usize> {
     let mut v = vec.iter().enumerate().collect::<Vec<(usize, &f64)>>();
-    v.sort_by(|a, b| (a.1).partial_cmp(b.1).unwrap());
+    // Not total_cmp: it puts -0.0 before 0.0, and that changes the order of equal values
+    v.sort_by(|a, b| (a.1).partial_cmp(b.1).expect("the values are not NaN"));
     v.into_iter().map(|(i, _)| i).collect()
 }
 

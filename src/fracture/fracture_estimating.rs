@@ -37,7 +37,7 @@ pub fn dry_run(
     let mut force_large_fract_count = 0;
     let mut p32_status = vec![false; frac_families.families.len()];
 
-    while p32_status.iter().any(|p| !p) {
+    'insertion: while p32_status.iter().any(|p| !p) {
         // Index to CDF array of current family being inserted
         let cdf_idx;
         let mut reject_counter = 0;
@@ -72,30 +72,23 @@ pub fn dry_run(
             )?
         };
 
-        let mut reject = false;
-
-        while new_poly.check_box_domain(input.min_feature_size, input.eps, &input.domain_size) {
+        while new_poly.is_outside_box_domain(input.min_feature_size, input.eps, &input.domain_size)
+        {
             // Poly is completely outside domain
             reject_counter += 1; // Counter for re-trying a new translation
 
             // Test if newPoly has reached its limit of insertion attempts
             if reject_counter >= input.rejects_per_fracture {
-                reject = true;
-                break; // Reject poly, generate new polygon
-            } else {
-                // Retranslate poly and try again, preserving normal, size, and shape
-                re_translate_poly(
-                    &mut new_poly,
-                    &frac_families.families[family_index],
-                    generator,
-                );
+                // Reject poly, generate new polygon
+                continue 'insertion;
             }
-        }
 
-        if reject {
-            // Restart while loop
-            // Generate new fracture
-            continue;
+            // Retranslate poly and try again, preserving normal, size, and shape
+            re_translate_poly(
+                &mut new_poly,
+                &frac_families.families[family_index],
+                generator,
+            );
         }
 
         // Calculate poly's area
@@ -133,7 +126,7 @@ pub fn dry_run(
     } // End while loop for inserting polyons
 
     // Reset p32 to 0
-    for shape in frac_families.families.iter_mut() {
+    for shape in &mut frac_families.families {
         shape.current_p32 = 0.;
     }
 

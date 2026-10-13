@@ -97,9 +97,9 @@ impl Poly {
     ///
     /// # Returns
     ///
-    /// false - If the polygon has a part with 3 vertices or more in the domain
-    /// true - If rejected, because the part in the domain has less than 3 vertices
-    pub fn check_box_domain(
+    /// True if the part of the polygon in the domain has less than 3 vertices,
+    /// thus the polygon is rejected
+    pub fn is_outside_box_domain(
         &self,
         min_feature_size: f64,
         eps: f64,
@@ -134,7 +134,7 @@ mod tests {
         square.translate(Vector3::new(center_x, 0., 0.));
 
         let is_rejected =
-            square.check_box_domain(MIN_FEATURE_SIZE, EPS, &Vector3::new(10., 10., 10.));
+            square.is_outside_box_domain(MIN_FEATURE_SIZE, EPS, &Vector3::new(10., 10., 10.));
 
         (square, is_rejected)
     }
