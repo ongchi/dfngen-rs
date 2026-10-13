@@ -1,19 +1,15 @@
 use tracing::{error, warn};
 
-/// Index from Probability
-///
-/// CDF is 1 to 1 and algined with the stochastic family
-/// shapes array (std vector). This chooses the family index based
-/// on a random roll (random number between 0 and 1) and 'famProb'
+/// Selects a family with a random number.
 ///
 /// # Arguments
 ///
-/// * `cdf` - CDF of family families based on famProb array in input file
+/// * `cdf` - Cumulative sum of the family probabilities, in the order of the families
 /// * `roll` - Random number between 0 and 1
 ///
 /// # Returns
 ///
-/// Index to family based on the probability famProb
+/// Index of the first element of `cdf` which is not smaller than `roll`
 pub fn index_from_probability(cdf: &[f64], roll: f64) -> usize {
     for (i, v) in cdf.iter().enumerate() {
         if &roll <= v {

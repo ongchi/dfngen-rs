@@ -209,7 +209,7 @@ fn write_triple_pts(
 ///
 /// # Arguments
 ///
-/// * `stats` - Stats structure of program statistics
+/// * `stats` - Statistics of the generation
 /// * `file` - File to write into
 fn write_rejection_stats(stats: &Stats, file: &mut impl Write) -> io::Result<()> {
     info!("Writing Rejection Statistics File (rejections.dat)");
@@ -237,7 +237,7 @@ fn write_rejection_stats(stats: &Stats, file: &mut impl Write) -> io::Result<()>
 ///
 /// # Arguments
 ///
-/// * `stats` - Stats structure of program statistics
+/// * `stats` - Statistics of the generation
 /// * `file` - File to write into
 fn write_user_rejected_fracture_information(
     stats: &Stats,
@@ -302,7 +302,7 @@ fn write_connectivity(
 ///
 /// # Arguments
 ///
-/// * `stats` - Stats structure of program statistics
+/// * `stats` - Statistics of the generation
 /// * `file` - File to write into
 fn write_rejects_per_attempt(stats: &Stats, file: &mut impl Write) -> io::Result<()> {
     info!("Writing Rotation Data File (rejectsPerAttempt.dat)");

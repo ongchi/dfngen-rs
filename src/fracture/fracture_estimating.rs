@@ -9,18 +9,16 @@ use crate::fracture::family_probability::{
 use crate::fracture::fracture_family::{FractureFamilyCollection, RadiusOption};
 use crate::io::input::Input;
 
-/// Estimate Number of Fractures When P32 Option is Used
+/// Estimates the number of fractures of each family for the P32 stop condition.
 ///
-/// Inserts fractures into domain with FRAM disabled
-/// Simply inserts fractures into the domain
-/// until reqired P32 is met.
-/// Used to estimate and generate radii lists for each fracture
-/// family.
+/// The function inserts fractures with no FRAM check until each family has its
+/// target P32. The radius of each fracture goes into the radii list of its
+/// family, for the real generation.
 ///
 /// # Arguments
 ///
-/// * `input` - Input structure
-/// * `family_collection` - Array of stochastic fracture families
+/// * `input` - Input options
+/// * `family_collection` - Stochastic fracture families
 /// * `generator` - Random number generator
 pub fn dry_run(
     input: &Input,
@@ -81,7 +79,7 @@ pub fn dry_run(
             // Poly is completely outside domain
             reject_counter += 1; // Counter for re-trying a new translation
 
-            // Test if newPoly has reached its limit of insertion attempts
+            // Test if the new fracture has reached its limit of insertion attempts
             if reject_counter >= input.rejects_per_fracture {
                 // Reject poly, generate new polygon
                 continue 'insertion;

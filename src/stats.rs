@@ -1,10 +1,9 @@
-/// Rejection reason counters.
+/// Number of rejects for each reason
 #[derive(Default)]
 pub struct RejectionReasons {
     /// Rejections due to intersection of length less than min_feature_size.
     pub short_intersection: usize,
-    /// Rejections due to intersections being too close to close to
-    /// polygon verties.
+    /// Rejections due to an intersection too close to a vertex of a polygon.
     pub close_to_node: usize,
     /// Rejections due to intersections being too close to polygon edges.
     pub close_to_edge: usize,
@@ -19,72 +18,52 @@ pub struct RejectionReasons {
     pub inter_close_to_inter: usize,
 }
 
-/// Program and DFN statistics structure. Keeps various statistics about the DFN being generated.
+/// Statistics of the DFN which is generated
 pub struct Stats {
-    /// Counters for the number of polygons/fractures accepted by each stochastic
-    /// family. Elements in this array are in the same order as the stochastic family
-    /// families array 'shapeFamilies' in main(). e.g. The counter for the second family
-    /// in the shapeFamilies array is the second element in this array.
+    /// Number of accepted fractures of each stochastic family, in the order of the families
     pub accepted_per_family: Vec<usize>,
 
-    /// Counters for the number of polygons/fractures rejected by each stochastic
-    /// family. Elements in this array are in the same order as the stochastic family
-    /// families array 'shapeFamilies' in main(). e.g. The counter for the second family
-    /// in the shapeFamilies array is the second element in this array.
+    /// Number of rejected fractures of each stochastic family, in the order of the families
     pub rejected_per_family: Vec<usize>,
 
-    /// Number of fractures estimated for each stochastic family (see dryRun()).
-    /// Elements in this array are in the same order as the stochastic family
-    /// families array 'shapeFamilies' in main(). e.g. The estimated number of
-    /// fractures for the second family in the shapeFamilies array is the second
-    /// element in this array.
+    /// Number of fractures estimated for each stochastic family (see `dry_run`),
+    /// in the order of the families
     pub expected_per_family: Vec<usize>,
 
-    /// Total number of accepted polygons/fractures for the DFN. This variable is
-    /// updated as the DFN is generated.
+    /// Number of accepted fractures
     pub accepted_count: usize,
 
-    /// Total number of rejected polygons/fractures for the DFN. This variable is
-    /// updated as the DFN is generated.
+    /// Number of rejected fractures
     pub rejected_count: usize,
 
-    /// Total number of polygon/fracture re-translations. This variable is updated
-    /// as the DFN is generated.
+    /// Number of times a rejected fracture was moved to a new position
     pub retranslated_count: u32,
 
-    /// Total area of fractures before isolated fracture removal. Variable is set in main() after
-    /// DFN generation has completed.
+    /// Total area of the fractures before the removal of the isolated fractures
     pub area_before_removal: f64,
 
-    /// Total area of fractures after isolated fracture removal. Variable is set in main() after
-    /// DFN generation has completed.
+    /// Total area of the fractures after the removal of the isolated fractures
     pub area_after_removal: f64,
 
-    /// RejectionReasons structure holds counters for all rejection reasons.
+    /// Number of rejects for each reason
     pub rejection_reasons: RejectionReasons,
 
-    /// Counter for number of intersections that have been shortened by FRAM's
-    /// shrinkIntersection() function. Only counts intersections of fractures that have been
-    /// accepted into the domain.
+    /// Number of intersections of accepted fractures which FRAM shortened
     pub intersections_shortened: u32,
 
-    /// Total length of original intersections in the DFN before intersections were shortened.
-    /// Length of all intersections if none were shortened
+    /// Total length of the intersections before FRAM shortened them
     pub original_length: f64,
 
-    /// Total length of intersections in DFN which were discarded by shrinkIntersection()
-    /// inside FRAM.
-    /// Final intersection length = originalLength - discardedLength
+    /// Total length which FRAM removed from the intersections. The final
+    /// intersection length is `original_length - discarded_length`.
     pub discarded_length: f64,
 
-    /// Rejects per insertion attempt counter. Each element represents the number of tries
-    /// it took to fit a fracture into the DFN. e.g. The number stored in the 10th element
-    /// is the number of tries it took before the 10th fracture was accepted. This count
-    /// inclues re-translating the same fracture to different locations as well as generating
-    /// new fractures.
+    /// Number of rejects before each accepted fracture. Element 9 is the number of
+    /// attempts which were rejected before the 10th fracture was accepted. An
+    /// attempt is a new fracture or a new position of a rejected fracture.
     pub rejects_per_attempt: Vec<usize>,
 
-    /// Rejected User Fractures
+    /// Numbers of the rejected user-defined fractures in their file, from 1
     pub rejected_user_fractures: Vec<usize>,
 }
 

@@ -82,7 +82,7 @@ pub fn generate(
         insert_user_defined_fractures(&input.user_fractures, &options, &mut dfn);
 
     if total_families == 0 && input.stop_condition != StopCondition::NPoly {
-        // If no stochastic shapes, use nPoly option with npoly = number of user polygons
+        // If no stochastic families, use n_poly option with n_poly = number of user polygons
         warn!("You have defined stop_condition = \"p32\" but have no stochastic fracture families defined.");
         warn!("Automatically setting stop_condition to \"n_poly\" for use with user defined fractures.");
         input.stop_condition = StopCondition::NPoly;
@@ -91,7 +91,7 @@ pub fn generate(
             return Err(DfngenError::NoFractureDefined);
         }
 
-        // Set nPoly to the amount of user defined polygons
+        // Set n_poly to the amount of user defined polygons
         input.n_poly = num_user_defined_fractures;
     }
 
@@ -114,7 +114,7 @@ pub fn generate(
     // for optimization (only need do intersection close to node on one condition)
     // On close to node rejections, close to edge is counted as well.
     // To get the correct number we must subtract the close to node count
-    // (they were counted in closeToEdge AND closeToNode)
+    // (they were counted in `close_to_edge` and `close_to_node`)
     dfn.stats.rejection_reasons.close_to_edge -= dfn.stats.rejection_reasons.close_to_node;
 
     info!("Network Generation Complete");
@@ -151,7 +151,7 @@ pub fn generate(
 
     // Remove any isolated fractures and return
     // a list of polygon indices. If input option
-    // keepOnlyLargestCluster = 1, return largest
+    // `keep_only_largest_cluster` is true, return largest
     // cluster. DFN will keep all fractures with intersections.
     let mut final_fractures = dfn.clusters.final_fractures(
         input.keep_isolated_fractures,
@@ -202,7 +202,7 @@ fn prepare_radii_lists(
 
     if input.stop_condition == StopCondition::NPoly {
         // Npoly Option
-        // Estimate fractures, generate radii lists for nPoly option
+        // Estimate fractures, generate radii lists for n_poly option
         info!("Building radii lists for nPoly option...");
         family_collection.generate_radii(input.force_large_fractures, input.n_poly, generator)?;
         info!("Building radii lists for nPoly option Complete");
@@ -252,7 +252,7 @@ fn prepare_radii_lists(
 }
 
 /// Inserts fractures from the stochastic families until the stop condition
-/// (`nPoly` count or P32 target of every family) is met.
+/// (`n_poly` count or P32 target of every family) is met.
 fn insert_stochastic_fractures(
     input: &Input,
     options: &PolyOptions,
@@ -272,7 +272,7 @@ fn insert_stochastic_fractures(
     // Initialize uniform distribution on [0,1]
     let uniform_dist = Uniform::new(0., 1.)?;
 
-    // Used with stopCondition = 1, P32 option.
+    // Used with the P32 stop condition.
     // Values are set to true once the families p32 requirement is met.
     // Once all elements have values all set to true, all families have had their
     // P32 requirement
@@ -285,8 +285,8 @@ fn insert_stochastic_fractures(
 
         // cdf_index is the index to the CDF array of the family being inserted
         let (family_index, cdf_index) = if input.stop_condition == StopCondition::NPoly {
-            // nPoly Option
-            // Choose a family based purely on famProb probabilities
+            // n_poly Option
+            // Choose a family based purely on the family probabilities
             let family_index = index_from_probability(&cdf, roll);
             (family_index, family_index)
         } else {
@@ -345,7 +345,7 @@ fn insert_stochastic_fractures(
                     p32_status[family_index] = true;
                     info!("P32 For Family {} Completed", family_index + 1);
 
-                    // Remove the completed family's element in 'CDF[]' and 'famProb[]'
+                    // Remove the completed family's element in the CDF and the probabilities
                     // Distribute the removed family probability evenly among the others and rebuild the CDF
                     if probabilities.len() > 1 {
                         cdf = remove_family_probability(&mut probabilities, cdf_index);

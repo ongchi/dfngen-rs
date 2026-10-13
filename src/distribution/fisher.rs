@@ -52,7 +52,7 @@ impl Distribution<Vector3<f64>> for Fisher {
         let u = Vector3::new(0., 0., 1.);
         let x_prod = u.cross(&self.orientation);
 
-        // Rotation is necessary only if the normal vectors are not the same (xProd is not zero vector)
+        // Rotation is necessary only if the normal vectors are not the same (the cross product is not zero vector)
         let rotation = if x_prod.magnitude() > self.eps {
             rotation_between(&u, &self.orientation)
         } else {

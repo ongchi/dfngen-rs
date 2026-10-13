@@ -64,34 +64,24 @@ impl RejectReason {
     }
 }
 
-/// Holds temporary triple point data while FRAM is checking
-/// all intersections for a new polygon/fracture.
+/// Triple intersection point of a new fracture which FRAM has not accepted yet
 ///
-/// Once a fracture is accepted, the temporary triple point
-/// 'triplePoint' is moved to its permanent location.
-///
-/// 'intIdx' is used to update intersection point structures' (IntPoints)
-/// rejerences to the new triple intersection points. 'intIdx' contains
-/// the index of the triple point in the permanent triple points array
-/// IF the fracture is accepted.
-///
-/// If the fracture is rejected, this data is discraded.
+/// It goes into the triple points of the DFN when the fracture is accepted, and
+/// it is discarded when the fracture is rejected.
 pub struct CandidateTriplePoint {
-    /// Triple intersection point.
+    /// Position of the triple intersection point
     pub triple_point: Point3<f64>,
-    /// Index to 'triplePoints' array in main() to where this point would be stored
-    /// if the FRAM checks pass.
+    /// Indices of the intersections which the point is on. They get a reference to
+    /// the point when the fracture is accepted.
     pub intersection_indices: Vec<usize>,
 }
 
-/// Print Rejection Reson
-///
-/// Function prints the fracture reject reason to the user
+/// Writes the reject reason of a fracture to the log.
 ///
 /// # Arguments
 ///
-/// * `reject_reason` - Reason why FRAM rejected the poly
-/// * `new_poly` - Poly which was rejected
+/// * `reject_reason` - Reason why FRAM rejected the fracture
+/// * `new_poly` - Fracture which was rejected
 pub fn log_reject_reason(reject_reason: RejectReason, new_poly: &Poly) {
     if let Some(family_index) = new_poly.origin.family_index() {
         warn!(
@@ -107,30 +97,16 @@ pub fn log_reject_reason(reject_reason: RejectReason, new_poly: &Poly) {
     );
 }
 
-/// There are several spots in the code which used to use standard
-/// deviation to know how to sort a list of points.
-/// To increase performance, the standard deviation is now calculated without
-/// the square root and division by N elements.
-/// Return: The sum-deviation of array 'vec'
+/// Sum of the squared deviations from the mean
+///
+/// It gives the same order of spread as the standard deviation, without the
+/// division and the square root.
 fn sum_of_squared_deviations(vec: &[f64]) -> f64 {
     let mean = vec.iter().sum::<f64>() / (vec.len() as f64);
     vec.iter().map(|&v| (v - mean).powi(2)).sum()
 }
 
-/// Get Max Element's Index
-///
-/// Used to find index of element with max value from array4
-/// Used in intersectionChecking()
-///
-/// # Arguments
-///
-/// * `vec` - Array of 4 elements
-///
-/// # Returns
-///
-/// Max element's array index
-///
-/// If elements happen to be equal, returns the first one
+/// Index of the largest element. If elements are equal, the last one wins.
 fn max_element_index(vec: &[f64]) -> usize {
     vec.iter()
         .enumerate()
@@ -139,17 +115,7 @@ fn max_element_index(vec: &[f64]) -> usize {
         .unwrap_or(0)
 }
 
-/// Sort Array Indices
-///
-/// Similar to mathematica's Ordering[] funct.
-///
-/// # Arguments
-///
-/// * `vec` - Array of f64
-///
-/// # Returns
-///
-/// Array of sorted indicies to elements in 'v' sorted smallest to largest
+/// Indices of the elements in the order of their values, smallest first
 fn sorted_index(vec: &[f64]) -> Vec<usize> {
     let mut v = vec.iter().enumerate().collect::<Vec<(usize, &f64)>>();
     // Not total_cmp: it puts -0.0 before 0.0, and that changes the order of equal values
@@ -157,13 +123,7 @@ fn sorted_index(vec: &[f64]) -> Vec<usize> {
     v.into_iter().map(|(i, _)| i).collect()
 }
 
-/// Find Intersections
-/// Finds intersection end points of two intersecting polygons (Poly 1 and Poly 2)
-///
-/// # Arguments
-///
-/// * `poly` - Poly 1
-/// * `other_poly` - Poly 2
+/// Finds the line of intersection of two polygons.
 ///
 /// # Returns
 ///
@@ -276,18 +236,17 @@ struct CandidateIntersections {
 
 /// FRAM - Feature Rejection Algorithm for Meshing
 ///
-/// Checks new poly and new intersection against other intersecting polygons
-/// for violation of the minimum feature size
-/// In some cases, the intersection may be shortened in order to accepted the fracture.
+/// Checks a new intersection of a new fracture for features smaller than the
+/// minimum feature size. The intersection can be shortened to accept the fracture.
 ///
 /// # Arguments
 ///
 /// * `options` - Limits and options of FRAM
 /// * `accepted` - Accepted fractures of the DFN, with their intersections and triple points
-/// * `candidate` - Intersections and triple points which FRAM accepted before for the new poly
-/// * `intersection` - Newest intersection found on new poly
-/// * `new_poly` - New poly, poly being checked with FRAM
-/// * `other_poly` - Poly which new poly intersects with
+/// * `candidate` - Intersections and triple points which FRAM accepted before for the new fracture
+/// * `intersection` - New intersection between `new_poly` and `other_poly`
+/// * `new_poly` - New fracture
+/// * `other_poly` - Accepted fracture which the new fracture intersects
 /// * `stats` - Statistics of the generation
 ///
 /// # Returns
@@ -305,16 +264,15 @@ fn fram(
     let min_feature_size = options.min_feature_size;
     let eps = options.eps;
 
-    /******* Check for intersection of length less than min_feature_size *******/
+    // Check for intersection of length less than min_feature_size
     if (intersection.p1 - intersection.p2).magnitude() < min_feature_size {
-        //std::cout<<"\nrejectCode = -2: Intersection of length <= min_feature_size.\n";
         stats.rejection_reasons.short_intersection += 1;
         return Err(RejectReason::ShortIntersection);
     }
 
     if !options.is_fram_relaxed {
-        /******************* distance to edges *****************/
-        // Reject if intersection shirnks < 'shrinkLimit'
+        // distance to edges
+        // Reject if intersection shirnks < `shrink_limit`
         let shrink_limit = 0.9 * (intersection.p1 - intersection.p2).magnitude();
 
         if check_close_edge(
@@ -325,7 +283,6 @@ fn fram(
             min_feature_size,
             eps,
         ) {
-            // std::cout<<"\nrejectCode = -6: Fracture too close to another fracture's edge.\n";
             stats.rejection_reasons.close_to_edge += 1;
             return Err(RejectReason::CloseToEdge);
         }
@@ -338,14 +295,13 @@ fn fram(
             min_feature_size,
             eps,
         ) {
-            // std::cout<<"\nrejectCode = -6: Fracture too close to another fracture's edge.\n";
             stats.rejection_reasons.close_to_edge += 1;
             return Err(RejectReason::CloseToEdge);
         }
 
-        /******* Intersection to Intersection Distance Checks ********/
+        // Intersection to Intersection Distance Checks
         // Check distance from new intersection to other intersections on
-        // other_poly (fracture newPoly is intersecting with)
+        // other_poly (fracture the new fracture is intersecting with)
 
         if is_too_close_to_old_intersections(
             accepted.intersections,
@@ -359,7 +315,7 @@ fn fram(
         }
 
         // Check distance from new intersection to intersections already
-        // existing on newPoly
+        // existing on the new fracture
         // Also checks for undetected triple points
         if is_too_close_to_new_intersections(
             &candidate.intersections,
@@ -375,7 +331,7 @@ fn fram(
         }
     }
 
-    /*************** Triple Intersection Checks *************/
+    // Triple Intersection Checks
     // NOTE: for debugging, there are several reject reasons for triple intersections
     let triple_result =
         check_for_triple_intersections(options, accepted, candidate, intersection, other_poly);
@@ -398,25 +354,16 @@ fn fram(
     Ok(())
 }
 
-/// FRAM CHECK
-///
-/// New intersction to Old Intersections Check
-///
-/// Checks distance of new intersection to intersections on other_poly
+/// True if the new intersection is too near to an intersection which the other
+/// fracture has already.
 ///
 /// # Arguments
 ///
-/// * `intersections` - Intersections arry for entire DFN
-/// * `intersection` - Current intersection being checked, intersection between newPoly and other_poly
-/// * `other_poly` - Poly2
-/// * `min_distance` - Minimum distance allowed if not a triple intersection
+/// * `intersections` - Intersections of the DFN
+/// * `intersection` - New intersection between the new fracture and `other_poly`
+/// * `other_poly` - Accepted fracture which the new fracture intersects
+/// * `min_distance` - Minimum distance between two intersections which do not touch
 /// * `eps` - Epsilon value for floating point comparisons
-///
-/// # Returns
-///
-/// * `bool`
-///   False - if not all distances are larger than minDistance or minDistance = 0 with triple intersection point
-///   True - otherwise
 fn is_too_close_to_old_intersections(
     intersections: &[Intersection],
     intersection: &Intersection,
@@ -443,32 +390,22 @@ fn is_too_close_to_old_intersections(
     false
 }
 
-/// FRAM Check
+/// True if the new intersection is too near to another new intersection of the
+/// new fracture.
 ///
-/// New intersction to New Intersections Check
-///
-/// Checks distance of new intersection to other intersections on newPoly
+/// Two intersections which touch must have a triple intersection point in
+/// `candidate_triple_points`. If they have none, the result is true: a shortened
+/// intersection can give a triple intersection point which only one fracture has.
 ///
 /// # Arguments
 ///
-/// * `temp_int_pts` - Array of intersections previously found on newPoly
-/// * `intersection` - Current intersection being checked, intersection between newPoly and other_poly
-/// * `candidate_triple_points` - Temp triple points, triple points found on newPoly
-/// * `other_poly` - Poly2
-/// * `accepted_polys` - Array of all accepted polygons
-/// * `min_distance` - Minimum distance allowed if not a triple intersection
+/// * `candidate_intersections` - Intersections which FRAM accepted before for the new fracture
+/// * `intersection` - New intersection between the new fracture and `other_poly`
+/// * `candidate_triple_points` - Triple points which FRAM found before for the new fracture
+/// * `other_poly` - Accepted fracture which the new fracture intersects
+/// * `accepted_polys` - Accepted fractures of the DFN
+/// * `min_distance` - Minimum distance between two intersections which do not touch
 /// * `eps` - Epsilon value for floating point comparisons
-///
-/// # Returns
-///
-/// * `bool`
-///   False - if not all distances are larger than minDistance or minDistance = 0 with triple intersection point
-///   True - otherwise
-///
-/// NOTE: If the distance between two intersections is 0, this function will verify the that
-///       the triple interersection exists in 'tempTriPts'. If not found, fracture will be rejected
-///       Due to the shrinkIntersection algorithm, it may be possible for a triple intersection point
-///       to exist on only one fracture. This check resolves this issue.
 fn is_too_close_to_new_intersections(
     temp_int_pts: &[Intersection],
     intersection: &Intersection,
@@ -481,7 +418,7 @@ fn is_too_close_to_new_intersections(
     let new_segment = [intersection.p1, intersection.p2];
 
     for candidate_intersection in temp_int_pts {
-        // `fracture1` of an intersection on newPoly is the index of the other polygon.
+        // `fracture1` of an intersection on the new fracture is the index of the other polygon.
         // The intersections with two pieces of one user-defined fracture can
         // touch, at the shared edge of the pieces.
         if accepted_polys[candidate_intersection.fracture1].is_piece_of_same_fracture(other_poly) {
@@ -516,29 +453,27 @@ fn is_too_close_to_new_intersections(
     false
 }
 
-/// Shrink Intersection
-/// Shrinks intersection untill the intersection is greater than 'minDist
-/// to 'edge', or intersection shrinks to length < 'shrinkLimit'
+/// Shortens an intersection at its two ends until each end is farther than
+/// `global_min_dist` from an edge.
 ///
-/// 'firstNodeMinDist' can be used to allow a shoter first discretized node
-/// distance. This allows for slight angles for intersections starting on the
-/// edges of polygons without there the intersection being shortened.
-/// If the first node is of distnace smaller than 'firstNodeMinDist', the
-/// 'minDist' will be used from this point on to shorten the intersection.
+/// The intersection is examined at discrete points. For the first point from an
+/// end, `first_node_min_dist` is the limit: a smaller limit there permits an
+/// intersection which starts on the edge at a small angle. After the first point,
+/// `global_min_dist` is the limit.
 ///
 /// # Arguments
 ///
-/// * `intersection` - Intersection being shrunk
-/// * `edge` - Double array[6] of two end points which intersection is being tested against
-/// * `shrink_limit` - Minimum length intersection is allowed to shrink
-/// * `first_node_min_dist` - Fist node minimum distance
-/// * `global_min_dist` - Minimum allowed distance between intersection and edge
+/// * `intersection` - Intersection to shorten
+/// * `edge` - The two end points of the edge
+/// * `shrink_limit` - Minimum length of the shortened intersection
+/// * `first_node_min_dist` - Minimum distance to the edge for the first point
+/// * `global_min_dist` - Minimum distance between the intersection and the edge
+/// * `eps` - Epsilon value for floating point comparisons
 ///
 /// # Returns
 ///
-/// * `bool`
-///   False - If intersection successfully shortened and minDist <= dist to edge && shrinkLimit <= intersection length
-///   True - If intersection length shrinks to less than shrinkLimit
+/// True if the intersection must be rejected: all its points are too near to the
+/// edge, or it is shorter than `shrink_limit`.
 fn shrink_intersection(
     intersection: &mut Intersection,
     edge: &[Point3<f64>; 2],
@@ -579,12 +514,12 @@ fn shrink_intersection(
             let pt_on_intersection = pt + vect * step;
             let dist = point_to_line_seg(&pt_on_intersection, edge, eps);
 
-            if first_pt && (dist > first_node_min_dist) {
-                // || (stepSize == 1 && dist < eps)))  {
-                if first_pt_dist_to_edge < eps || first_pt_dist_to_edge >= global_min_dist {
-                    // Leave intersection end point un-modified
-                    break;
-                }
+            if first_pt
+                && dist > first_node_min_dist
+                && (first_pt_dist_to_edge < eps || first_pt_dist_to_edge >= global_min_dist)
+            {
+                // Leave intersection end point un-modified
+                break;
             }
 
             first_pt = false;
@@ -602,30 +537,28 @@ fn shrink_intersection(
         }
     }
 
-    // If intersection length shrank to less than shrinkLimit, reject
+    // If intersection length shrank to less than `shrink_limit`, reject
     (intersection.p2 - intersection.p1).magnitude() < shrink_limit
 }
 
-/// INTERSECTION CHECKING
+/// Checks a new fracture against the accepted fractures.
 ///
-/// This function will check for intersections with all polys whos bounding boxes intersect. It also will
-/// run FRAM on the intersections.
-/// 'newPoly' will be checked with FRAM one intersection at a time. At the first FRAM rejection, further
-/// intersection checking will be aborted and the poly will be retranslated or thrown away.
-/// This function saves intersections, and updates cluster groups when a poly is accepted.
-/// This functino returns 0 if the poly was accepted and 1 if rejected. User needs to push the newPoly
-/// into the accepted poly array if this function returns 0
+/// The function finds the intersections with each fracture whose bounding box
+/// intersects that of the new fracture, and runs FRAM on each intersection. It
+/// stops at the first intersection which FRAM rejects. If all intersections are
+/// accepted, it saves them in the DFN and updates the cluster groups and the
+/// statistics. The caller then adds the new fracture to the accepted fractures.
 ///
 /// # Arguments
 ///
 /// * `options` - Limits and options of FRAM
-/// * `new_poly` - Polygon being tested (newest poly to come into the DFN)
-/// * `dfn` - The DFN: accepted polygons, intersections, triple points, cluster groups and statistics
+/// * `new_poly` - New fracture
+/// * `dfn` - The DFN: accepted fractures, intersections, triple points, cluster groups and statistics
 ///
 /// # Returns
 ///
-/// `Ok` if the fracture had no intersections or features violating the minimum feature size
-/// (passed all FRAM tests), or the reject reason of FRAM
+/// `Ok` if the fracture has no feature smaller than the minimum feature size, or
+/// the reject reason of FRAM
 pub fn check_intersections(
     options: &PolyOptions,
     new_poly: &mut Poly,
@@ -641,14 +574,14 @@ pub fn check_intersections(
     } = dfn;
     // List of fractures which new fracture intersected.
     // Used to update fractures intersections and
-    // intersection count if newPoly is accepted
+    // intersection count if the new fracture is accepted
     let mut intersected_poly_indices = Vec::new();
     let mut candidate = CandidateIntersections::default();
     // Length of each intersection before FRAM shortens it
     let mut original_lengths = Vec::new();
-    // Index to newPoly's position if accepted
+    // Index to the new fracture's position if accepted
     let new_poly_index = accepted_polys.len();
-    // Index to intersections if newPoly intersections
+    // Index to intersections if the new fracture intersections
     let first_intersection_index = intersections.len();
     let mut encountered_groups = Vec::new();
 
@@ -660,7 +593,7 @@ pub fn check_intersections(
             continue;
         }
 
-        // NOTE: findIntersections() searches bounding boxes
+        // NOTE: `find_intersections` searches bounding boxes
         // Bounding box search
         if new_poly.bounding_box.intersects(&poly.bounding_box) {
             if let Some(mut intersection) = find_intersections(new_poly, poly, options.eps) {
@@ -698,10 +631,10 @@ pub fn check_intersections(
                     // If FRAM returned Ok, everything is OK
                     // Update group numbers, intersection indexes
                     intersection.fracture1 = ii; // ii is the intersecting fracture
-                    intersection.fracture2 = new_poly_index; // newPolys ID/index in array of accpted polys, if accepted
-                                                             // 'tempIntersectList' keeps all fracture #'s intersecting with newPoly
-                    intersected_poly_indices.push(ii); // Save fracture index to update if newPoly accepted
-                                                       // Save index to polys intersections (intPts) array
+                    intersection.fracture2 = new_poly_index; // the new fracture's ID/index in array of accpted polys, if accepted
+                                                             // `intersected_poly_indices` keeps all fracture #'s intersecting with the new fracture
+                    intersected_poly_indices.push(ii); // Save fracture index to update if the new fracture accepted
+                                                       // Save index to polys intersections intersections of the DFN
                     new_poly
                         .intersection_indices
                         .push(first_intersection_index + candidate.intersections.len());
@@ -709,7 +642,7 @@ pub fn check_intersections(
 
                     join_group(new_poly, poly, &mut encountered_groups);
                 } else {
-                    // 'newPoly' rejected
+                    // the new fracture rejected
                     // SAVE REJECTED POLYS HERE IF THIS FUNCTINALITY IS NEEDED
                     return fram_result; // Break loop/function, poly is rejected
                 }
@@ -719,20 +652,20 @@ pub fn check_intersections(
 
     // Done searching intersections. All FRAM tests have passed. Polygon is accetepd.
 
-    // After searching for intersections, if newPoly still has no intersection or group:
+    // After searching for intersections, if the new fracture still has no intersection or group:
     let Some(group) = new_poly.group else {
-        // 'newPoly' had no intersections. Assign it to its own/new group number.
+        // the new fracture had no intersections. Assign it to its own/new group number.
         // It has no intersection lengths for the statistics.
         new_poly.group = Some(clusters.add_isolated(new_poly_index));
         return Ok(());
     };
 
-    // Intersections exist and were accepted, newPoly already has group number
-    // Save temp. intersections to intPts (permanent array),
+    // Intersections exist and were accepted, the new fracture already has group number
+    // Save temp. intersections to intersections of the DFN (permanent array),
     // Update all intersected polygons intersection-points index lists and intersection count
     // Update polygon group lists
 
-    // Keep track of how much intersection length we are looising from 'shrinkIntersection()'
+    // Keep track of how much intersection length we are looising from `shrink_intersection`'
     // Calculate and store total original intersection length (all intersections)
     // and actual intersection length, after intersection has been shortened.
     for (&length, shortened) in original_lengths.iter().zip(&candidate.intersections) {
@@ -757,9 +690,9 @@ pub fn check_intersections(
     }
 
     // Fracture is now accepted.
-    // Update intersection structures with triple intersection points.
+    // Give the intersections their triple intersection points.
     // triple intersection points will be found 3 times (3 fractures make up one triple int point)
-    // We need only to save the point to the permanent triplePoints array once, and then give each intersection a
+    // We need only to save the point to the permanent triple points of the DFN once, and then give each intersection a
     // reference to it.
     if options.triple_intersections {
         let first_triple_point_index = triple_points.len();
@@ -768,7 +701,7 @@ pub fn check_intersections(
             // Loop through newly found triple points
             triple_points.push(candidate_triple_point.triple_point);
 
-            // Update index pointers to the triple intersection points
+            // Each intersection of the point gets the index of the point
             for &idx in &candidate_triple_point.intersection_indices {
                 intersections[idx]
                     .triple_point_indices
@@ -777,9 +710,7 @@ pub fn check_intersections(
         }
     }
 
-    // ***********************
     // Update group numbers **
-    // ***********************
     clusters.add_connected(group, new_poly_index, &encountered_groups, accepted_polys);
 
     Ok(())
@@ -802,23 +733,16 @@ fn join_group(new_poly: &mut Poly, poly: &Poly, encountered_groups: &mut Vec<usi
     }
 }
 
-/// Disatance from intersection line to Nodes/Vertices
-///
-/// Checks distance from line of intersection to poly vertices
+/// True if the intersection is too near to a vertex of the polygon. The function
+/// then also counts a reject in `stats.rejection_reasons.close_to_node`.
 ///
 /// # Arguments
 ///
-/// * `poly` - Poly to check dist to intersection
-/// * `intersection` - Intersection structure (intersection end points)
-/// * `min_dist` - Minimum distance allowed
-/// * `stats` - Program statistics structure
+/// * `poly` - Polygon
+/// * `intersection` - Intersection
+/// * `min_dist` - Minimum distance between the intersection and a vertex
+/// * `stats` - Statistics of the generation
 /// * `eps` - Epsilon value for floating point comparisons
-///
-/// # Returns
-///
-/// * `bool`
-///   False - Distance from intersection to vertices are all > min_dist
-///   True - No distance less than minDist was found
 fn check_distance_from_nodes(
     poly: &Poly,
     intersection: &Intersection,
@@ -844,25 +768,24 @@ fn check_distance_from_nodes(
         }
     }
 
-    // If it makes it here, no distance less than 'minDist' found
+    // If it makes it here, no distance less than `min_dist` found
     false
 }
 
-/// Check if nodes are too close to edge
+/// True if the intersection is too near to an edge of the polygon.
 ///
-/// Checks distances from intersection to poly edges. If the distance is less than
-/// min_feature_size, the intersection is allowed to shrink by %10 of its original length. If
-/// the intersection is still closer than min_feature_size to a poly edge, the polygon is rejected.
+/// An intersection which is nearer than `min_dist` to an edge is first shortened,
+/// down to `shrink_limit`. If it is then still too near to the edge, the result
+/// is true.
 ///
 /// # Arguments
 ///
-/// * `poly` - Poly to be tested
-/// * `intersection` - Intersection points to be tested
-/// * `shrink_limit` - Minimum length the intersection is allowed to shrink to
-/// * `stats` - Program statistics structure, used to report stats on how much
-///   intersection length is being reduced by from shrinkIntersection()
-/// * `min_dist` - Minimum distance allowed from an end point to the edge of a polygon
-///   if the intersection does not land accross a poly's edge
+/// * `poly` - Polygon
+/// * `intersection` - Intersection. The function can shorten it.
+/// * `shrink_limit` - Minimum length of the shortened intersection
+/// * `stats` - Statistics of the generation
+/// * `min_dist` - Minimum distance between an end point of the intersection and
+///   an edge which the intersection does not cross
 /// * `eps` - Epsilon value for floating point comparisons
 fn check_close_edge(
     poly: &Poly,
@@ -872,9 +795,9 @@ fn check_close_edge(
     min_dist: f64,
     eps: f64,
 ) -> bool {
-    // 'line' is newest intersection end points
+    // End points of the newest intersection
     let line = [intersection.p1, intersection.p2];
-    // Counts how many endPoints are on the polys edge.
+    // Counts how many end points are on the polys edge.
     // If both end points of intersection are on polys edge,
     // we must check the distance from end points to
     // vertices
@@ -922,7 +845,7 @@ fn check_close_edge(
             // Endpoint is almost exactly on poly's edge, must check
             // whether the discretized nodes will ne closer
             // than the minimum allowed distance
-            // shrinkIntersection() will check if the descretized intersection points violate any
+            // `shrink_intersection` will check if the descretized intersection points violate any
             // distance to edge rules
             // NOTE: Intersections discretize with set size = .5*min_feature_size
             // Minimum distance to edge must be less than .5*min_feature_size to allow for angles
@@ -938,7 +861,7 @@ fn check_close_edge(
             // If both end points are on the edge we must also check the distnace
             // of the intersection to the poly vertices.
             // IF the intersecion is within the polygon, distances less than min_feature_size to
-            // edges and vertices will be caught by lineSegToLineSeg() in this function.
+            // edges and vertices will be caught by `line_seg_to_line_seg` in this function.
             // No short circuit: the node check also counts its rejects in the statistics
             if (on_edge_count >= 2)
                 & check_distance_from_nodes(poly, intersection, min_dist, stats, eps)
@@ -956,16 +879,18 @@ fn check_close_edge(
     false
 }
 
-/// Check for Triple Intersection , get int. point
+/// Checks the triple intersection points which a new intersection makes with the
+/// intersections of the other fracture. The points go into `candidate`.
 ///
-/// Check for triple intersection features of less than min_feature_size.
-/// Returns the reject reason if the fracture is rejected:
+/// # Returns
 ///
-/// * `TripleIntersectionNotAllowed` - Triple intersections are not allowed in the input file
-/// * `CloseToPreviousIntersection` - newPoly's intersection landed too close to a previous intersection
-/// * `TripleAngleTooSmall` - Intersection angle too small
-/// * `TriplePointCloseToEndpoint` - Triple intersection point too close to an endpoint
-/// * `TriplePointCloseToTriplePoint` - New triple point too close to previous triple point
+/// The reject reason, if the fracture is rejected:
+///
+/// * `TripleIntersectionNotAllowed` - The input does not permit triple intersections
+/// * `CloseToPreviousIntersection` - The intersection is too near to a previous intersection
+/// * `TripleAngleTooSmall` - The angle between the two intersections is too small
+/// * `TriplePointCloseToEndpoint` - The triple point is too near to an end point
+/// * `TriplePointCloseToTriplePoint` - The triple point is too near to another triple point
 fn check_for_triple_intersections(
     options: &PolyOptions,
     accepted: &AcceptedDfn,
@@ -1067,7 +992,7 @@ fn check_for_triple_intersections(
     }
 
     // Test distances to triple points on own line of intersection
-    // If any triple points are found to be less than 'minDist' to each other, reject.
+    // If any triple points are found to be less than `min_dist` to each other, reject.
     for (k, first) in candidate_triple_points.iter().enumerate() {
         for second in &candidate_triple_points[k + 1..] {
             let dist = distance(&first.triple_point, &second.triple_point);

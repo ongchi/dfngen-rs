@@ -16,22 +16,13 @@ pub struct RejectedFracture {
     pub reason: RejectReason,
 }
 
-/// Intersections structure.
-/// This structure contains all data pertaining to
-/// one intersection. This includes the IDs for both
-/// intersecting fractures, the intersection end points,
-/// a list of references to any triple intersection points existing
-/// on the intersection, and a flag denotting whether or not
-/// the intersection has been shortened by shrinkIntersection()
-/// during FRAM.
+/// Line of intersection between two accepted fractures
 #[derive(Clone, Default)]
 pub struct Intersection {
-    /// Fracture 1, index of fracture in the accpeted polygons list that this
-    /// intersection belongs to ('fracture1' and 'fracture2' are in no particular order).
+    /// Index of one of the two fractures in the accepted fractures
     pub fracture1: usize,
 
-    /// Fracture 2, index of fracture in the accpeted polygons list that this
-    /// intersection belongs to ('fracture1' and 'fracture2' are in no particular order).
+    /// Index of the other fracture in the accepted fractures
     pub fracture2: usize,
 
     /// Intersection endpoint 1
@@ -39,32 +30,32 @@ pub struct Intersection {
     /// Intersection endpoint 2
     pub p2: Point3<f64>,
 
-    /// Triple intersection points/nodes on intersection.
+    /// Indices of the triple intersection points on the intersection
     pub triple_point_indices: Vec<usize>,
 
-    /// Used to update book keeping for keeping track of overal intersection length
-    /// that has been shortened from shrinkIntersection(). Used in intersectionChecking().
+    /// True if FRAM shortened the intersection (see `Stats::discarded_length`)
     pub is_shortened: bool,
 }
 
+/// The discrete fracture network which is generated
 #[derive(Default)]
 pub struct Dfn {
-    // Statistics structure:
+    /// Statistics of the generation
     pub stats: Stats,
 
-    // Clusters of connected fractures
+    /// Clusters of connected fractures
     pub clusters: ClusterGroups,
 
-    // Vector to store accepted polygons/fractures
+    /// Accepted fractures, in the order in which they were accepted
     pub accepted_polys: Vec<Poly>,
 
-    // Rejected fractures. Stays empty unless PolyOptions::keep_rejected_fractures is set.
+    /// Rejected fractures. Stays empty unless `PolyOptions::keep_rejected_fractures` is set.
     pub rejected_polys: Vec<RejectedFracture>,
 
-    // Vector for storing intersections
+    /// Intersections between the accepted fractures
     pub intersections: Vec<Intersection>,
 
-    // Vector for storing triple intersection points
+    /// Triple intersection points
     pub triple_points: Vec<Point3<f64>>,
 }
 
@@ -144,9 +135,9 @@ impl Dfn {
             self.stats.accepted_count += 1;
             // Calculate poly's area
             new_poly.assign_area();
-            // Add new rejectsPerAttempt counter
+            // Add new counter of `rejects_per_attempt`
             self.stats.rejects_per_attempt.push(0);
-            self.accepted_polys.push(new_poly); // Save newPoly to accepted polys list
+            self.accepted_polys.push(new_poly); // Save the new fracture to accepted polys list
         }
     }
 
@@ -158,23 +149,12 @@ impl Dfn {
         self.intersections.clear();
     }
 
-    /// Remove Fractures Smaller Than Minimum Size
+    /// Removes the accepted fractures with an x radius smaller than `min_size`,
+    /// and rebuilds the DFN from the fractures which stay.
     ///
-    /// Function is designed to be used AFTER DFN generation
-    /// Originally created to compare the difference in distributions
-    /// if small fractures were removed after a DFN was generated
-    /// as opposed limiting their insertion during DFN generation.
-    ///
-    /// The minimum size options in the input files will still be used.
-    /// If the user wishes to also removeFractures after DFN generation,
-    /// 'minSize' here must be larger than the minimum size fractures in the
-    /// input file. Fratrues with radii less than 'minSize' will be removed
-    /// after DFN has been created.
-    ///
-    /// NOTE:
-    /// Must be executed before getCluster()
-    /// This funciton rebuilds the DFN. Using getCluster() before this
-    /// funciton executes causes undefined behavior.
+    /// Use it after the generation and before the cluster analysis. The minimum
+    /// radius of each family still applies during the generation, thus `min_size`
+    /// has an effect only if it is larger than that minimum.
     pub fn remove_small_fractures(&mut self, options: &PolyOptions, min_size: f64) {
         self.rebuild_with(options, |poly| poly.x_radius >= min_size);
     }

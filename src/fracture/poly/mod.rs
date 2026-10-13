@@ -32,7 +32,7 @@ impl FractureOrigin {
 }
 
 #[derive(Clone)]
-/// The Poly structre is used to create and store fracrures/polygons.
+/// One fracture: a planar polygon
 pub struct Poly {
     /// Stochastic family or user-defined fracture file which the fracture comes from.
     pub origin: FractureOrigin,
@@ -49,34 +49,31 @@ pub struct Poly {
     /// `None` until the fracture is checked against the accepted fractures.
     pub group: Option<usize>,
 
-    /// Polygon area (Not calculated until after DFN generation has completed).
+    /// Area of the polygon. It is zero until `assign_area` sets it.
     pub area: f64,
 
-    /// X-radius.
-    /// X-radius is equal to the value generated from randum distributions or given by the user
-    /// in the case of constant distributions and user-defined fractures.
+    /// Radius in x of the polygon before its rotation: the value from the radius distribution of the family
     pub x_radius: f64,
 
-    /// Y-radius.
-    /// Y-radius is equal to x-radius * aspect ratio (y_radius = aspectRatio * x_radius).
+    /// Radius in y of the polygon before its rotation: `x_radius * aspect_ratio`
     pub y_radius: f64,
 
     /// Aspect ratio of polygon. Must be value greater than zero.
     pub aspect_ratio: f64,
 
-    /// Translation of polygon. This variable is set while building the polygon.
+    /// Translation of the polygon center from the origin
     pub translation: Vector3<f64>,
 
-    /// Polygon normal. This variable is set while building the polygon.
+    /// Unit normal vector of the polygon
     pub normal: Vector3<f64>,
 
-    /// The bounding box of the polygon. Set with assign_bounding_box().
+    /// Bounding box of the polygon. `assign_bounding_box` sets it.
     pub bounding_box: Aabb,
 
     /// Vertices of the polygon, in order around its boundary.
     pub vertices: Vec<Point3<f64>>,
 
-    /// List of indices to the permanent intersection array ('intPts' in main()) which belong to this polygon.
+    /// Indices of the intersections of the DFN which are on this polygon
     pub intersection_indices: Vec<usize>,
 }
 
@@ -115,7 +112,7 @@ impl Poly {
     /// # Arguments
     ///
     /// * `number_of_points` - Number of vertices
-    /// * `radius` - Radius (x_radius = radius. y_radius = radius * aspectRatio)
+    /// * `radius` - Radius in x. The radius in y is `radius * aspect_ratio`.
     /// * `aspect_ratio` - Aspect ratio
     pub fn new(number_of_points: usize, radius: f64, aspect_ratio: f64) -> Self {
         let angle_step = 2. * std::f64::consts::PI / number_of_points as f64;
@@ -165,25 +162,16 @@ impl Poly {
         };
     }
 
-    /// Assign Bounding box
-    ///
-    /// Creates bounding box for polygon/fracture
-    /// Sets bounding box in poly struct
-    ///
-    /// # Arguments
+    /// Sets the bounding box from the vertices.
     pub fn assign_bounding_box(&mut self) {
         self.bounding_box = Aabb::from_points(&self.vertices);
     }
 
-    /// 2D rotation matrix
-    ///
-    /// Rotates poly around its normal vecotor on x-y plane
-    /// Assumes poly is on x-y plane
-    /// Angle must be in radians
+    /// Rotates the polygon around the z axis. The polygon must be on the x-y plane.
     ///
     /// # Arguments
     ///
-    /// * `angle` - Angle to rotate to
+    /// * `angle` - Rotation angle in radians
     pub fn rotation_2d(&mut self, angle: f64) {
         let sin_calc = angle.sin();
         let cos_calc = angle.cos();
@@ -198,18 +186,12 @@ impl Poly {
         }
     }
 
-    /// Applies a Rotation Matrix to poly vertices
-    ///
-    /// RotMatrix = I + V + V^2((1-cos)/sin^2)) rotate to new normal
-    ///
-    /// Rotates 'newPoly' from newPoly's current normal
-    /// so that newPoly's new normal will be 'normalB'
-    /// Assumes poly.numberOfPoints and newPoly.normal are initialized and normalized
+    /// Rotates the vertices so that the normal vector of the polygon becomes `normal_b`.
+    /// `self.normal` must be the unit normal vector before the rotation. It is not changed.
     ///
     /// # Arguments
     ///
-    /// * `new_poly` - Poly to be rotated
-    /// * `normal_b` - Normal vector to rotate to
+    /// * `normal_b` - Unit normal vector to rotate to
     /// * `eps` - Epsilon value for floating point comparisons
     pub fn rotation_3d(&mut self, normal_b: &Vector3<f64>, eps: f64) {
         // Normals should already be normalized by this point!!!
@@ -225,11 +207,7 @@ impl Poly {
         }
     }
 
-    /// Translate the poly by vector
-    ///
-    /// # Arguments
-    ///
-    /// * `translation` - Translation vector
+    /// Moves the polygon by the vector, and saves the vector as its translation.
     pub fn translate(&mut self, translation: Vector3<f64>) {
         self.translation = translation;
 

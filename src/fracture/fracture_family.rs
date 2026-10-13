@@ -20,7 +20,7 @@ pub struct FractureFamily {
 
     pub radius: RadiusDistribution,
 
-    /// Current index to the radii list 'radiiList'.
+    /// Index of the next radius to use in `radii_list`
     pub radii_index: usize,
 
     /// Initial list of fracture/polygon radii, sorted largest to smallest.
@@ -150,10 +150,10 @@ impl FractureFamily {
         let norm = self.normal_vector(generator).normalize();
         new_poly.rotation_3d(&norm, eps);
 
-        // Save newPoly's new normal vector
+        // Save the new fracture's new normal vector
         new_poly.normal = norm;
 
-        // Translate - will also set translation vector in poly structure
+        // The translation is also saved in the polygon
         let position = self.sample_position(generator);
         new_poly.translate(position);
 
