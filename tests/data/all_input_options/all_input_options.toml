@@ -50,6 +50,6 @@ orientation = { dip = 60.0, strike = 200.0, kappa = 20.0 }
 number_of_points = 4
 probability = 0.3
 aspect_ratio = 1.5
-region = 0
+region = 2
 radius = { distribution = "log_normal", log_mean = 0.8465735902799727, sd = 0.4, min = 1.4142135623730951, max = 5.656854249492381, sampling = "inverse_cdf" }
 orientation = { dip = 45.0, strike = 90.0, kappa = 10.0 }

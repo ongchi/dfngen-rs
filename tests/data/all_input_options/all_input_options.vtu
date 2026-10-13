@@ -1,13 +1,16 @@
 <?xml version="1.0"?>
 <!-- Box of 10 x 10 x 10 with its center at the origin: 27 hexahedra between
-     the planes -5, -3, 3 and 5 of each axis. Region 1: the center cell
-     (6 x 6 x 6). The other cells have the region 0. -->
+     the planes -5, -3, 3 and 5 of each axis. The region array has 2 values for
+     each cell. Region 1: the center cell (6 x 6 x 6). Region 2: the center cell
+     and the cell at +x of it (2 x 6 x 6). The other cells have no region. -->
 <VTKFile type="UnstructuredGrid" version="1.0" byte_order="LittleEndian">
 <UnstructuredGrid>
 <Piece NumberOfPoints="64" NumberOfCells="27">
 <CellData Scalars="region">
-<DataArray type="Int32" Name="region" format="ascii">
-0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0
+<DataArray type="Int32" Name="region" NumberOfComponents="2" format="ascii">
+0 0  0 0  0 0  0 0  0 0  0 0  0 0  0 0  0 0
+0 0  0 0  0 0  0 0  1 2  2 0  0 0  0 0  0 0
+0 0  0 0  0 0  0 0  0 0  0 0  0 0  0 0  0 0
 </DataArray>
 </CellData>
 <Points>

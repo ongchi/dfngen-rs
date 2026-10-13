@@ -118,6 +118,23 @@ the family is the volume of these cells. `region = 0` of a family is the whole
 mesh. Without the `region` array, all cells have the region 0. A family with a
 region value which no cell has is an error.
 
+A cell can be in more than one region: give the `region` array the attribute
+`NumberOfComponents="N"`, and N integers for each cell. Each value above 0 puts
+the cell in that region. Use 0 for the values which a cell does not need; the
+position of a value has no meaning. The volume of a region is the sum of the
+volumes of all its cells, thus the sum of the region volumes can be larger than
+the volume of the mesh. In this example, the first cell is in the regions 1 and
+2, the second cell is in the region 2, and the third cell has no region
+(`tests/data/all_input_options` is an example):
+
+```xml
+<DataArray type="Int32" Name="region" NumberOfComponents="2" format="ascii">
+1 2
+2 0
+0 0
+</DataArray>
+```
+
 A cell is split into tetrahedra for the sampling of the centers, the check of
 the user-defined fractures and the volume. This is approximate for a
 hexahedron with a face which is not flat.
@@ -155,7 +172,8 @@ must be before the first table (`[domain]`) of the input file.
   order of the cells.
 - The coordinates are those of the mesh file.
 - The cell data array `region` (optional) gives the region of each fracture:
-  one integer of 0 or more for each cell of the file, as in the mesh file. A
+  one integer of 0 or more for each cell of the file. A fracture has one
+  region: an array with more than one component is an error. A
   fracture with the region N (N > 0) is accepted only if it intersects a cell
   of the mesh with the region N. If not, it is rejected as a fracture outside
   the domain. The fracture is not cut at the region: a part of it can be in

@@ -4,7 +4,9 @@ use roxmltree::{Document, Node};
 use tracing::warn;
 
 use crate::error::DfngenError;
-use crate::io::vtu::{find_child, find_data_array, read_regions, read_values, REGION_ARRAY};
+use crate::io::vtu::{
+    find_child, find_data_array, read_component_count, read_regions, read_values, REGION_ARRAY,
+};
 
 /// Cell kinds of a PolyData file which are not fractures. The cell data of
 /// a file is in the order of these kinds, with the polygons before the strips.
@@ -86,10 +88,19 @@ fn read_piece(piece: Node, fracture_count: usize) -> Result<Vec<FracturePolygon>
         .find(|node| node.has_tag_name("CellData"))
         .and_then(|cell_data| find_data_array(cell_data, REGION_ARRAY).ok())
     {
-        Some(region_array) => read_regions(
-            region_array,
-            cell_count_before_polygons + offsets.len() + cell_count_after_polygons,
-        )?,
+        Some(region_array) => {
+            if read_component_count(region_array)? != 1 {
+                return Err(format!(
+                    "the {} array must have one value for each fracture (NumberOfComponents=\"1\")",
+                    REGION_ARRAY
+                ));
+            }
+
+            read_regions(
+                region_array,
+                cell_count_before_polygons + offsets.len() + cell_count_after_polygons,
+            )?
+        }
         None => Vec::new(),
     };
 
@@ -121,7 +132,7 @@ fn read_piece(piece: Node, fracture_count: usize) -> Result<Vec<FracturePolygon>
             vertices: point_ids.iter().map(|&id| points[id]).collect(),
             region: regions
                 .get(cell_count_before_polygons + cell)
-                .copied()
+                .and_then(|cell_regions| cell_regions.first().copied())
                 .unwrap_or(0),
         });
 
@@ -307,6 +318,20 @@ mod tests {
 
         assert!(
             message.contains("the region array must have one value for each cell"),
+            "{message}"
+        );
+    }
+
+    #[test]
+    fn test_region_array_with_two_components_is_rejected() {
+        let cell_data = region_cell_data("2 1 0 0").replace(
+            r#"Name="region""#,
+            r#"Name="region" NumberOfComponents="2""#,
+        );
+        let message = error_message(&square_and_triangle_file(&cell_data));
+
+        assert!(
+            message.contains("the region array must have one value for each fracture"),
             "{message}"
         );
     }
