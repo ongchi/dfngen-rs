@@ -9,31 +9,23 @@ use rand_mt::Mt64;
 use tracing::{error, info, warn};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
-use crate::cg::intersection_checking;
-use crate::error::DfngenError;
-use crate::fracture::cluster_groups::get_cluster;
-use crate::fracture::fracture_estimating::dry_run;
-use crate::fracture::fracture_family::{FractureFamily, FractureFamilyCollection, RadiusOption};
-use crate::fracture::insert_shape::{print_reject_reason, re_translate_poly};
-use crate::fracture::insert_user_defined_fractures;
-use crate::fracture::poly::Poly;
-use crate::io::input::{read_input, Input, StopCondition};
-use crate::io::output::write_output;
-use crate::math_functions::{
+use dfngen::cg::intersection_checking;
+use dfngen::error::DfngenError;
+use dfngen::fracture::cluster_groups::get_cluster;
+use dfngen::fracture::fracture_estimating::dry_run;
+use dfngen::fracture::fracture_family::{FractureFamily, FractureFamilyCollection, RadiusOption};
+use dfngen::fracture::insert_shape::{print_reject_reason, re_translate_poly};
+use dfngen::fracture::insert_user_defined_fractures;
+use dfngen::fracture::poly::Poly;
+use dfngen::io::input::{read_input, Input, StopCondition};
+use dfngen::io::output::write_output;
+use dfngen::math_functions::{
     cumsum, index_from_prob, index_from_prob_and_p32_status, remove_family_probability,
 };
 use crate::progress::{GenerationProgress, LogWriter};
-use crate::structures::{DFNGen, PolyOptions, RadiusFunction, RejectedFracture, Stats};
+use dfngen::structures::{DFNGen, PolyOptions, RadiusFunction, RejectedFracture, Stats};
 
-mod cg;
-mod distribution;
-mod domain_mesh;
-mod error;
-mod fracture;
-mod io;
-mod math_functions;
 mod progress;
-mod structures;
 
 #[derive(Parser)]
 #[command(version, about, long_about = None)]

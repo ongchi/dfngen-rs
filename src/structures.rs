@@ -359,6 +359,12 @@ pub struct DFNGen {
     pub triple_points: Vec<Point3<f64>>,
 }
 
+impl Default for DFNGen {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl DFNGen {
     pub fn new() -> Self {
         Self {

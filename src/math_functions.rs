@@ -160,9 +160,63 @@ pub fn remove_family_probability(fam_probability: &mut Vec<f64>, idx2remove: usi
     cumsum(fam_probability)
 }
 
+/// Progress of the P32 stop condition, from 0 to 1
+///
+/// # Arguments
+///
+/// * `current_and_target_p32` - Current P32 and target P32 of each family
+///
+/// # Returns
+///
+/// The part of the total target P32 which the families have. A family does not
+/// count for more than its target.
+pub fn p32_progress_fraction(current_and_target_p32: &[(f64, f64)]) -> f64 {
+    let total_target: f64 = current_and_target_p32
+        .iter()
+        .map(|&(_, target)| target)
+        .sum();
+    let total_reached: f64 = current_and_target_p32
+        .iter()
+        .map(|&(current, target)| current.min(target))
+        .sum();
+
+    total_reached / total_target
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    const TOLERANCE: f64 = 1e-12;
+
+    #[test]
+    fn test_p32_progress_is_zero_without_fractures() {
+        let fraction = p32_progress_fraction(&[(0., 1.), (0., 3.)]);
+
+        assert_eq!(fraction, 0.);
+    }
+
+    #[test]
+    fn test_p32_progress_is_the_part_of_the_total_target() {
+        let fraction = p32_progress_fraction(&[(0.5, 1.), (1.5, 3.)]);
+
+        assert!((fraction - 0.5).abs() < TOLERANCE);
+    }
+
+    #[test]
+    fn test_p32_progress_does_not_count_area_above_the_target() {
+        // The first family has 2 times its target. Only its target of 1 counts.
+        let fraction = p32_progress_fraction(&[(2., 1.), (0., 3.)]);
+
+        assert!((fraction - 0.25).abs() < TOLERANCE);
+    }
+
+    #[test]
+    fn test_p32_progress_is_one_when_each_family_has_its_target() {
+        let fraction = p32_progress_fraction(&[(1.1, 1.), (3., 3.)]);
+
+        assert!((fraction - 1.).abs() < TOLERANCE);
+    }
 
     #[test]
     fn test_p32_selection_skips_completed_families() {

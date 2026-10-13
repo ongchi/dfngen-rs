@@ -5,6 +5,9 @@ description = "dfngen: Discrete Fracture Networks (DFN) generator"
 edition = "2021"
 license = "LGPL-3.0"
 
+[lib]
+name = "dfngen"
+
 [[bin]]
 name = "dfngen"
 path = "src/main.rs"

@@ -97,13 +97,13 @@ pub struct Input {
     /// Seed for random generator.
     pub seed: u64,
 
-    ///    0 - Ignore this option, keep all fractures.
+    /// 0 - Ignore this option, keep all fractures.
     ///
     /// (>0) - Size of minimum fracture radius. Fractures smaller than
-    ///        defined radius will be removed AFTER DFN generation.
+    /// defined radius will be removed AFTER DFN generation.
     ///
-    ///        Minimum and maximum size options under fracture family
-    ///        distributions will still be used while generating the DFN.
+    /// Minimum and maximum size options under fracture family
+    /// distributions will still be used while generating the DFN.
     pub remove_fractures_less_than: f64,
 
     /// Caution: Can create a very large file.

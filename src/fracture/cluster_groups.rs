@@ -1,9 +1,6 @@
-use tracing::info;
+use tracing::{error, info};
 
-use crate::{
-    error,
-    structures::{FractureGroups, GroupData, Stats},
-};
+use crate::structures::{FractureGroups, GroupData, Stats};
 
 use super::poly::Poly;
 
