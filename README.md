@@ -71,6 +71,25 @@ error after 1000 rejected values. `"inverse_cdf"` uses one random number for eac
 radius, also when `[min, max]` is in a tail of the distribution. The two methods
 give different networks for the same seed.
 
+Family probability: for each new fracture, the generator selects a family at
+random, in proportion to its `probability`. The effect is different for each
+stop condition:
+
+| | `stop_condition = "n_poly"` | `stop_condition = "p32"` |
+|---|---|---|
+| Family selection | By `probability` only. | By `probability`, but only among the families which are below their `p32_target`. |
+| Final quantity of each family | `probability` controls it. | `p32_target` controls it. `probability` does not. |
+| What `probability` changes | The number of fractures of each family. | The order in which the families get their fractures, and thus the network. |
+
+- With `n_poly`, `probability` is the fraction of the insertion attempts, not
+  of the accepted fractures. FRAM rejects more fractures of some families, thus
+  the final fractions can be different.
+- With `p32`, a family which reaches its `p32_target` is removed from the
+  selection. Its probability is added in equal parts to the other families.
+- The sum of the probabilities must be 1. A sum outside 0.999 to 1.001 gives a
+  warning, not an error, and the selection is then not in proportion to the
+  values.
+
 Each fracture is whole: the domain does not cut it. Thus:
 
 - A fracture can have vertices outside the domain. A fracture with no part in
