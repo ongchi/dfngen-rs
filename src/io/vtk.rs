@@ -305,12 +305,11 @@ fn write_data_array<T: Display>(
 ) -> io::Result<()> {
     writeln!(
         output,
-        r#"<DataArray type="{}" Name="{}" NumberOfComponents="{}" format="ascii">"#,
-        vtk_type, name, number_of_components
+        r#"<DataArray type="{vtk_type}" Name="{name}" NumberOfComponents="{number_of_components}" format="ascii">"#
     )?;
 
     for tuple in tuples {
-        writeln!(output, "{}", tuple)?;
+        writeln!(output, "{tuple}")?;
     }
 
     writeln!(output, "</DataArray>")
@@ -324,9 +323,10 @@ fn write_user_fracture_id_array(output: &mut impl Write, polys: &[&Poly]) -> io:
         "user_fracture_id",
         "Int64",
         1,
-        polys
-            .iter()
-            .map(|poly| poly.user_fracture_id.map_or(-1, |id| id as i64)),
+        polys.iter().map(|poly| {
+            poly.user_fracture_id
+                .map_or_else(|| "-1".to_string(), |id| id.to_string())
+        }),
     )
 }
 
@@ -389,7 +389,7 @@ mod tests {
     /// The lines between the start tag of the named data array and its end tag.
     fn data_array<'a>(file: &'a str, name: &str) -> Vec<&'a str> {
         file.lines()
-            .skip_while(|line| !line.contains(&format!(r#"Name="{}""#, name)))
+            .skip_while(|line| !line.contains(&format!(r#"Name="{name}""#)))
             .skip(1)
             .take_while(|line| *line != "</DataArray>")
             .collect()

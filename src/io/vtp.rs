@@ -45,8 +45,7 @@ pub fn read_user_fractures(path: &Path) -> Result<Vec<FracturePolygon>, DfngenEr
 
     let text = std::fs::read_to_string(path).map_err(|e| {
         invalid_file(format!(
-            "cannot read the file: {}. The file must be an ASCII .vtp file.",
-            e
+            "cannot read the file: {e}. The file must be an ASCII .vtp file."
         ))
     })?;
 
@@ -110,20 +109,17 @@ fn read_piece(piece: Node, fracture_count: usize) -> Result<Vec<FracturePolygon>
         let fracture_id = fracture_count + cell + 1;
 
         let point_ids = connectivity.get(cell_start..cell_end).ok_or(format!(
-            "fracture {}: the offset {} is not valid",
-            fracture_id, cell_end
+            "fracture {fracture_id}: the offset {cell_end} is not valid"
         ))?;
 
         if point_ids.len() < 3 {
             return Err(format!(
-                "fracture {}: a fracture must have 3 vertices or more",
-                fracture_id
+                "fracture {fracture_id}: a fracture must have 3 vertices or more"
             ));
         }
         if let Some(point_id) = point_ids.iter().find(|&&id| id >= points.len()) {
             return Err(format!(
-                "fracture {}: there is no point {}",
-                fracture_id, point_id
+                "fracture {fracture_id}: there is no point {point_id}"
             ));
         }
 
@@ -151,8 +147,7 @@ fn read_piece(piece: Node, fracture_count: usize) -> Result<Vec<FracturePolygon>
 fn read_user_fracture_ids(id_array: Node, cell_count: usize) -> Result<Vec<u64>, String> {
     if read_component_count(id_array)? != 1 {
         return Err(format!(
-            "the {} array must have one value for each fracture (NumberOfComponents=\"1\")",
-            FRACTURE_ID_ARRAY
+            "the {FRACTURE_ID_ARRAY} array must have one value for each fracture (NumberOfComponents=\"1\")"
         ));
     }
 

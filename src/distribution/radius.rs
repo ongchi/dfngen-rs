@@ -98,7 +98,7 @@ impl RadiusDistribution {
 mod tests {
     use super::*;
 
-    fn assert_samples_are_within_limits(distribution: RadiusDistribution) {
+    fn assert_samples_are_within_limits(distribution: &RadiusDistribution) {
         let mut generator = Mt64::new(1);
 
         for _ in 0..10_000 {
@@ -114,7 +114,7 @@ mod tests {
 
     #[test]
     fn test_log_normal_radius_is_within_min_and_max() {
-        assert_samples_are_within_limits(RadiusDistribution::new_log_normal(
+        assert_samples_are_within_limits(&RadiusDistribution::new_log_normal(
             1.,
             1.,
             1.,
@@ -125,11 +125,11 @@ mod tests {
 
     #[test]
     fn test_exponential_radius_is_within_min_and_max() {
-        assert_samples_are_within_limits(RadiusDistribution::new_exponential(0.4, 1., 4.));
+        assert_samples_are_within_limits(&RadiusDistribution::new_exponential(0.4, 1., 4.));
     }
 
     #[test]
     fn test_truncated_power_law_radius_is_within_min_and_max() {
-        assert_samples_are_within_limits(RadiusDistribution::new_truncated_power_law(2.5, 1., 4.));
+        assert_samples_are_within_limits(&RadiusDistribution::new_truncated_power_law(2.5, 1., 4.));
     }
 }

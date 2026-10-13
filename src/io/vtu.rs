@@ -29,8 +29,7 @@ pub fn read_domain_mesh(path: &Path) -> Result<DomainMesh, DfngenError> {
 
     let text = std::fs::read_to_string(path).map_err(|e| {
         invalid_mesh(format!(
-            "cannot read the file: {}. The file must be an ASCII .vtu file.",
-            e
+            "cannot read the file: {e}. The file must be an ASCII .vtu file."
         ))
     })?;
 
@@ -105,17 +104,16 @@ fn read_piece(piece: Node, region_names: &mut Vec<String>) -> Result<Vec<MeshTet
     let mut cell_start = 0;
 
     for (cell, (&cell_end, &cell_type)) in offsets.iter().zip(&types).enumerate() {
-        let point_ids = connectivity.get(cell_start..cell_end).ok_or(format!(
-            "cell {}: the offset {} is not valid",
-            cell, cell_end
-        ))?;
+        let point_ids = connectivity
+            .get(cell_start..cell_end)
+            .ok_or(format!("cell {cell}: the offset {cell_end} is not valid"))?;
 
         if let Some(point_id) = point_ids.iter().find(|&&id| id >= points.len()) {
-            return Err(format!("cell {}: there is no point {}", cell, point_id));
+            return Err(format!("cell {cell}: there is no point {point_id}"));
         }
 
         let local_tetrahedra = split_cell_into_tetrahedra(cell_type, point_ids.len())
-            .map_err(|message| format!("cell {}: {}", cell, message))?;
+            .map_err(|message| format!("cell {cell}: {message}"))?;
         let cell_regions: Vec<usize> = region_arrays
             .iter()
             .filter(|(_, region_array)| region_array.is_cell_in_region[cell])
@@ -179,14 +177,12 @@ pub(super) fn read_region_arrays(
 
         if name.is_empty() {
             return Err(format!(
-                "the array {} has no region name after the prefix",
-                array_name
+                "the array {array_name} has no region name after the prefix"
             ));
         }
         if read_component_count(data_array)? != 1 {
             return Err(format!(
-                "the array {} must have one value for each cell (NumberOfComponents=\"1\")",
-                array_name
+                "the array {array_name} must have one value for each cell (NumberOfComponents=\"1\")"
             ));
         }
 
@@ -255,16 +251,14 @@ fn split_cell_into_tetrahedra(
         14 => ("pyramid", 5, &[[0, 1, 2, 4], [0, 2, 3, 4]]),
         _ => {
             return Err(format!(
-                "the cell type {} is not supported. Use tetrahedra (10), voxels (11), hexahedra (12), wedges (13) or pyramids (14).",
-                cell_type
+                "the cell type {cell_type} is not supported. Use tetrahedra (10), voxels (11), hexahedra (12), wedges (13) or pyramids (14)."
             ));
         }
     };
 
     if point_count != necessary_point_count {
         return Err(format!(
-            "a {} must have {} points, but it has {}",
-            name, necessary_point_count, point_count
+            "a {name} must have {necessary_point_count} points, but it has {point_count}"
         ));
     }
 
@@ -306,8 +300,7 @@ pub(super) fn read_values<T: FromStr>(data_array: Node) -> Result<Vec<T>, String
 
     if format != "ascii" {
         return Err(format!(
-            "the DataArray {} has the format \"{}\". Save the file as ASCII.",
-            name, format
+            "the DataArray {name} has the format \"{format}\". Save the file as ASCII."
         ));
     }
 
@@ -318,7 +311,7 @@ pub(super) fn read_values<T: FromStr>(data_array: Node) -> Result<Vec<T>, String
         .map(|value| {
             value
                 .parse()
-                .map_err(|_| format!("the DataArray {} has the invalid value {}", name, value))
+                .map_err(|_| format!("the DataArray {name} has the invalid value {value}"))
         })
         .collect()
 }
@@ -374,7 +367,7 @@ mod tests {
     /// Two unit cubes, one on the other, with the given `CellData` content.
     fn two_cubes_file(cell_data: &str) -> String {
         vtu_file(
-            &format!("{}  0 0 2  1 0 2  1 1 2  0 1 2", UNIT_CUBE_POINTS),
+            &format!("{UNIT_CUBE_POINTS}  0 0 2  1 0 2  1 1 2  0 1 2"),
             "0 1 2 3 4 5 6 7  4 5 6 7 8 9 10 11",
             "8 16",
             "12 12",
@@ -384,8 +377,7 @@ mod tests {
 
     fn region_array(name: &str, values: &str) -> String {
         format!(
-            r#"<DataArray type="Int32" Name="region__{}" format="ascii">{}</DataArray>"#,
-            name, values
+            r#"<DataArray type="Int32" Name="region__{name}" format="ascii">{values}</DataArray>"#
         )
     }
 
@@ -394,9 +386,7 @@ mod tests {
 
         assert!(
             (volume - expected).abs() < 1e-12,
-            "{} is not {}",
-            volume,
-            expected
+            "{volume} is not {expected}"
         );
     }
 

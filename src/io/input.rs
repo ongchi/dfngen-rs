@@ -241,7 +241,7 @@ pub fn read_input(input_file: &str) -> Result<(Input, FractureFamilyCollection),
     info!("DFN Generator Input File: {}", input_file);
 
     let text = std::fs::read_to_string(input_file)
-        .map_err(|e| invalid_input(format!("cannot read {}: {}", input_file, e)))?;
+        .map_err(|e| invalid_input(format!("cannot read {input_file}: {e}")))?;
 
     let file = parse_input_file(&text)?;
     let input_folder = Path::new(input_file).parent().unwrap_or(Path::new(""));
@@ -251,7 +251,7 @@ pub fn read_input(input_file: &str) -> Result<(Input, FractureFamilyCollection),
         None => Vec::new(),
     };
 
-    build_input(file, domain_mesh, user_fractures)
+    build_input(&file, domain_mesh, &user_fractures)
 }
 
 /// Names of the files which a TOML input file names
@@ -298,18 +298,17 @@ pub fn build_input_from_text(
         Some(fracture_file) => {
             let text = user_fractures_text.ok_or_else(|| {
                 invalid_input(format!(
-                    "the text of the user-defined fracture file {} is necessary",
-                    fracture_file
+                    "the text of the user-defined fracture file {fracture_file} is necessary"
                 ))
             })?;
 
             parse_user_fractures(text)
-                .map_err(|message| invalid_input(format!("{}: {}", fracture_file, message)))?
+                .map_err(|message| invalid_input(format!("{fracture_file}: {message}")))?
         }
         None => Vec::new(),
     };
 
-    build_input(file, domain_mesh, user_fractures)
+    build_input(&file, domain_mesh, &user_fractures)
 }
 
 fn parse_input_file(text: &str) -> Result<InputFile, DfngenError> {
@@ -332,12 +331,10 @@ fn find_mesh_region_id(
     {
         Some(position) if mesh_regions[position].volume > 0. => Ok(position + 1),
         Some(_) => Err(format!(
-            "no cell of the domain mesh is in the region {}",
-            region_name
+            "no cell of the domain mesh is in the region {region_name}"
         )),
         None => Err(format!(
-            "the domain mesh has no region {} (no cell data array region__{})",
-            region_name, region_name
+            "the domain mesh has no region {region_name} (no cell data array region__{region_name})"
         )),
     }
 }
@@ -350,9 +347,9 @@ fn find_mesh_region_id(
 /// * `domain_mesh` - Domain mesh of `domain`
 /// * `fracture_polygons` - User-defined fractures, as their file gives them
 fn build_input(
-    file: InputFile,
+    file: &InputFile,
     domain_mesh: DomainMesh,
-    fracture_polygons: Vec<FracturePolygon>,
+    fracture_polygons: &[FracturePolygon],
 ) -> Result<(Input, FractureFamilyCollection), DfngenError> {
     let eps = file.min_feature_size * 1e-8;
     let domain_mesh = Rc::new(domain_mesh);
@@ -646,11 +643,7 @@ pub mod test_inputs {
     /// Reads the sections with the L-shaped mesh as the domain. The mesh has
     /// the regions `south` and `north`, and its center is (15, 25, 35).
     pub fn parse(sections: &[&str]) -> Result<(Input, FractureFamilyCollection), DfngenError> {
-        build_input(
-            parse_input_file(&sections.concat())?,
-            l_shaped_mesh(),
-            Vec::new(),
-        )
+        build_input(&parse_input_file(&sections.concat())?, l_shaped_mesh(), &[])
     }
 }
 
@@ -835,11 +828,7 @@ mod tests {
         let mesh = DomainMesh::new(&tetrahedra, &region_names(&["empty"])).unwrap();
         let options = [GENERAL_OPTIONS, &rectangle_family_with_region(r#""empty""#)].concat();
 
-        let message = error_message(build_input(
-            parse_input_file(&options).unwrap(),
-            mesh,
-            Vec::new(),
-        ));
+        let message = error_message(build_input(&parse_input_file(&options).unwrap(), mesh, &[]));
 
         assert!(
             message.contains("no cell of the domain mesh is in the region empty"),
@@ -854,14 +843,14 @@ mod tests {
     ) -> Result<(Input, FractureFamilyCollection), DfngenError> {
         let triangle = FracturePolygon {
             vertices: vec![[15., 25., 35.], [16., 25., 35.], [16., 26., 35.]],
-            regions: regions.iter().map(|region| region.to_string()).collect(),
+            regions: regions.iter().map(ToString::to_string).collect(),
             fracture_id: Some(4),
         };
 
         build_input(
-            parse_input_file(GENERAL_OPTIONS).unwrap(),
+            &parse_input_file(GENERAL_OPTIONS).unwrap(),
             l_shaped_mesh(),
-            vec![triangle],
+            &[triangle],
         )
     }
 

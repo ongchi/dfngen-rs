@@ -247,7 +247,7 @@ fn write_user_rejected_fracture_information(
     writeln!(file, "Fracture id")?;
 
     for fracture_id in &stats.rejected_user_fractures {
-        writeln!(file, "{}", fracture_id)?;
+        writeln!(file, "{fracture_id}")?;
     }
 
     file.flush()
@@ -282,7 +282,7 @@ fn write_connectivity(
             if let Some(other) =
                 other_fracture_number(&intersections[int_idx], poly_idx, output_numbers)
             {
-                write!(file, "{} ", other)?;
+                write!(file, "{other} ")?;
             }
         }
 
@@ -308,7 +308,7 @@ fn write_rejects_per_attempt(stats: &Stats, file: &mut impl Write) -> io::Result
     info!("Writing Rotation Data File (rejectsPerAttempt.dat)");
 
     for rejects in &stats.rejects_per_attempt {
-        writeln!(file, "{}", rejects)?;
+        writeln!(file, "{rejects}")?;
     }
 
     file.flush()

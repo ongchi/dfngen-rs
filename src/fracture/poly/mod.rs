@@ -230,7 +230,7 @@ mod tests {
         let corners = [[1., 2.], [-1., 2.], [-1., -2.], [1., -2.]];
         for (vertex, corner) in poly.vertices.iter().zip(corners) {
             let offset = vertex - Point3::new(corner[0], corner[1], 0.);
-            assert!(offset.norm() < TOLERANCE, "{} is not {:?}", vertex, corner);
+            assert!(offset.norm() < TOLERANCE, "{vertex} is not {corner:?}");
         }
     }
 

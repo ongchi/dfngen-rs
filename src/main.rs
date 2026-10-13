@@ -55,7 +55,7 @@ fn run(cli: &Cli) -> Result<(), DfngenError> {
     let network = generate(input, family_collection, &mut |update| {
         progress
             .get_or_insert_with(|| GenerationProgress::new(stop_condition, n_poly))
-            .update(update)
+            .update(update);
     })?;
 
     write_output_to_folder(&network, &cli.output_folder)?;

@@ -399,7 +399,7 @@ pub mod test_meshes {
     }
 
     pub fn region_names(names: &[&str]) -> Vec<String> {
-        names.iter().map(|name| name.to_string()).collect()
+        names.iter().map(ToString::to_string).collect()
     }
 
     /// Two boxes of 2 x 1 x 1 along x. The box in -x is in the regions `west`
@@ -434,9 +434,7 @@ mod tests {
     fn assert_close(actual: f64, expected: f64) {
         assert!(
             (actual - expected).abs() < 1e-9,
-            "{} is not {}",
-            actual,
-            expected
+            "{actual} is not {expected}"
         );
     }
 
