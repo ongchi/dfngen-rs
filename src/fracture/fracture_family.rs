@@ -1,4 +1,4 @@
-use std::{cell::RefCell, rc::Rc};
+use std::rc::Rc;
 
 use parry3d_f64::na::Vector3;
 use rand::Rng;
@@ -72,14 +72,14 @@ impl FractureFamily {
     }
 
     /// Uniform random position in the cells of the family's region
-    pub fn sample_position(&self, generator: Rc<RefCell<Mt64>>) -> Vector3<f64> {
+    pub fn sample_position(&self, generator: &mut Mt64) -> Vector3<f64> {
         self.domain_mesh
-            .sample_point(self.region_id, &mut *generator.borrow_mut())
+            .sample_point(self.region_id, generator)
             .coords
     }
 
-    pub fn normal_vector(&self, rng: Rc<RefCell<Mt64>>) -> Vector3<f64> {
-        rng.borrow_mut().sample(&self.orientation)
+    pub fn normal_vector(&self, rng: &mut Mt64) -> Vector3<f64> {
+        rng.sample(&self.orientation)
     }
 
     pub fn create_poly(
@@ -87,13 +87,13 @@ impl FractureFamily {
         eps: f64,
         fam_idx: usize,
         radius_opt: RadiusOption,
-        generator: Rc<RefCell<Mt64>>,
+        generator: &mut Mt64,
     ) -> Poly {
         let radius = match radius_opt {
             RadiusOption::FromCacheOrRng | RadiusOption::FromRng => {
                 if self.radii_idx >= self.radii_list.len() || radius_opt == RadiusOption::FromRng {
                     // If out of radii from list, insert random radius
-                    match self.radius.sample(generator.clone()) {
+                    match self.radius.sample(generator) {
                         Ok(radius) => radius,
                         Err(e) => {
                             error!("");
@@ -120,7 +120,7 @@ impl FractureFamily {
 
         let beta = self.beta.unwrap_or_else(|| {
             let uniform_dist = Uniform::new(0., 2. * std::f64::consts::PI).unwrap();
-            generator.borrow_mut().sample(uniform_dist)
+            generator.sample(uniform_dist)
         });
 
         // Apply 2d rotation matrix, twist around origin
@@ -129,14 +129,14 @@ impl FractureFamily {
         new_poly.rotation_2d(beta);
 
         // Rotate vertices to norm (new normal)
-        let norm = self.normal_vector(generator.clone()).normalize();
+        let norm = self.normal_vector(generator).normalize();
         new_poly.rotation_3d(&norm, eps);
 
         // Save newPoly's new normal vector
         new_poly.normal = norm;
 
         // Translate - will also set translation vector in poly structure
-        let position = self.sample_position(generator.clone());
+        let position = self.sample_position(generator);
         new_poly.translate(position);
 
         new_poly
@@ -246,7 +246,7 @@ impl FractureFamilyCollection {
         &mut self,
         force_large_fractures: bool,
         mut n_poly: usize,
-        generator: Rc<RefCell<Mt64>>,
+        generator: &mut Mt64,
     ) -> Result<(), DfngenError> {
         if force_large_fractures {
             for shape in self.families.iter_mut() {
@@ -258,7 +258,7 @@ impl FractureFamilyCollection {
 
         for (frac_fam, probability) in self.families.iter_mut().zip(&self.probabilities) {
             for _ in 0..((probability * n_poly as f64).ceil() as usize) {
-                match frac_fam.radius.sample(generator.clone()) {
+                match frac_fam.radius.sample(generator) {
                     Ok(radius) => frac_fam.radii_list.push(radius),
                     Err(e) => {
                         error!("Attempt to populate fracture radii: Family {}", frac_fam.id);

@@ -1,5 +1,3 @@
-use std::{cell::RefCell, rc::Rc};
-
 use rand::{distr::Uniform, Rng};
 use rand_mt::Mt64;
 use tracing::info;
@@ -22,11 +20,7 @@ use crate::math_functions::{cumsum, index_from_prob_and_p32_status, remove_famil
 /// * `input` - Input structure
 /// * `frac_families` - Array of stochastic fracture families
 /// * `generator` - Random number generator
-pub fn dry_run(
-    input: &Input,
-    frac_families: &mut FractureFamilyCollection,
-    generator: Rc<RefCell<Mt64>>,
-) {
+pub fn dry_run(input: &Input, frac_families: &mut FractureFamilyCollection, generator: &mut Mt64) {
     info!("Estimating number of fractures per family for defined fracture intensities (P32)...");
     let dom_vol = input.domain_volume;
     // Probabilities of the families which have not met their P32 target.
@@ -57,22 +51,19 @@ pub fn dry_run(
                 input.eps,
                 family_index,
                 RadiusOption::MaxRadius,
-                generator.clone(),
+                generator,
             )
         } else {
             // Choose a family based on probabiliyis AND their target p32 completion status
             // if a family has already met is fracture intinisty reqirement (p32) dont choose that family anymore
-            (family_index, cdf_idx) = index_from_prob_and_p32_status(
-                &p32_status,
-                &cdf,
-                generator.clone().borrow_mut().sample(uniform_dist),
-            );
+            (family_index, cdf_idx) =
+                index_from_prob_and_p32_status(&p32_status, &cdf, generator.sample(uniform_dist));
 
             frac_families.families[family_index].create_poly(
                 input.eps,
                 family_index,
                 RadiusOption::FromRng,
-                generator.clone(),
+                generator,
             )
         };
 
@@ -91,7 +82,7 @@ pub fn dry_run(
                 re_translate_poly(
                     &mut new_poly,
                     &frac_families.families[family_index],
-                    generator.clone(),
+                    generator,
                 );
             }
         }

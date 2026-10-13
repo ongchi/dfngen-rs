@@ -1,4 +1,3 @@
-use std::cell::RefCell;
 use std::rc::Rc;
 
 use parry3d_f64::na::{Point3, Vector3};
@@ -327,7 +326,7 @@ impl RadiusDistribution {
     }
 
     /// Sampling from distribution function.
-    pub fn sample(&self, generator: Rc<RefCell<Mt64>>) -> Result<f64, DfngenError> {
+    pub fn sample(&self, generator: &mut Mt64) -> Result<f64, DfngenError> {
         let radius = match self.function {
             RadiusFunction::LogNormal {
                 mu,
@@ -335,15 +334,15 @@ impl RadiusDistribution {
                 sampling,
             } => {
                 let distr = TruncLogNormal::new(self.min, self.max, mu, sigma, sampling)?;
-                generator.borrow_mut().sample(&distr)?
+                generator.sample(&distr)?
             }
             RadiusFunction::TruncatedPowerLaw { alpha } => {
                 let distr = TruncPowerLaw::new(self.min, self.max, alpha);
-                generator.borrow_mut().sample(&distr)
+                generator.sample(&distr)
             }
             RadiusFunction::Exponential { lambda } => {
                 let distr = TruncExp::new(self.min, self.max, lambda)?;
-                generator.borrow_mut().sample(&distr)?
+                generator.sample(&distr)?
             }
             RadiusFunction::Constant(c) => c,
         };
@@ -586,10 +585,10 @@ mod tests {
     use crate::fracture::user_defined_fractures::{insert_user_defined_fractures, UserFracture};
 
     fn assert_samples_are_within_limits(distribution: RadiusDistribution) {
-        let generator = Rc::new(RefCell::new(Mt64::new(1)));
+        let mut generator = Mt64::new(1);
 
         for _ in 0..10_000 {
-            let radius = distribution.sample(generator.clone()).unwrap();
+            let radius = distribution.sample(&mut generator).unwrap();
             assert!(
                 (distribution.min..=distribution.max).contains(&radius),
                 "radius {radius} is not in [{}, {}]",

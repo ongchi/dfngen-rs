@@ -1,6 +1,3 @@
-use std::cell::RefCell;
-use std::rc::Rc;
-
 use rand::distr::Uniform;
 use rand::Rng;
 use rand_mt::Mt64;
@@ -69,7 +66,7 @@ pub fn generate(
         keep_rejected_fractures: input.output_rejected_fractures,
     };
 
-    let generator = Rc::new(RefCell::new(Mt64::new(input.seed)));
+    let mut generator = Mt64::new(input.seed);
     let dom_vol = input.domain_volume;
 
     if total_families > 0 {
@@ -77,7 +74,7 @@ pub fn generate(
             &input,
             &mut frac_fam_col,
             &mut dfngen.pstats,
-            generator.clone(),
+            &mut generator,
         )?;
     }
 
@@ -104,7 +101,7 @@ pub fn generate(
             &poly_opts,
             &mut frac_fam_col,
             &mut dfngen,
-            generator,
+            &mut generator,
             on_progress,
         )?;
     }
@@ -201,7 +198,7 @@ fn prepare_radii_lists(
     input: &Input,
     frac_fam_col: &mut FractureFamilyCollection,
     pstats: &mut Stats,
-    generator: Rc<RefCell<Mt64>>,
+    generator: &mut Mt64,
 ) -> Result<(), DfngenError> {
     let total_families = frac_fam_col.families.len();
 
@@ -209,17 +206,13 @@ fn prepare_radii_lists(
         // Npoly Option
         // Estimate fractures, generate radii lists for nPoly option
         info!("Building radii lists for nPoly option...");
-        frac_fam_col.generate_radii(
-            input.force_large_fractures,
-            input.n_poly,
-            generator.clone(),
-        )?;
+        frac_fam_col.generate_radii(input.force_large_fractures, input.n_poly, generator)?;
         info!("Building radii lists for nPoly option Complete");
     } else if input.is_fram_enabled {
         // P32 Option
         // ESTIMATE # FRACTURES NEEDED
         info!("Estimating number of fractures needed...");
-        dry_run(input, frac_fam_col, generator.clone());
+        dry_run(input, frac_fam_col, generator);
     }
 
     // Add a percentage more radii to each radii
@@ -267,7 +260,7 @@ fn insert_stochastic_fractures(
     poly_opts: &PolyOptions,
     frac_fam_col: &mut FractureFamilyCollection,
     dfngen: &mut DFNGen,
-    generator: Rc<RefCell<Mt64>>,
+    generator: &mut Mt64,
     on_progress: &mut dyn FnMut(&ProgressUpdate),
 ) -> Result<(), DfngenError> {
     let total_families = frac_fam_col.families.len();
@@ -292,7 +285,7 @@ fn insert_stochastic_fractures(
         || (input.stop_condition == StopCondition::P32 && p32_status.iter().any(|p| !p))
     {
         // cdfIdx holds the index to the CDF array for the current shape family being inserted
-        let roll = generator.borrow_mut().sample(uniform_dist);
+        let roll = generator.sample(uniform_dist);
 
         // cdf_idx is the index to the CDF array of the family being inserted
         let (family_index, cdf_idx) = if input.stop_condition == StopCondition::NPoly {
@@ -311,7 +304,7 @@ fn insert_stochastic_fractures(
             input.eps,
             family_index,
             RadiusOption::FromCacheOrRng,
-            generator.clone(),
+            generator,
         );
 
         let mut reject_counter = 0;
@@ -331,7 +324,7 @@ fn insert_stochastic_fractures(
                 re_translate_poly(
                     &mut new_poly,
                     &frac_fam_col.families[family_index],
-                    generator.clone(),
+                    generator,
                 );
                 continue;
             }
@@ -419,7 +412,7 @@ fn insert_stochastic_fractures(
             re_translate_poly(
                 &mut new_poly,
                 &frac_fam_col.families[family_index],
-                generator.clone(),
+                generator,
             );
         }
     }

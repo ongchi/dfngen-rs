@@ -1,6 +1,3 @@
-use std::cell::RefCell;
-use std::rc::Rc;
-
 use rand_mt::Mt64;
 use tracing::warn;
 
@@ -20,11 +17,7 @@ use super::poly::Poly;
 /// * `new_poly` - Polygon
 /// * `frac_fam` - Fracture family structure which Polygon belongs to
 /// * `generator` - Random Generator
-pub fn re_translate_poly(
-    new_poly: &mut Poly,
-    frac_fam: &FractureFamily,
-    generator: Rc<RefCell<Mt64>>,
-) {
+pub fn re_translate_poly(new_poly: &mut Poly, frac_fam: &FractureFamily, generator: &mut Mt64) {
     new_poly.group_num = 0; // Clear cluster group information
     new_poly.intersection_index.clear(); // Clear any saved intersections
 
@@ -34,7 +27,7 @@ pub fn re_translate_poly(
     }
 
     // Translate to new position
-    let t = frac_fam.sample_position(generator.clone());
+    let t = frac_fam.sample_position(generator);
     new_poly.translate(t);
 }
 
