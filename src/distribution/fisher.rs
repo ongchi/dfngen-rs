@@ -1,7 +1,7 @@
 use parry3d_f64::na::{Rotation3, Vector3};
 use rand::distr::{Distribution, Uniform};
 
-use crate::cg::{normal_from_dip_strike, normal_from_trend_plunge, rotation_between};
+use crate::geometry::{normal_from_dip_strike, normal_from_trend_plunge, rotation_between};
 
 /// The fisher distribution of polygon normal vector generation
 #[derive(Debug)]

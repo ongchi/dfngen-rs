@@ -5,7 +5,7 @@ use parry3d_f64::na::Vector3;
 use serde::Deserialize;
 use tracing::{debug, info, warn};
 
-use crate::distribution::{Fisher, LogNormalSampling};
+use crate::distribution::{Fisher, LogNormalSampling, RadiusDistribution};
 use crate::domain_mesh::{DomainMesh, MeshRegion};
 use crate::error::DfngenError;
 use crate::fracture::fracture_family::{
@@ -14,7 +14,6 @@ use crate::fracture::fracture_family::{
 use crate::fracture::user_defined_fractures::UserFracture;
 use crate::io::vtp::{parse_user_fractures, read_user_fractures, FracturePolygon};
 use crate::io::vtu::{parse_domain_mesh, read_domain_mesh};
-use crate::structures::RadiusDistribution;
 
 #[derive(Deserialize, Default, Debug, Clone, Copy, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -659,8 +658,8 @@ pub mod test_inputs {
 mod tests {
     use super::test_inputs::{parse, GENERAL_OPTIONS};
     use super::*;
+    use crate::distribution::RadiusFunction;
     use crate::domain_mesh::test_meshes::{box_tetrahedra, l_shaped_mesh, region_names};
-    use crate::structures::RadiusFunction;
 
     const RECTANGLE_FAMILY: &str = r#"
         [[family]]

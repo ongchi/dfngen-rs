@@ -4,7 +4,7 @@ use parry3d_f64::bounding_volume::Aabb;
 use parry3d_f64::na::{center, Point3, Rotation3, Vector3};
 use parry3d_f64::shape::Triangle;
 
-use crate::cg::{is_parallel, rotation_between};
+use crate::geometry::{is_parallel, rotation_between};
 
 /// Where a fracture comes from
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

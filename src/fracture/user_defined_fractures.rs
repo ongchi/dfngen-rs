@@ -2,7 +2,7 @@ use std::collections::HashSet;
 
 use parry3d_f64::na::{center, distance, Point3};
 
-use crate::structures::{Dfn, PolyOptions};
+use crate::dfn::{Dfn, PolyOptions};
 
 use super::poly::{FractureOrigin, Poly};
 

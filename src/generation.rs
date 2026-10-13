@@ -3,19 +3,20 @@ use rand::Rng;
 use rand_mt::Mt64;
 use tracing::{info, warn};
 
-use crate::cg::check_intersections;
+use crate::dfn::{Dfn, PolyOptions, RejectedFracture};
+use crate::distribution::RadiusFunction;
 use crate::error::DfngenError;
-use crate::fracture::fracture_estimating::dry_run;
-use crate::fracture::fracture_family::{FractureFamily, FractureFamilyCollection, RadiusOption};
-use crate::fracture::insert_shape::{log_reject_reason, retranslate_poly};
-use crate::fracture::insert_user_defined_fractures;
-use crate::fracture::poly::Poly;
-use crate::io::input::{Input, StopCondition};
-use crate::math_functions::{
+use crate::fracture::family_probability::{
     cumulative_sum, index_from_probability, index_from_probability_and_p32_status,
     p32_progress_fraction, remove_family_probability,
 };
-use crate::structures::{Dfn, PolyOptions, RadiusFunction, RejectedFracture, Stats};
+use crate::fracture::fracture_estimating::dry_run;
+use crate::fracture::fracture_family::{FractureFamily, FractureFamilyCollection, RadiusOption};
+use crate::fracture::insert_user_defined_fractures;
+use crate::fracture::poly::Poly;
+use crate::fram::{check_intersections, log_reject_reason};
+use crate::io::input::{Input, StopCondition};
+use crate::stats::Stats;
 
 /// Result of a generation
 pub struct Network {
@@ -317,11 +318,7 @@ fn insert_stochastic_fractures(
                 }
 
                 // Retranslate poly and try again, preserving normal, size, and family
-                retranslate_poly(
-                    &mut new_poly,
-                    &family_collection.families[family_index],
-                    generator,
-                );
+                family_collection.families[family_index].retranslate(&mut new_poly, generator);
                 continue;
             }
 
@@ -398,11 +395,7 @@ fn insert_stochastic_fractures(
             }
 
             dfn.stats.retranslated_count += 1;
-            retranslate_poly(
-                &mut new_poly,
-                &family_collection.families[family_index],
-                generator,
-            );
+            family_collection.families[family_index].retranslate(&mut new_poly, generator);
         }
     }
 

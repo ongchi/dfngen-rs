@@ -1,55 +1,5 @@
 use tracing::{error, warn};
 
-/// There are several spots in the code which used to use standard
-/// deviation to know how to sort a list of points.
-/// To increase performance, the standard deviation is now calculated without
-/// the square root and division by N elements.
-/// Return: The sum-deviation of array 'vec'
-pub fn sum_of_squared_deviations(vec: &[f64]) -> f64 {
-    let mean = vec.iter().sum::<f64>() / (vec.len() as f64);
-    vec.iter().map(|&v| (v - mean).powi(2)).sum()
-}
-
-/// Get Max Element's Index
-///
-/// Used to find index of element with max value from array4
-/// Used in intersectionChecking()
-///
-/// # Arguments
-///
-/// * `vec` - Array of 4 elements
-///
-/// # Returns
-///
-/// Max element's array index
-///
-/// If elements happen to be equal, returns the first one
-pub fn max_element_index(vec: &[f64]) -> usize {
-    vec.iter()
-        .enumerate()
-        .reduce(|max, el| if el.1 < max.1 { max } else { el })
-        .map(|(i, _)| i)
-        .unwrap_or(0)
-}
-
-/// Sort Array Indices
-///
-/// Similar to mathematica's Ordering[] funct.
-///
-/// # Arguments
-///
-/// * `vec` - Array of f64
-///
-/// # Returns
-///
-/// Array of sorted indicies to elements in 'v' sorted smallest to largest
-pub fn sorted_index(vec: &[f64]) -> Vec<usize> {
-    let mut v = vec.iter().enumerate().collect::<Vec<(usize, &f64)>>();
-    // Not total_cmp: it puts -0.0 before 0.0, and that changes the order of equal values
-    v.sort_by(|a, b| (a.1).partial_cmp(b.1).expect("the values are not NaN"));
-    v.into_iter().map(|(i, _)| i).collect()
-}
-
 /// Index from Probability
 ///
 /// CDF is 1 to 1 and algined with the stochastic family

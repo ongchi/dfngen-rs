@@ -3,12 +3,11 @@ use rand_mt::Mt64;
 use tracing::info;
 
 use crate::error::DfngenError;
-use crate::fracture::fracture_family::{FractureFamilyCollection, RadiusOption};
-use crate::fracture::insert_shape::retranslate_poly;
-use crate::io::input::Input;
-use crate::math_functions::{
+use crate::fracture::family_probability::{
     cumulative_sum, index_from_probability_and_p32_status, remove_family_probability,
 };
+use crate::fracture::fracture_family::{FractureFamilyCollection, RadiusOption};
+use crate::io::input::Input;
 
 /// Estimate Number of Fractures When P32 Option is Used
 ///
@@ -89,11 +88,7 @@ pub fn dry_run(
             }
 
             // Retranslate poly and try again, preserving normal, size, and family
-            retranslate_poly(
-                &mut new_poly,
-                &family_collection.families[family_index],
-                generator,
-            );
+            family_collection.families[family_index].retranslate(&mut new_poly, generator);
         }
 
         // Calculate poly's area

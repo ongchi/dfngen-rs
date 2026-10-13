@@ -1,12 +1,13 @@
-pub mod cg;
+pub mod dfn;
 pub mod distribution;
 pub mod domain_mesh;
 pub mod error;
 pub mod fracture;
+pub mod fram;
 pub mod generation;
+pub mod geometry;
 pub mod io;
-pub mod math_functions;
-pub mod structures;
+pub mod stats;
 
 pub use error::DfngenError;
 pub use generation::{generate, Network, ProgressUpdate};

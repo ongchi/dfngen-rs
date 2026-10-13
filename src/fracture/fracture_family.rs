@@ -5,10 +5,9 @@ use rand::Rng;
 use rand_distr::Uniform;
 use rand_mt::Mt64;
 
-use crate::distribution::Fisher;
+use crate::distribution::{Fisher, RadiusDistribution};
 use crate::domain_mesh::DomainMesh;
 use crate::error::DfngenError;
-use crate::structures::RadiusDistribution;
 
 use super::poly::{FractureOrigin, Poly};
 
@@ -85,6 +84,24 @@ impl FractureFamily {
                 family: self.id,
                 source: Box::new(source),
             })
+    }
+
+    /// Translates the polygon to a new position in the region of the family.
+    /// The size, the normal vector and the rotation of the polygon stay.
+    /// Thus a fracture which was rejected gets another attempt, and the
+    /// family keeps its target distributions.
+    pub fn retranslate(&self, poly: &mut Poly, generator: &mut Mt64) {
+        // The cluster group and the intersections are those of the old position
+        poly.group = None;
+        poly.intersection_indices.clear();
+
+        // Move poly back to origin
+        for vertex in &mut poly.vertices {
+            *vertex -= poly.translation;
+        }
+
+        let position = self.sample_position(generator);
+        poly.translate(position);
     }
 
     pub fn normal_vector(&self, rng: &mut Mt64) -> Vector3<f64> {

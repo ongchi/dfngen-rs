@@ -7,12 +7,13 @@ use std::{
 use parry3d_f64::na::{center, distance, Point3, Vector3};
 use tracing::info;
 
+use crate::dfn::Intersection;
 use crate::fracture::poly::Poly;
 use crate::generation::Network;
 use crate::io::vtk::{
     write_fractures_vtk, write_rejected_fractures_vtk, write_removed_fractures_vtk,
 };
-use crate::structures::{Intersection, Stats};
+use crate::stats::Stats;
 
 /// Moves a point from the coordinates of the generation to those of the output
 ///

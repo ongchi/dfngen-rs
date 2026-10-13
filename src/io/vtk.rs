@@ -3,9 +3,9 @@ use std::io::{self, Write};
 
 use parry3d_f64::na::Vector3;
 
+use crate::dfn::RejectedFracture;
 use crate::fracture::poly::Poly;
 use crate::io::output::to_output_coordinates;
-use crate::structures::RejectedFracture;
 
 /// Writes the final fractures as polygons in VTK XML PolyData format (`.vtp`, ASCII)
 ///
@@ -334,7 +334,7 @@ fn write_user_fracture_id_array(output: &mut impl Write, polys: &[&Poly]) -> io:
 mod tests {
     use super::*;
     use crate::fracture::poly::FractureOrigin;
-    use crate::structures::RejectReason;
+    use crate::fram::RejectReason;
 
     /// A rectangle, an ellipse with 6 nodes and an ellipse with 8 nodes.
     /// The rectangle was removed; the ellipses are final fractures.
