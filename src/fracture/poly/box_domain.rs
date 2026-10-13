@@ -9,7 +9,7 @@ use crate::fracture::poly::Poly;
 /// # Arguments
 ///
 /// * `vertices` - Vertices of the polygon
-/// * `h` - Minimum feature size
+/// * `min_feature_size` - Minimum feature size
 /// * `eps` - Epsilon value for floating point comparisons
 /// * `half_domain` - Half of the domain size in x, y, z
 ///
@@ -19,7 +19,7 @@ use crate::fracture::poly::Poly;
 /// part in the domain.
 fn clip_to_domain(
     vertices: &[Point3<f64>],
-    h: f64,
+    min_feature_size: f64,
     eps: f64,
     half_domain: &Vector3<f64>,
 ) -> Vec<Point3<f64>> {
@@ -70,7 +70,7 @@ fn clip_to_domain(
         let vertex = vertices[i];
         let next = (i + 1) % vertices.len();
 
-        if (vertex - vertices[next]).magnitude() < (2. * h) {
+        if (vertex - vertices[next]).magnitude() < (2. * min_feature_size) {
             // If point is NOT on a boundary, delete current indexed point, ELSE delete next point
             let is_on_boundary =
                 (0..3).any(|axis| (vertex[axis].abs() - half_domain[axis]).abs() <= eps);
@@ -109,7 +109,7 @@ impl Poly {
     ///
     /// # Arguments
     ///
-    /// * `h` - Minimum feature size
+    /// * `min_feature_size` - Minimum feature size
     /// * `eps` - Epsilon value for floating point comparisons
     /// * `domain_size` - Domain size in x, y, z
     ///
@@ -117,7 +117,12 @@ impl Poly {
     ///
     /// false - If the polygon has a part with 3 vertices or more in the domain
     /// true - If rejected, because the part in the domain has less than 3 vertices
-    pub fn check_box_domain(&mut self, h: f64, eps: f64, domain_size: &Vector3<f64>) -> bool {
+    pub fn check_box_domain(
+        &mut self,
+        min_feature_size: f64,
+        eps: f64,
+        domain_size: &Vector3<f64>,
+    ) -> bool {
         let half_domain = domain_size * 0.5;
         let is_inside_domain = |vertex: &Point3<f64>| {
             (0..3)
@@ -132,7 +137,7 @@ impl Poly {
             return false;
         }
 
-        let part_in_domain = clip_to_domain(&self.vertices, h, eps, &half_domain);
+        let part_in_domain = clip_to_domain(&self.vertices, min_feature_size, eps, &half_domain);
         let is_rejected = part_in_domain.len() < 3;
 
         if !is_rejected {
@@ -147,7 +152,7 @@ impl Poly {
 mod tests {
     use super::*;
 
-    const H: f64 = 0.1;
+    const MIN_FEATURE_SIZE: f64 = 0.1;
     const EPS: f64 = 1e-9;
 
     /// A square with sides of 2 in the plane z = 0 and with its center on the x axis
@@ -155,7 +160,8 @@ mod tests {
         let mut square = Poly::new(4, std::f64::consts::SQRT_2, 1.);
         square.translate(Vector3::new(center_x, 0., 0.));
 
-        let is_rejected = square.check_box_domain(H, EPS, &Vector3::new(10., 10., 10.));
+        let is_rejected =
+            square.check_box_domain(MIN_FEATURE_SIZE, EPS, &Vector3::new(10., 10., 10.));
 
         (square, is_rejected)
     }
@@ -201,7 +207,7 @@ mod tests {
         let (mut square, _) = square_in_domain_of_size_10(4.5);
         square.translate(Vector3::new(-4.5, 0., 0.));
 
-        square.check_box_domain(H, EPS, &Vector3::new(10., 10., 10.));
+        square.check_box_domain(MIN_FEATURE_SIZE, EPS, &Vector3::new(10., 10., 10.));
 
         assert_eq!(square.faces, [false; 6]);
     }

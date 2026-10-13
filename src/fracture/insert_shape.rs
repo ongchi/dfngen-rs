@@ -56,7 +56,7 @@ pub fn print_reject_reason(reject_code: i32, new_poly: &Poly) {
 
     match reject_code {
         -2 => {
-            warn!("\trejectCode = -2: Intersection of length < h.");
+            warn!("\trejectCode = -2: Intersection of length < min_feature_size.");
         }
 
         -1 => {

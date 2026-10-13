@@ -1,8 +1,6 @@
 seed = 1
-h = 0.1
-
-[domain]
-mesh = "upstream_exp.vtu"
+min_feature_size = 0.1
+domain = "upstream_exp.vtu"
 
 [generation]
 stop_condition = "n_poly"
@@ -13,7 +11,7 @@ force_large_fractures = false
 remove_fractures_less_than = 0.0
 
 [fram]
-disable = false
+enable = true
 relaxed = false
 triple_intersections = false
 

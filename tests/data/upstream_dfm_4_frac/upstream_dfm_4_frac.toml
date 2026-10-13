@@ -1,9 +1,7 @@
 seed = 1
-h = 0.1
+min_feature_size = 0.1
+domain = "upstream_dfm_4_frac.vtu"
 user_fractures = "upstream_dfm_4_frac_user_fractures.vtp"
-
-[domain]
-mesh = "upstream_dfm_4_frac.vtu"
 
 [generation]
 stop_condition = "p32"
@@ -13,7 +11,7 @@ force_large_fractures = false
 remove_fractures_less_than = 0.0
 
 [fram]
-disable = false
+enable = true
 relaxed = false
 triple_intersections = false
 

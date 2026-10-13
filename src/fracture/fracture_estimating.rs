@@ -78,7 +78,7 @@ pub fn dry_run(
 
         let mut reject = false;
 
-        while new_poly.check_box_domain(input.h, input.eps, &input.domain_size) {
+        while new_poly.check_box_domain(input.min_feature_size, input.eps, &input.domain_size) {
             // Poly is completely outside domain
             reject_counter += 1; // Counter for re-trying a new translation
 

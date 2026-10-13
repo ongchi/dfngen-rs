@@ -59,12 +59,12 @@ fn main() -> Result<(), DfngenError> {
     let total_families = frac_fam_col.families.len();
 
     let poly_opts = PolyOptions {
-        h: input.h,
+        min_feature_size: input.min_feature_size,
         eps: input.eps,
         domain_size: input.domain_size,
         domain_mesh: input.domain_mesh.clone(),
         r_fram: input.r_fram,
-        disable_fram: input.disable_fram,
+        is_fram_enabled: input.is_fram_enabled,
         triple_intersections: input.triple_intersections,
         check_user_fractures: input.check_user_fractures,
         keep_rejected_fractures: input.output_rejected_fractures,
@@ -275,7 +275,7 @@ fn prepare_radii_lists(
             generator.clone(),
         )?;
         info!("Building radii lists for nPoly option Complete");
-    } else if !input.disable_fram {
+    } else if input.is_fram_enabled {
         // P32 Option
         // ESTIMATE # FRACTURES NEEDED
         info!("Estimating number of fractures needed...");
@@ -286,7 +286,7 @@ fn prepare_radii_lists(
     // list using families' distribution.
     // First arg is percentage, eg: 0.1 will add 10% more fractures
     // to the radii list for each family
-    if !input.disable_fram {
+    if input.is_fram_enabled {
         frac_fam_col.generate_radii(
             false,
             (input.n_poly as f64 * input.radii_list_increase).ceil() as usize,
@@ -379,7 +379,7 @@ fn insert_stochastic_fractures(
 
         // Re-translate the polygon until it is accepted or reaches its reject limit
         loop {
-            if new_poly.check_box_domain(input.h, input.eps, &input.domain_size) {
+            if new_poly.check_box_domain(input.min_feature_size, input.eps, &input.domain_size) {
                 // Poly was completely outside domain
                 dfngen.pstats.rejection_reasons.outside += 1;
 

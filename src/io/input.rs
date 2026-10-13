@@ -46,7 +46,7 @@ pub struct Input {
     pub domain_mesh: Rc<DomainMesh>,
 
     /// Minimum feature size, FRAM parameter.
-    pub h: f64,
+    pub min_feature_size: f64,
 
     /// epsilon
     pub eps: f64,
@@ -56,9 +56,9 @@ pub struct Input {
     /// for more details.
     pub radii_list_increase: f64,
 
-    /// This option disables the FRAM algorithm. There will be no
+    /// With `false`, the FRAM algorithm is off. There will be no
     /// fracture rejections.
-    pub disable_fram: bool,
+    pub is_fram_enabled: bool,
 
     /// This option uses a relaxed version of the FRAM algorithm. The mesh may not
     /// be perfectly conforming
@@ -151,25 +151,19 @@ pub struct Input {
 #[serde(deny_unknown_fields)]
 struct InputFile {
     seed: u64,
-    h: f64,
+    min_feature_size: f64,
     /// Path of an ASCII `.vtp` file with the user-defined fractures (optional).
     /// A relative path starts at the folder of the input file.
     user_fractures: Option<String>,
-    domain: DomainSection,
+    /// Path of an ASCII `.vtu` file with the mesh which gives the domain.
+    /// A relative path starts at the folder of the input file.
+    domain: String,
     generation: GenerationSection,
     fram: FramSection,
     clusters: ClustersSection,
     output: OutputSection,
     #[serde(default, rename = "family")]
     families: Vec<FamilySection>,
-}
-
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct DomainSection {
-    /// Path of an ASCII `.vtu` file which gives the domain.
-    /// A relative path starts at the folder of the input file.
-    mesh: String,
 }
 
 #[derive(Deserialize)]
@@ -186,7 +180,7 @@ struct GenerationSection {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct FramSection {
-    disable: bool,
+    enable: bool,
     relaxed: bool,
     triple_intersections: bool,
     check_user_fractures: Option<bool>,
@@ -275,7 +269,7 @@ pub fn read_input(input_file: &str) -> Result<(Input, FractureFamilyCollection),
 
     let file = parse_input_file(&text)?;
     let input_folder = Path::new(input_file).parent().unwrap_or(Path::new(""));
-    let domain_mesh = read_domain_mesh(&input_folder.join(&file.domain.mesh))?;
+    let domain_mesh = read_domain_mesh(&input_folder.join(&file.domain))?;
     let user_fractures = match &file.user_fractures {
         Some(fracture_file) => read_user_fractures(&input_folder.join(fracture_file))?,
         None => Vec::new(),
@@ -319,17 +313,17 @@ fn find_mesh_region_id(
 /// # Arguments
 ///
 /// * `file` - Content of the TOML input file
-/// * `domain_mesh` - Domain mesh of `domain.mesh`
+/// * `domain_mesh` - Domain mesh of `domain`
 /// * `fracture_polygons` - User-defined fractures, as their file gives them
 fn build_input(
     file: InputFile,
     domain_mesh: DomainMesh,
     fracture_polygons: Vec<FracturePolygon>,
 ) -> Result<(Input, FractureFamilyCollection), DfngenError> {
-    let eps = file.h * 1e-8;
+    let eps = file.min_feature_size * 1e-8;
     let domain_mesh = Rc::new(domain_mesh);
 
-    if file.fram.disable {
+    if !file.fram.enable {
         info!("FRAM IS DISABLED");
     }
 
@@ -348,8 +342,8 @@ fn build_input(
         .collect();
 
     debug!(
-        "Input: h = {}, region volumes {:?} m^3",
-        file.h, region_volumes
+        "Input: min_feature_size = {}, region volumes {:?} m^3",
+        file.min_feature_size, region_volumes
     );
 
     let stop_condition = file.generation.stop_condition;
@@ -374,7 +368,7 @@ fn build_input(
 
     let family_context = FamilyContext {
         stop_condition,
-        h: file.h,
+        min_feature_size: file.min_feature_size,
         eps,
         domain_mesh: &domain_mesh,
     };
@@ -394,10 +388,10 @@ fn build_input(
         domain_size: domain_mesh.size(),
         domain_volume: domain_mesh.volume(),
         domain_mesh,
-        h: file.h,
+        min_feature_size: file.min_feature_size,
         eps,
         radii_list_increase: file.generation.radii_list_increase,
-        disable_fram: file.fram.disable,
+        is_fram_enabled: file.fram.enable,
         r_fram: file.fram.relaxed,
         triple_intersections: file.fram.triple_intersections,
         check_user_fractures: file.fram.check_user_fractures.unwrap_or(true),
@@ -451,7 +445,7 @@ fn build_user_fracture(
 /// Values of the input file which each family needs.
 struct FamilyContext<'a> {
     stop_condition: StopCondition,
-    h: f64,
+    min_feature_size: f64,
     eps: f64,
     domain_mesh: &'a Rc<DomainMesh>,
 }
@@ -468,7 +462,10 @@ fn build_family(
     builder
         .id(id)
         .number_of_points(valid_number_of_points(section.number_of_points)?)
-        .radius(build_radius_distribution(&section.radius, 3.0 * context.h))
+        .radius(build_radius_distribution(
+            &section.radius,
+            3.0 * context.min_feature_size,
+        ))
         .aspect_ratio(section.aspect_ratio)
         .orientation(build_orientation(&section.orientation, context.eps)?)
         .region_id(region_id)
@@ -495,7 +492,7 @@ fn limit_to_min_radius(radius: f64, min_radius: f64, description: &str) -> f64 {
     }
 
     warn!(
-        "{} ({}) is less than 3 times h, reset to {}",
+        "{} ({}) is less than 3 times min_feature_size, reset to {}",
         description, radius, min_radius
     );
     min_radius
@@ -589,10 +586,8 @@ pub mod test_inputs {
 
     pub const GENERAL_OPTIONS: &str = r#"
         seed = 12345
-        h = 0.1
-
-        [domain]
-        mesh = "domain.vtu"
+        min_feature_size = 0.1
+        domain = "domain.vtu"
 
         [generation]
         stop_condition = "n_poly"
@@ -603,7 +598,7 @@ pub mod test_inputs {
         remove_fractures_less_than = 0.0
 
         [fram]
-        disable = false
+        enable = true
         relaxed = false
         triple_intersections = true
 
@@ -673,19 +668,19 @@ mod tests {
     }
 
     #[test]
-    fn test_input_without_mesh_is_rejected() {
-        let options = GENERAL_OPTIONS.replace("mesh = \"domain.vtu\"", "");
+    fn test_input_without_domain_is_rejected() {
+        let options = GENERAL_OPTIONS.replace("domain = \"domain.vtu\"", "");
 
         let message = error_message(parse(&[&options]));
 
-        assert!(message.contains("missing field `mesh`"), "{message}");
+        assert!(message.contains("missing field `domain`"), "{message}");
     }
 
     #[test]
     fn test_input_with_domain_size_is_rejected() {
         let options = GENERAL_OPTIONS.replace(
-            "mesh = \"domain.vtu\"",
-            "mesh = \"domain.vtu\"\nsize = [10.0, 10.0, 10.0]",
+            "domain = \"domain.vtu\"",
+            "domain = \"domain.vtu\"\nsize = [10.0, 10.0, 10.0]",
         );
 
         let message = error_message(parse(&[&options]));
@@ -930,8 +925,8 @@ mod tests {
     #[test]
     fn test_input_with_truncate_fractures_is_rejected() {
         let options = GENERAL_OPTIONS.replace(
-            "mesh = \"domain.vtu\"",
-            "mesh = \"domain.vtu\"\ntruncate_fractures = false",
+            "domain = \"domain.vtu\"",
+            "domain = \"domain.vtu\"\ntruncate_fractures = false",
         );
 
         let message = error_message(parse(&[&options]));
@@ -1008,7 +1003,10 @@ mod tests {
 
     #[test]
     fn test_angle_unit_is_rejected() {
-        let options = GENERAL_OPTIONS.replace("h = 0.1", "h = 0.1\nangle_unit = \"radian\"");
+        let options = GENERAL_OPTIONS.replace(
+            "min_feature_size = 0.1",
+            "min_feature_size = 0.1\nangle_unit = \"radian\"",
+        );
 
         let message = error_message(parse(&[&options]));
 

@@ -193,15 +193,11 @@ def convert_general_options(
 
     lines = [
         f"seed = {int(dat.word('seed'))}",
-        f"h = {number(dat.word('h'))}",
+        f"min_feature_size = {number(dat.word('h'))}",
+        f'domain = "{mesh_file_name}"',
     ]
     if user_fractures_file_name is not None:
         lines.append(f'user_fractures = "{user_fractures_file_name}"')
-    lines += [
-        "",
-        "[domain]",
-        f'mesh = "{mesh_file_name}"',
-    ]
 
     lines += ["", "[generation]"]
     if stop_condition == 0:
@@ -215,7 +211,7 @@ def convert_general_options(
         f"remove_fractures_less_than = {number(dat.word('removeFracturesLessThan'))}",
         "",
         "[fram]",
-        f"disable = {boolean(dat.flag('disableFram'))}",
+        f"enable = {boolean(not dat.flag('disableFram'))}",
         f"relaxed = {boolean(dat.flag('rFram'))}",
         f"triple_intersections = {boolean(dat.flag('tripleIntersections'))}",        "",
         "[clusters]",

@@ -17,11 +17,9 @@ optional below. An unknown key is an error.
 
 ```toml
 seed = 12345                       # 0 = use the system time
-h = 0.1                            # minimum feature size (FRAM)
+min_feature_size = 0.1             # FRAM length limit; minimum radius = 3 times it; eps = 1e-8 times it
+domain = "domain.vtu"              # the mesh file which gives the domain (see below)
 user_fractures = "fractures.vtp"   # optional; the file with the user-defined fractures (see below)
-
-[domain]
-mesh = "domain.vtu"                # the mesh file which gives the domain (see below)
 
 [generation]
 stop_condition = "n_poly"          # or "p32"
@@ -32,7 +30,7 @@ force_large_fractures = false
 remove_fractures_less_than = 0.0
 
 [fram]
-disable = false
+enable = true
 relaxed = false
 triple_intersections = true
 check_user_fractures = true        # optional, default true; false = no FRAM for two user-defined fractures (see below)
@@ -87,8 +85,9 @@ Each fracture is whole: the domain does not cut it. Thus:
 
 ### Domain mesh
 
-`domain.mesh = "domain.vtu"` gives the domain as a VTK UnstructuredGrid file.
-A relative path starts at the folder of the input file. The mesh is the only
+`domain = "domain.vtu"` gives the domain as a VTK UnstructuredGrid file.
+A relative path starts at the folder of the input file. The key must be
+before the first table (`[generation]`) of the input file. The mesh is the only
 definition of the domain. `tests/data/mesh_domain` is an example, and
 `tests/data/stochastic_npoly` has a box domain (a mesh of one hexahedron).
 
@@ -158,7 +157,7 @@ order of their file. The number of a family is its position in the input file.
 
 `user_fractures = "fractures.vtp"` gives the user-defined fractures as a VTK
 PolyData file. A relative path starts at the folder of the input file. The key
-must be before the first table (`[domain]`) of the input file.
+must be before the first table (`[generation]`) of the input file.
 `tests/data/user_rectangles` is an example.
 
 - The file must be an ASCII `.vtp` file. In ParaView, select the data mode
@@ -206,7 +205,7 @@ must be before the first table (`[domain]`) of the input file.
   (and in its region) is accepted. The intersection is recorded as FRAM finds
   it: it is not shortened, and such a pair gives no triple intersection point.
   An intersection of a stochastic fracture with a user-defined fracture keeps
-  all FRAM checks. The network then does not obey the minimum feature size `h`
+  all FRAM checks. The network then does not obey the minimum feature size `min_feature_size`
   at the user-defined fractures.
 - The point data and the other cell data of the file are ignored. Thus
   `fractures.vtp` of a run can be the user-defined fractures of a new run. It
@@ -316,7 +315,7 @@ then has no valid polygon.
 
 | `reject_code` | Reason |
 |---|---|
-| -2 | Intersection shorter than `h`. |
+| -2 | Intersection shorter than `min_feature_size`. |
 | -5 | Intersection too near to another intersection. |
 | -6 | Fracture too near to an edge of another fracture. |
 | -7 | Intersecting fractures are in the same plane. |

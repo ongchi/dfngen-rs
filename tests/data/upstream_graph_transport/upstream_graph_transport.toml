@@ -1,8 +1,6 @@
 seed = 1
-h = 1.0
-
-[domain]
-mesh = "upstream_graph_transport.vtu"
+min_feature_size = 1.0
+domain = "upstream_graph_transport.vtu"
 
 [generation]
 stop_condition = "p32"
@@ -12,7 +10,7 @@ force_large_fractures = false
 remove_fractures_less_than = 0.0
 
 [fram]
-disable = true
+enable = false
 relaxed = false
 triple_intersections = false
 

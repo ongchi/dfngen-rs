@@ -41,7 +41,7 @@ pub fn insert_user_defined_fractures(
 fn is_piece_in_domain(fracture: &UserFracture, opts: &PolyOptions) -> bool {
     let mut poly = fracture.to_poly();
 
-    !poly.check_box_domain(opts.h, opts.eps, &opts.domain_size)
+    !poly.check_box_domain(opts.min_feature_size, opts.eps, &opts.domain_size)
         && opts
             .domain_mesh
             .intersects_polygon_in_any_region(&poly.vertices, &fracture.region_ids)

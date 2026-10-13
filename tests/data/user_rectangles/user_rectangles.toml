@@ -1,9 +1,7 @@
 seed = 12345
-h = 0.1
+min_feature_size = 0.1
+domain = "user_rectangles.vtu"
 user_fractures = "user_rectangles_user_fractures.vtp"
-
-[domain]
-mesh = "user_rectangles.vtu"
 
 [generation]
 stop_condition = "n_poly"
@@ -14,7 +12,7 @@ force_large_fractures = false
 remove_fractures_less_than = 0.0
 
 [fram]
-disable = false
+enable = true
 relaxed = false
 triple_intersections = true
 

@@ -185,15 +185,15 @@ fn find_intersections(flag: &mut i32, poly1: &Poly, poly2: &Poly, eps: f64) -> I
 /// FRAM - Feature Rejection Algorithm for Meshing
 ///
 /// Checks new poly and new intersection against other intersecting polygons
-/// for violation of minimum feature size 'h'
+/// for violation of the minimum feature size
 /// In some cases, the intersection may be shortened in order to accepted the fracture.
 ///
 /// # Arguments
 ///
-/// * `h` - Minimum feature size
+/// * `min_feature_size` - Minimum feature size
 /// * `eps` - Epsilon value for floating point comparisons
 /// * `r_fram` - Uses a relaxed version of the FRAM algorithm. The mesh may not be perfectly conforming
-/// * `disable_fram` - If true, FRAM is disabled
+/// * `is_fram_enabled` - If false, FRAM is disabled
 /// * `triple_intersections` - If true, triple intersections are accepted
 /// * `int_pts` - Newest intersection found on new poly
 /// * `count` - counter of number of intersections on new poly
@@ -212,7 +212,7 @@ fn find_intersections(flag: &mut i32, poly1: &Poly, poly2: &Poly, eps: f64) -> I
 /// * `i32` - 0 if accepted, 1 if rejected
 #[allow(clippy::too_many_arguments)]
 fn fram(
-    h: f64,
+    min_feature_size: f64,
     eps: f64,
     r_fram: bool,
     triple_intersections: bool,
@@ -227,9 +227,9 @@ fn fram(
     temp_int_pts: &[IntersectionPoints],
     accepted_poly: &[Poly],
 ) -> i32 {
-    /******* Check for intersection of length less than h *******/
-    if (int_pts.p1 - int_pts.p2).magnitude() < h {
-        //std::cout<<"\nrejectCode = -2: Intersection of length <= h.\n";
+    /******* Check for intersection of length less than min_feature_size *******/
+    if (int_pts.p1 - int_pts.p2).magnitude() < min_feature_size {
+        //std::cout<<"\nrejectCode = -2: Intersection of length <= min_feature_size.\n";
         pstats.rejection_reasons.short_intersection += 1;
         return -2;
     }
@@ -239,13 +239,20 @@ fn fram(
         // Reject if intersection shirnks < 'shrinkLimit'
         let shrink_limit = 0.9 * (int_pts.p1 - int_pts.p2).magnitude();
 
-        if check_close_edge(new_poly, int_pts, shrink_limit, pstats, h, eps) {
+        if check_close_edge(
+            new_poly,
+            int_pts,
+            shrink_limit,
+            pstats,
+            min_feature_size,
+            eps,
+        ) {
             // std::cout<<"\nrejectCode = -6: Fracture too close to another fracture's edge.\n";
             pstats.rejection_reasons.close_to_edge += 1;
             return -6;
         }
 
-        if check_close_edge(poly2, int_pts, shrink_limit, pstats, h, eps) {
+        if check_close_edge(poly2, int_pts, shrink_limit, pstats, min_feature_size, eps) {
             // std::cout<<"\nrejectCode = -6: Fracture too close to another fracture's edge.\n";
             pstats.rejection_reasons.close_to_edge += 1;
             return -6;
@@ -255,7 +262,7 @@ fn fram(
         // Check distance from new intersection to other intersections on
         // poly2 (fracture newPoly is intersecting with)
 
-        if check_dist_to_old_intersections(int_pts_list, int_pts, poly2, h, eps) {
+        if check_dist_to_old_intersections(int_pts_list, int_pts, poly2, min_feature_size, eps) {
             pstats.rejection_reasons.inter_close_to_inter += 1;
             return -5;
         }
@@ -269,7 +276,7 @@ fn fram(
             temp_data,
             poly2,
             accepted_poly,
-            h,
+            min_feature_size,
             eps,
         ) {
             pstats.rejection_reasons.inter_close_to_inter += 1;
@@ -281,7 +288,7 @@ fn fram(
     // NOTE: for debugging, there are several rejection codes for triple intersections
     // -14 <= rejCode <= -10 are for triple intersection rejections
     let rej_code = check_for_triple_intersections(
-        h,
+        min_feature_size,
         eps,
         triple_intersections,
         int_pts,
@@ -557,7 +564,7 @@ fn shrink_intersection(
 /// # Returns
 ///
 /// * `i32`
-///   0 - Fracture had no intersections or features violating the minimum feature size h (Passed all FRAM tests)
+///   0 - Fracture had no intersections or features violating the minimum feature size (Passed all FRAM tests)
 ///   1 - Otherwise
 pub fn intersection_checking(
     opts: &PolyOptions,
@@ -609,27 +616,28 @@ pub fn intersection_checking(
                     && poly.family_num == USER_FRACTURE_FAMILY;
 
                 // The option can turn off FRAM for two user-defined fractures
-                let reject_code =
-                    if opts.disable_fram || (is_user_fracture_pair && !opts.check_user_fractures) {
-                        0
-                    } else {
-                        fram(
-                            opts.h,
-                            opts.eps,
-                            opts.r_fram,
-                            opts.triple_intersections,
-                            &mut intersection,
-                            count,
-                            int_pts_list,
-                            new_poly,
-                            poly,
-                            pstats,
-                            &mut temp_data,
-                            triple_points,
-                            &temp_int_pts,
-                            accepted_poly,
-                        )
-                    };
+                let reject_code = if !opts.is_fram_enabled
+                    || (is_user_fracture_pair && !opts.check_user_fractures)
+                {
+                    0
+                } else {
+                    fram(
+                        opts.min_feature_size,
+                        opts.eps,
+                        opts.r_fram,
+                        opts.triple_intersections,
+                        &mut intersection,
+                        count,
+                        int_pts_list,
+                        new_poly,
+                        poly,
+                        pstats,
+                        &mut temp_data,
+                        triple_points,
+                        &temp_int_pts,
+                        accepted_poly,
+                    )
+                };
 
                 // If intersection is NOT rejected
                 if reject_code == 0 {
@@ -808,8 +816,8 @@ fn point_to_line_seg(point: &Point3<f64>, line: &[Point3<f64>; 2], eps: f64) -> 
 /// Check if nodes are too close to edge
 ///
 /// Checks distances from intersection to poly edges. If the distance is less than
-/// h, the intersection is allowed to shrink by %10 of its original length. If
-/// the intersection is still closer than h to a poly edge, the polygon is rejected.
+/// min_feature_size, the intersection is allowed to shrink by %10 of its original length. If
+/// the intersection is still closer than min_feature_size to a poly edge, the polygon is rejected.
 ///
 /// # Arguments
 ///
@@ -857,8 +865,8 @@ fn check_close_edge(
         // Sort smallest to largest
         end_pts_to_edge.sort_by(|a, b| a.partial_cmp(b).unwrap());
 
-        // If two smallest distances are < h,
-        // the line is almost parallel and closer to edge than h, reject it
+        // If two smallest distances are < min_feature_size,
+        // the line is almost parallel and closer to edge than min_feature_size, reject it
         if (end_pts_to_edge[0] < min_dist && end_pts_to_edge[1] < min_dist)
             && end_pts_to_edge[0] > eps
         {
@@ -872,7 +880,7 @@ fn check_close_edge(
             // Try to shrink the intersection slightly in order to
             // not reject the polygon
             if shrink_intersection(int_pts, &edge, shrink_limit, min_dist, min_dist, eps) {
-                // Returns one if insterection shrinks to less than .9*h
+                // Returns one if insterection shrinks to less than .9*min_feature_size
                 return true;
             }
         } else if dist < eps {
@@ -881,12 +889,12 @@ fn check_close_edge(
             // than the minimum allowed distance
             // shrinkIntersection() will check if the descretized intersection points violate any
             // distance to edge rules
-            // NOTE: Intersections discretize with set size = .5*h
-            // Minimum distance to edge must be less than .5*h to allow for angles
+            // NOTE: Intersections discretize with set size = .5*min_feature_size
+            // Minimum distance to edge must be less than .5*min_feature_size to allow for angles
             let min_dist2 = 0.4 * min_dist;
 
             if shrink_intersection(int_pts, &edge, shrink_limit, min_dist2, min_dist, eps) {
-                //returns one if insterection shrinks to less than .9*h
+                //returns one if insterection shrinks to less than .9*min_feature_size
                 return true;
             }
 
@@ -894,7 +902,7 @@ fn check_close_edge(
 
             // If both end points are on the edge we must also check the distnace
             // of the intersection to the poly vertices.
-            // IF the intersecion is within the polygon, distances less than h to
+            // IF the intersecion is within the polygon, distances less than min_feature_size to
             // edges and vertices will be caught by lineSegToLineSeg() in this function.
             if (on_edge_count >= 2)
                 & check_distance_from_nodes(poly1, int_pts, min_dist, pstats, eps)
@@ -979,7 +987,7 @@ fn line_seg_to_line_seg(line1: &[Point3<f64>; 2], line2: &[Point3<f64>; 2]) -> (
 
 /// Check for Triple Intersection , get int. point
 ///
-/// Check for triple intersection features of less than h.
+/// Check for triple intersection features of less than min_feature_size.
 /// Returns rejection code if fracture is rejected,  zero if accepted
 ///
 /// Rejection codes:
@@ -992,7 +1000,7 @@ fn line_seg_to_line_seg(line1: &[Point3<f64>; 2], line2: &[Point3<f64>; 2]) -> (
 ///     -14 = triple_closeToTriplePt  (new triple point too close to previous triple point) */
 #[allow(clippy::too_many_arguments)]
 fn check_for_triple_intersections(
-    h: f64,
+    min_feature_size: f64,
     eps: f64,
     triple_intersections: bool,
     int_pts: &IntersectionPoints,
@@ -1002,7 +1010,7 @@ fn check_for_triple_intersections(
     temp_data: &mut Vec<TriplePtTempData>,
     triple_points: &[Point3<f64>],
 ) -> i32 {
-    let min_dist = 1.5 * h;
+    let min_dist = 1.5 * min_feature_size;
     let int_end_pts = [int_pts.p1, int_pts.p2]; //newest intersection
                                                 // Number of intersections already on poly2
     let n = poly2.intersection_index.len();
@@ -1016,21 +1024,21 @@ fn check_for_triple_intersections(
             int_pts_list[intersection_index].p2,
         ];
 
-        if are_segments_farther_than(&int_end_pts, &line, h) {
+        if are_segments_farther_than(&int_end_pts, &line, min_feature_size) {
             continue;
         }
 
         let (mut dist1, pt) = line_seg_to_line_seg(&int_end_pts, &line); // distance and pt of intersection
 
-        if dist1 >= h {
+        if dist1 >= min_feature_size {
             continue;
         }
 
-        if !triple_intersections && dist1 < h {
+        if !triple_intersections && dist1 < min_feature_size {
             return -10; // Triple intersections not allowed (user input option)
         }
 
-        if dist1 > eps && dist1 < h {
+        if dist1 > eps && dist1 < min_feature_size {
             return -11; // Point too close to other intersection
         }
 
@@ -1051,14 +1059,14 @@ fn check_for_triple_intersections(
             dist1 = distance(&pt, &int_end_pts[0]);
             let mut dist2 = distance(&pt, &int_end_pts[1]);
 
-            if dist1 < h || dist2 < h {
+            if dist1 < min_feature_size || dist2 < min_feature_size {
                 return -13;
             }
 
             dist1 = distance(&pt, &line[0]);
             dist2 = distance(&pt, &line[1]);
 
-            if dist1 < h || dist2 < h {
+            if dist1 < min_feature_size || dist2 < min_feature_size {
                 return -13;
             }
 

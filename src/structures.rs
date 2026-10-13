@@ -115,7 +115,7 @@ pub struct GroupData {
 /// Rejection reason counters.
 #[derive(Default)]
 pub struct RejectionReasons {
-    /// Rejections due to intersection of length less than h.
+    /// Rejections due to intersection of length less than min_feature_size.
     pub short_intersection: usize,
     /// Rejections due to intersections being too close to close to
     /// polygon verties.
@@ -392,7 +392,8 @@ impl DFNGen {
         domain_check: DomainCheck,
         opts: &PolyOptions,
     ) {
-        let is_outside_box_domain = new_poly.check_box_domain(opts.h, opts.eps, &opts.domain_size);
+        let is_outside_box_domain =
+            new_poly.check_box_domain(opts.min_feature_size, opts.eps, &opts.domain_size);
         let is_rejected = match domain_check {
             // Poly completely outside domain, or it intersects no cell of its region of the domain mesh
             DomainCheck::Regions(region_ids) => {
@@ -523,13 +524,13 @@ impl DFNGen {
 }
 
 pub struct PolyOptions {
-    pub h: f64,
+    pub min_feature_size: f64,
     pub eps: f64,
     pub domain_size: Vector3<f64>,
     /// The cells which make the domain.
     pub domain_mesh: Rc<DomainMesh>,
     pub r_fram: bool,
-    pub disable_fram: bool,
+    pub is_fram_enabled: bool,
     pub triple_intersections: bool,
     /// False - FRAM does not check an intersection of two user-defined fractures.
     pub check_user_fractures: bool,
@@ -581,12 +582,12 @@ mod tests {
     /// where x and y are positive.
     fn poly_options(keep_rejected_fractures: bool) -> PolyOptions {
         PolyOptions {
-            h: 0.1,
+            min_feature_size: 0.1,
             eps: 1e-9,
             domain_size: Vector3::new(10., 10., 10.),
             domain_mesh: Rc::new(l_shaped_mesh()),
             r_fram: false,
-            disable_fram: false,
+            is_fram_enabled: true,
             triple_intersections: false,
             check_user_fractures: true,
             keep_rejected_fractures,
@@ -692,7 +693,7 @@ mod tests {
         [-1., -2., 0.],
         [-2., -2., 0.],
     ];
-    /// `RIGHT_PIECE` with a gap of 0.05 (less than h) to `LEFT_PIECE`
+    /// `RIGHT_PIECE` with a gap of 0.05 (less than min_feature_size) to `LEFT_PIECE`
     const RIGHT_PIECE_AFTER_GAP: [[f64; 3]; 4] = [
         [-1.95, -3., 0.],
         [-0.95, -3., 0.],
@@ -763,7 +764,7 @@ mod tests {
     }
 
     /// A vertical square which crosses `LEFT_PIECE` at a distance of 0.05
-    /// (less than h) from its edge x = -2.
+    /// (less than min_feature_size) from its edge x = -2.
     const SQUARE_NEAR_EDGE: [[f64; 3]; 4] = [
         [-2.05, -2.8, -0.5],
         [-2.05, -2.2, -0.5],

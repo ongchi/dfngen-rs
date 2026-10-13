@@ -1,9 +1,7 @@
 seed = 6969420
-h = 0.1
+min_feature_size = 0.1
+domain = "upstream_calibrate_p32_from_p10.vtu"
 user_fractures = "upstream_calibrate_p32_from_p10_user_fractures.vtp"
-
-[domain]
-mesh = "upstream_calibrate_p32_from_p10.vtu"
 
 [generation]
 stop_condition = "p32"
@@ -13,7 +11,7 @@ force_large_fractures = false
 remove_fractures_less_than = 0.0
 
 [fram]
-disable = true
+enable = false
 relaxed = false
 triple_intersections = false
 

@@ -1,8 +1,6 @@
 seed = 1
-h = 1.0
-
-[domain]
-mesh = "upstream_finite_matrix_diffusion.vtu"
+min_feature_size = 1.0
+domain = "upstream_finite_matrix_diffusion.vtu"
 
 [generation]
 stop_condition = "p32"
@@ -12,7 +10,7 @@ force_large_fractures = false
 remove_fractures_less_than = 0.0
 
 [fram]
-disable = false
+enable = true
 relaxed = false
 triple_intersections = false
 
