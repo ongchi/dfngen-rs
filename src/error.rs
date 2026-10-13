@@ -14,6 +14,8 @@ pub enum DfngenError {
     InefficientSampling,
     #[error("Invalid input file: {0}")]
     InvalidInput(String),
+    #[error("No fracture is defined. Add a fracture family or a user-defined fracture in the domain to the input file.")]
+    NoFractureDefined,
     #[error("There are no intersecting fractures. Increase the fracture density, or decrease the domain size.")]
     NoIntersectingFractures,
 }

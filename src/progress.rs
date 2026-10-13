@@ -3,9 +3,8 @@ use std::sync::LazyLock;
 
 use indicatif::{MultiProgress, ProgressBar, ProgressFinish, ProgressStyle};
 
-use dfngen::fracture::fracture_family::FractureFamily;
 use dfngen::io::input::StopCondition;
-use dfngen::math_functions::p32_progress_fraction;
+use dfngen::ProgressUpdate;
 
 /// Number of bar steps for the P32 stop condition, where the number of fractures is not known
 const P32_BAR_STEPS: u64 = 1000;
@@ -70,24 +69,19 @@ impl GenerationProgress {
 
     /// Shows the progress after a fracture was accepted
     ///
-    /// # Arguments
-    ///
-    /// * `accepted_count` - Number of accepted fractures
-    /// * `families` - Stochastic fracture families, with their current and target P32
-    pub fn update(&self, accepted_count: usize, families: &[FractureFamily]) {
+    /// The bar is removed from the terminal when the stop condition is complete.
+    pub fn update(&self, update: &ProgressUpdate) {
         match self.stop_condition {
-            StopCondition::NPoly => self.bar.set_position(accepted_count as u64),
+            StopCondition::NPoly => self.bar.set_position(update.accepted_count as u64),
             StopCondition::P32 => {
-                let current_and_target_p32: Vec<(f64, f64)> = families
-                    .iter()
-                    .map(|family| (family.current_p32, family.p32_target))
-                    .collect();
-                let fraction = p32_progress_fraction(&current_and_target_p32);
-
-                self.bar.set_message(accepted_count.to_string());
+                self.bar.set_message(update.accepted_count.to_string());
                 self.bar
-                    .set_position((fraction * P32_BAR_STEPS as f64) as u64);
+                    .set_position((update.fraction * P32_BAR_STEPS as f64) as u64);
             }
+        }
+
+        if update.fraction >= 1. {
+            self.bar.finish_and_clear();
         }
     }
 }
