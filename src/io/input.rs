@@ -62,7 +62,7 @@ pub struct Input {
 
     /// This option uses a relaxed version of the FRAM algorithm. The mesh may not
     /// be perfectly conforming
-    pub r_fram: bool,
+    pub is_fram_relaxed: bool,
 
     /// Accept or reject triple intersections
     ///     False - Off (Reject)
@@ -427,7 +427,7 @@ fn build_input(
         eps,
         radii_list_increase: file.generation.radii_list_increase,
         is_fram_enabled: file.fram.enable,
-        r_fram: file.fram.relaxed,
+        is_fram_relaxed: file.fram.relaxed,
         triple_intersections: file.fram.triple_intersections,
         check_user_fractures: file.fram.check_user_fractures.unwrap_or(true),
         keep_only_largest_cluster: file.clusters.keep_only_largest,

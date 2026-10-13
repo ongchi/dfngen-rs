@@ -2,7 +2,7 @@ use std::collections::HashSet;
 
 use parry3d_f64::na::{center, distance, Point3};
 
-use crate::structures::{DFNGen, PolyOptions};
+use crate::structures::{Dfn, PolyOptions};
 
 use super::poly::{FractureOrigin, Poly};
 
@@ -13,12 +13,12 @@ use super::poly::{FractureOrigin, Poly};
 /// of its pieces is in the domain. Then no piece of it is rejected as outside.
 pub fn insert_user_defined_fractures(
     fractures: &[UserFracture],
-    poly_opts: &PolyOptions,
-    dfngen: &mut DFNGen,
+    options: &PolyOptions,
+    dfn: &mut Dfn,
 ) -> usize {
     let fracture_ids_in_domain: HashSet<u64> = fractures
         .iter()
-        .filter(|fracture| is_piece_in_domain(fracture, poly_opts))
+        .filter(|fracture| is_piece_in_domain(fracture, options))
         .filter_map(|fracture| fracture.fracture_id)
         .collect();
 
@@ -27,7 +27,7 @@ pub fn insert_user_defined_fractures(
             Some(id) if fracture_ids_in_domain.contains(&id) => DomainCheck::FractureIsInDomain,
             _ => DomainCheck::Regions(&fracture.region_ids),
         };
-        dfngen.insert_poly(fracture.to_poly(), i + 1, domain_check, poly_opts);
+        dfn.insert_poly(fracture.to_poly(), i + 1, domain_check, options);
     }
 
     fractures.len()
@@ -35,11 +35,11 @@ pub fn insert_user_defined_fractures(
 
 /// True if the polygon has a part in the box domain and intersects a cell of
 /// one of its regions of the domain mesh.
-fn is_piece_in_domain(fracture: &UserFracture, opts: &PolyOptions) -> bool {
+fn is_piece_in_domain(fracture: &UserFracture, options: &PolyOptions) -> bool {
     let poly = fracture.to_poly();
 
-    !poly.is_outside_box_domain(opts.min_feature_size, opts.eps, &opts.domain_size)
-        && opts
+    !poly.is_outside_box_domain(options.min_feature_size, options.eps, &options.domain_size)
+        && options
             .domain_mesh
             .intersects_polygon_in_any_region(&poly.vertices, &fracture.region_ids)
 }
@@ -83,16 +83,16 @@ impl UserFracture {
 
         // Get a normal vector
         // Vector from fist node to node accross middle of polygon
-        let pt_idx_12 = nodes.len() / 2;
+        let opposite_vertex_index = nodes.len() / 2;
         let p1 = Point3::from_slice(&nodes[0]);
         let p2 = Point3::from_slice(&nodes[1]);
-        let p_12 = Point3::from_slice(&nodes[pt_idx_12]);
+        let p_12 = Point3::from_slice(&nodes[opposite_vertex_index]);
 
         let v2 = p2 - p1;
 
         // For 3 nodes, the node accross the middle is the second node.
         // Then the third node gives the normal vector.
-        let p_normal = Point3::from_slice(&nodes[pt_idx_12.max(2)]);
+        let p_normal = Point3::from_slice(&nodes[opposite_vertex_index.max(2)]);
         poly.normal = v2.cross(&(p_normal - p1)).normalize();
 
         // Estimate translation (middle node)
@@ -104,20 +104,20 @@ impl UserFracture {
 
         // Estimate radius
         // across middle if even number of nodes
-        poly.xradius = 0.5 * v2.magnitude();
+        poly.x_radius = 0.5 * v2.magnitude();
 
         // Get idx for node 1/4 around polygon
         let pt_idx_14 = nodes.len() / 4;
         // Get idx for node 3/4 around polygon
-        // across middle close to perpendicular to xradius magnitude calculation
-        let pt_idx_34 = pt_idx_14 + pt_idx_12;
+        // across middle close to perpendicular to x_radius magnitude calculation
+        let pt_idx_34 = pt_idx_14 + opposite_vertex_index;
 
         let p_14 = Point3::from_slice(&nodes[pt_idx_14]);
         let p_34 = Point3::from_slice(&nodes[pt_idx_34]);
 
-        poly.yradius = 0.5 * distance(&p_14, &p_34);
+        poly.y_radius = 0.5 * distance(&p_14, &p_34);
 
-        poly.aspect_ratio = poly.yradius / poly.xradius;
+        poly.aspect_ratio = poly.y_radius / poly.x_radius;
         poly.vertices = nodes.iter().map(|node| Point3::from_slice(node)).collect();
 
         poly

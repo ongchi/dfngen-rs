@@ -5,7 +5,7 @@ use tracing::{error, warn};
 /// To increase performance, the standard deviation is now calculated without
 /// the square root and division by N elements.
 /// Return: The sum-deviation of array 'vec'
-pub fn sum_deviation(vec: &[f64]) -> f64 {
+pub fn sum_of_squared_deviations(vec: &[f64]) -> f64 {
     let mean = vec.iter().sum::<f64>() / (vec.len() as f64);
     vec.iter().map(|&v| (v - mean).powi(2)).sum()
 }
@@ -24,7 +24,7 @@ pub fn sum_deviation(vec: &[f64]) -> f64 {
 /// Max element's array index
 ///
 /// If elements happen to be equal, returns the first one
-pub fn max_elmt_idx(vec: &[f64]) -> usize {
+pub fn max_element_index(vec: &[f64]) -> usize {
     vec.iter()
         .enumerate()
         .reduce(|max, el| if el.1 < max.1 { max } else { el })
@@ -58,13 +58,13 @@ pub fn sorted_index(vec: &[f64]) -> Vec<usize> {
 ///
 /// # Arguments
 ///
-/// * `cdf` - CDF of shape families based on famProb array in input file
+/// * `cdf` - CDF of family families based on famProb array in input file
 /// * `roll` - Random number between 0 and 1
 ///
 /// # Returns
 ///
 /// Index to family based on the probability famProb
-pub fn index_from_prob(cdf: &[f64], roll: f64) -> usize {
+pub fn index_from_probability(cdf: &[f64], roll: f64) -> usize {
     for (i, v) in cdf.iter().enumerate() {
         if &roll <= v {
             return i;
@@ -88,34 +88,34 @@ pub fn index_from_prob(cdf: &[f64], roll: f64) -> usize {
 ///
 /// The index of the chosen family, and its index in `cdf`.
 /// A family which has already met its fracture intensity requirement is never chosen.
-pub fn index_from_prob_and_p32_status(
+pub fn index_from_probability_and_p32_status(
     p32_status: &[bool],
     cdf: &[f64],
     roll: f64,
 ) -> (usize, usize) {
-    let cdf_idx = index_from_prob(cdf, roll);
+    let cdf_index = index_from_probability(cdf, roll);
 
-    // The CDF has no elements for completed families, so cdf_idx counts
+    // The CDF has no elements for completed families, so cdf_index counts
     // only the families which are not complete
     let family_index = p32_status
         .iter()
         .enumerate()
         .filter(|(_, is_complete)| !**is_complete)
-        .nth(cdf_idx)
+        .nth(cdf_index)
         .map(|(family_index, _)| family_index);
 
     match family_index {
-        Some(family_index) => (family_index, cdf_idx),
+        Some(family_index) => (family_index, cdf_index),
         None => {
             error!("see indexFromProb_and_P32Status(), funct did not return anything");
-            (p32_status.len() - 1, cdf_idx)
+            (p32_status.len() - 1, cdf_index)
         }
     }
 }
 
 /// Cumulative sum of the elements along a given axis
-pub fn cumsum(fam_prob: &[f64]) -> Vec<f64> {
-    let cdf: Vec<f64> = fam_prob
+pub fn cumulative_sum(probabilities: &[f64]) -> Vec<f64> {
+    let cdf: Vec<f64> = probabilities
         .iter()
         .scan(0., |acc, &x| {
             *acc += x;
@@ -144,21 +144,21 @@ pub fn cumsum(fam_prob: &[f64]) -> Vec<f64> {
 ///
 /// # Arguments
 ///
-/// * `fam_probability` - Probability of each family which is not complete
-/// * `idx2remove` - Index in `fam_probability` of the family to remove
+/// * `probabilities` - Probability of each family which is not complete
+/// * `index_to_remove` - Index in `probabilities` of the family to remove
 ///
 /// # Returns
 ///
 /// The CDF of the remaining families
-pub fn remove_family_probability(fam_probability: &mut Vec<f64>, idx2remove: usize) -> Vec<f64> {
-    let removed_probability = fam_probability.remove(idx2remove);
-    let add_to_remaining_elmts = removed_probability / fam_probability.len() as f64;
+pub fn remove_family_probability(probabilities: &mut Vec<f64>, index_to_remove: usize) -> Vec<f64> {
+    let removed_probability = probabilities.remove(index_to_remove);
+    let share_of_each_family = removed_probability / probabilities.len() as f64;
 
-    for probability in fam_probability.iter_mut() {
-        *probability += add_to_remaining_elmts;
+    for probability in probabilities.iter_mut() {
+        *probability += share_of_each_family;
     }
 
-    cumsum(fam_probability)
+    cumulative_sum(probabilities)
 }
 
 /// Progress of the P32 stop condition, from 0 to 1
@@ -226,11 +226,11 @@ mod tests {
         let cdf = [0.5, 1.0];
 
         assert_eq!(
-            index_from_prob_and_p32_status(&p32_status, &cdf, 0.2),
+            index_from_probability_and_p32_status(&p32_status, &cdf, 0.2),
             (1, 0)
         );
         assert_eq!(
-            index_from_prob_and_p32_status(&p32_status, &cdf, 0.9),
+            index_from_probability_and_p32_status(&p32_status, &cdf, 0.9),
             (3, 1)
         );
     }
@@ -241,7 +241,7 @@ mod tests {
         let cdf = [0.2, 0.5, 1.0];
 
         assert_eq!(
-            index_from_prob_and_p32_status(&p32_status, &cdf, 0.4),
+            index_from_probability_and_p32_status(&p32_status, &cdf, 0.4),
             (1, 1)
         );
     }

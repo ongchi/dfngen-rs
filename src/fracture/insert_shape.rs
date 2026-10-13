@@ -8,18 +8,18 @@ use super::poly::Poly;
 
 /// Retranslate Polygon
 ///
-/// Translates the polygon to a new position, preserving its size, shape,
+/// Translates the polygon to a new position, preserving its size, family,
 /// and normal vector
 /// This helps hit target distributions since we reject less
 ///
 /// # Arguments
 ///
 /// * `new_poly` - Polygon
-/// * `frac_fam` - Fracture family structure which Polygon belongs to
+/// * `family` - Fracture family structure which Polygon belongs to
 /// * `generator` - Random Generator
-pub fn re_translate_poly(new_poly: &mut Poly, frac_fam: &FractureFamily, generator: &mut Mt64) {
+pub fn retranslate_poly(new_poly: &mut Poly, family: &FractureFamily, generator: &mut Mt64) {
     new_poly.group = None; // Clear cluster group information
-    new_poly.intersection_index.clear(); // Clear any saved intersections
+    new_poly.intersection_indices.clear(); // Clear any saved intersections
 
     // Move poly back to origin
     for vertex in &mut new_poly.vertices {
@@ -27,7 +27,7 @@ pub fn re_translate_poly(new_poly: &mut Poly, frac_fam: &FractureFamily, generat
     }
 
     // Translate to new position
-    let t = frac_fam.sample_position(generator);
+    let t = family.sample_position(generator);
     new_poly.translate(t);
 }
 
@@ -39,7 +39,7 @@ pub fn re_translate_poly(new_poly: &mut Poly, frac_fam: &FractureFamily, generat
 ///
 /// * `reject_reason` - Reason why FRAM rejected the poly
 /// * `new_poly` - Poly which was rejected
-pub fn print_reject_reason(reject_reason: RejectReason, new_poly: &Poly) {
+pub fn log_reject_reason(reject_reason: RejectReason, new_poly: &Poly) {
     if let Some(family_index) = new_poly.origin.family_index() {
         warn!(
             "Attempted fracture from family {} was rejected:",

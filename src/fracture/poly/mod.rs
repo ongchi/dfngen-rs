@@ -55,11 +55,11 @@ pub struct Poly {
     /// X-radius.
     /// X-radius is equal to the value generated from randum distributions or given by the user
     /// in the case of constant distributions and user-defined fractures.
-    pub xradius: f64,
+    pub x_radius: f64,
 
     /// Y-radius.
-    /// Y-radius is equal to x-radius * aspect ratio (yradius = aspectRatio * xradius).
-    pub yradius: f64,
+    /// Y-radius is equal to x-radius * aspect ratio (y_radius = aspectRatio * x_radius).
+    pub y_radius: f64,
 
     /// Aspect ratio of polygon. Must be value greater than zero.
     pub aspect_ratio: f64,
@@ -77,7 +77,7 @@ pub struct Poly {
     pub vertices: Vec<Point3<f64>>,
 
     /// List of indices to the permanent intersection array ('intPts' in main()) which belong to this polygon.
-    pub intersection_index: Vec<usize>,
+    pub intersection_indices: Vec<usize>,
 }
 
 impl Default for Poly {
@@ -87,15 +87,15 @@ impl Default for Poly {
             user_fracture_id: None,
             group: None,
             area: 0.,
-            xradius: 0.,
-            yradius: 0.,
+            x_radius: 0.,
+            y_radius: 0.,
             aspect_ratio: 0.,
             translation: Vector3::zeros(),
             normal: Vector3::zeros(),
             // Intersects nothing until assign_bounding_box() sets it
             bounding_box: Aabb::new_invalid(),
             vertices: Vec::new(),
-            intersection_index: Vec::new(),
+            intersection_indices: Vec::new(),
         }
     }
 }
@@ -115,15 +115,15 @@ impl Poly {
     /// # Arguments
     ///
     /// * `number_of_points` - Number of vertices
-    /// * `radius` - Radius (xradius = radius. yradius = radius * aspectRatio)
+    /// * `radius` - Radius (x_radius = radius. y_radius = radius * aspectRatio)
     /// * `aspect_ratio` - Aspect ratio
     pub fn new(number_of_points: usize, radius: f64, aspect_ratio: f64) -> Self {
         let angle_step = 2. * std::f64::consts::PI / number_of_points as f64;
 
         Self {
             normal: Vector3::new(0., 0., 1.),
-            xradius: radius,
-            yradius: radius * aspect_ratio,
+            x_radius: radius,
+            y_radius: radius * aspect_ratio,
             aspect_ratio,
             // The first vertex is half a step from the x axis, so that
             // the sides of a polygon with 4 points are parallel to the axes

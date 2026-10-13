@@ -411,7 +411,7 @@ pub mod test_meshes {
         DomainMesh::new(&tetrahedra, &region_names(&["west", "all"])).unwrap()
     }
 
-    /// An L shape in the x-y plane, 10 high in z, with its corner at (10, 20, 30):
+    /// An L family in the x-y plane, 10 high in z, with its corner at (10, 20, 30):
     /// two boxes of 5 x 5 with the region `south` (region 1) along x, and one
     /// box with the region `north` (region 2) in +y.
     /// The bounding box is 10 x 10 x 10 with its center at (15, 25, 35).
@@ -574,7 +574,7 @@ mod tests {
 
     #[test]
     fn test_share_of_sampled_points_in_a_region_is_its_volume_share() {
-        // Region 2 has 1/3 of the volume of the L shape
+        // Region 2 has 1/3 of the volume of the L family
         let points = sample_points(0, 30000);
         let points_in_region_2 = points.iter().filter(|point| point.y > 0.).count();
 

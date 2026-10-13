@@ -12,7 +12,7 @@ use crate::generation::Network;
 use crate::io::vtk::{
     write_fractures_vtk, write_rejected_fractures_vtk, write_removed_fractures_vtk,
 };
-use crate::structures::{IntersectionPoints, Stats};
+use crate::structures::{Intersection, Stats};
 
 /// Moves a point from the coordinates of the generation to those of the output
 ///
@@ -30,9 +30,9 @@ pub fn to_output_coordinates(point: &Point3<f64>, mesh_center: &Vector3<f64>) ->
 /// Polygons which remain after isolated fracture removal, in output order.
 fn final_polys<'a>(
     final_fractures: &'a [usize],
-    accepted_poly: &'a [Poly],
+    accepted_polys: &'a [Poly],
 ) -> impl Iterator<Item = &'a Poly> {
-    final_fractures.iter().map(|&i| &accepted_poly[i])
+    final_fractures.iter().map(|&i| &accepted_polys[i])
 }
 
 /// Gives the writer of an output file, from the name of the file
@@ -62,16 +62,16 @@ pub fn write_output_to_folder(network: &Network, folder: &str) -> io::Result<()>
 /// * `create_file` - Gives the writer of each output file, from the name of the file
 pub fn write_output(network: &Network, create_file: &mut CreateFile) -> io::Result<()> {
     let input = &network.input;
-    let accepted_poly = &network.dfn.accepted_poly;
-    let pstats = &network.dfn.pstats;
+    let accepted_polys = &network.dfn.accepted_polys;
+    let stats = &network.dfn.stats;
     let final_fractures = &network.final_fractures;
     let mesh_center = &input.domain_mesh.center();
 
     let mut vtk_file = create_file("fractures.vtp")?;
-    write_fractures_vtk(final_fractures, accepted_poly, mesh_center, &mut vtk_file)?;
+    write_fractures_vtk(final_fractures, accepted_polys, mesh_center, &mut vtk_file)?;
     vtk_file.flush()?;
 
-    let removed_fractures: Vec<usize> = (0..accepted_poly.len())
+    let removed_fractures: Vec<usize> = (0..accepted_polys.len())
         .filter(|i| final_fractures.binary_search(i).is_err())
         .collect();
 
@@ -79,7 +79,7 @@ pub fn write_output(network: &Network, create_file: &mut CreateFile) -> io::Resu
         let mut removed_file = create_file("fractures_removed.vtp")?;
         write_removed_fractures_vtk(
             &removed_fractures,
-            accepted_poly,
+            accepted_polys,
             mesh_center,
             &mut removed_file,
         )?;
@@ -88,46 +88,46 @@ pub fn write_output(network: &Network, create_file: &mut CreateFile) -> io::Resu
 
     if input.output_rejected_fractures {
         let mut rejected_file = create_file("fractures_rejected.vtp")?;
-        write_rejected_fractures_vtk(&network.dfn.rejected_poly, mesh_center, &mut rejected_file)?;
+        write_rejected_fractures_vtk(&network.dfn.rejected_polys, mesh_center, &mut rejected_file)?;
         rejected_file.flush()?;
     }
 
-    let int_pts = &network.dfn.intpts;
-    let output_numbers = output_fracture_numbers(final_fractures, accepted_poly.len());
+    let intersections = &network.dfn.intersections;
+    let output_numbers = output_fracture_numbers(final_fractures, accepted_polys.len());
 
     write_intersection_list(
         final_fractures,
-        accepted_poly,
-        int_pts,
+        accepted_polys,
+        intersections,
         &output_numbers,
         mesh_center,
         &mut create_file("intersection_list.dat")?,
     )?;
-    write_rejection_stats(pstats, &mut create_file("rejections.dat")?)?;
+    write_rejection_stats(stats, &mut create_file("rejections.dat")?)?;
 
-    if !pstats.rejected_user_fracture.is_empty() {
+    if !stats.rejected_user_fractures.is_empty() {
         write_user_rejected_fracture_information(
-            pstats,
+            stats,
             &mut create_file("userFractureRejections.dat")?,
         )?;
     }
 
     write_connectivity(
         final_fractures,
-        accepted_poly,
-        int_pts,
+        accepted_polys,
+        intersections,
         &output_numbers,
         &mut create_file("connectivity.dat")?,
     )?;
-    write_rejects_per_attempt(pstats, &mut create_file("rejectsPerAttempt.dat")?)?;
+    write_rejects_per_attempt(stats, &mut create_file("rejectsPerAttempt.dat")?)?;
 
     if input.triple_intersections {
         info!("Writing Triple Intersection Points File");
         write_triple_pts(
             &network.dfn.triple_points,
             final_fractures,
-            accepted_poly,
-            int_pts,
+            accepted_polys,
+            intersections,
             mesh_center,
             &mut create_file("triple_points.dat")?,
         )?;
@@ -156,14 +156,14 @@ fn output_fracture_numbers(final_fractures: &[usize], accepted_count: usize) -> 
 /// Output number of the other fracture of an intersection of the fracture `poly_idx`.
 /// `None` if the other fracture is not a final fracture.
 fn other_fracture_number(
-    intersection: &IntersectionPoints,
+    intersection: &Intersection,
     poly_idx: usize,
     output_numbers: &[Option<usize>],
 ) -> Option<usize> {
-    let other_idx = if intersection.fract1 == poly_idx {
-        intersection.fract2
+    let other_idx = if intersection.fracture1 == poly_idx {
+        intersection.fracture2
     } else {
-        intersection.fract1
+        intersection.fracture1
     };
 
     output_numbers[other_idx]
@@ -175,22 +175,22 @@ fn other_fracture_number(
 ///
 /// * `triple_points` - Vector array of all triple intersection points
 /// * `final_fractures` - Vector array of indices of fractures left after isolated fracture removal
-/// * `accepted_poly` - Vector array of all accetped fractures
-/// * `int_pts` - Vector array of all intersections
+/// * `accepted_polys` - Vector array of all accetped fractures
+/// * `intersections` - Vector array of all intersections
 /// * `mesh_center` - Center of the domain mesh
 /// * `file` - File to write into
 fn write_triple_pts(
     triple_points: &[Point3<f64>],
     final_fractures: &[usize],
-    accepted_poly: &[Poly],
-    int_pts: &[IntersectionPoints],
+    accepted_polys: &[Poly],
+    intersections: &[Intersection],
     mesh_center: &Vector3<f64>,
     file: &mut impl Write,
 ) -> io::Result<()> {
     // Each triple point is referenced by several intersections, write it only once
-    let mut triple_pts_list: Vec<usize> = final_polys(final_fractures, accepted_poly)
-        .flat_map(|poly| &poly.intersection_index)
-        .flat_map(|&int_idx| &int_pts[int_idx].triple_points_idx)
+    let mut triple_pts_list: Vec<usize> = final_polys(final_fractures, accepted_polys)
+        .flat_map(|poly| &poly.intersection_indices)
+        .flat_map(|&int_idx| &intersections[int_idx].triple_point_indices)
         .copied()
         .collect();
     triple_pts_list.sort();
@@ -208,11 +208,11 @@ fn write_triple_pts(
 ///
 /// # Arguments
 ///
-/// * `pstats` - Stats structure of program statistics
+/// * `stats` - Stats structure of program statistics
 /// * `file` - File to write into
-fn write_rejection_stats(pstats: &Stats, file: &mut impl Write) -> io::Result<()> {
+fn write_rejection_stats(stats: &Stats, file: &mut impl Write) -> io::Result<()> {
     info!("Writing Rejection Statistics File (rejections.dat)");
-    let reasons = &pstats.rejection_reasons;
+    let reasons = &stats.rejection_reasons;
 
     writeln!(file, "Short Intersection: {}", reasons.short_intersection)?;
     writeln!(file, "Close to Node: {}", reasons.close_to_node)?;
@@ -236,16 +236,16 @@ fn write_rejection_stats(pstats: &Stats, file: &mut impl Write) -> io::Result<()
 ///
 /// # Arguments
 ///
-/// * `pstats` - Stats structure of program statistics
+/// * `stats` - Stats structure of program statistics
 /// * `file` - File to write into
 fn write_user_rejected_fracture_information(
-    pstats: &Stats,
+    stats: &Stats,
     file: &mut impl Write,
 ) -> io::Result<()> {
     info!("Writing User Fracture Rejection File (userFractureRejections.dat)");
     writeln!(file, "Fracture id")?;
 
-    for fracture_id in &pstats.rejected_user_fracture {
+    for fracture_id in &stats.rejected_user_fractures {
         writeln!(file, "{}", fracture_id)?;
     }
 
@@ -257,13 +257,13 @@ fn write_user_rejected_fracture_information(
 /// # Arguments
 ///
 /// * `final_fractures` - Vector array of indices of fractures left after isolated fracture removal
-/// * `accepted_poly` - Vector array of all accetped fractures
-/// * `int_pts` - Vector array of all intersections
+/// * `accepted_polys` - Vector array of all accetped fractures
+/// * `intersections` - Vector array of all intersections
 /// * `file` - File to write into
 fn write_connectivity(
     final_fractures: &[usize],
-    accepted_poly: &[Poly],
-    int_pts: &[IntersectionPoints],
+    accepted_polys: &[Poly],
+    intersections: &[Intersection],
     output_numbers: &[Option<usize>],
     file: &mut impl Write,
 ) -> io::Result<()> {
@@ -277,8 +277,9 @@ fn write_connectivity(
     // Fracture 1 intersects frac 2 and 3, fract 2 intersects 1 and 3 etc
 
     for &poly_idx in final_fractures {
-        for &int_idx in &accepted_poly[poly_idx].intersection_index {
-            if let Some(other) = other_fracture_number(&int_pts[int_idx], poly_idx, output_numbers)
+        for &int_idx in &accepted_polys[poly_idx].intersection_indices {
+            if let Some(other) =
+                other_fracture_number(&intersections[int_idx], poly_idx, output_numbers)
             {
                 write!(file, "{} ", other)?;
             }
@@ -300,12 +301,12 @@ fn write_connectivity(
 ///
 /// # Arguments
 ///
-/// * `pstats` - Stats structure of program statistics
+/// * `stats` - Stats structure of program statistics
 /// * `file` - File to write into
-fn write_rejects_per_attempt(pstats: &Stats, file: &mut impl Write) -> io::Result<()> {
+fn write_rejects_per_attempt(stats: &Stats, file: &mut impl Write) -> io::Result<()> {
     info!("Writing Rotation Data File (rejectsPerAttempt.dat)");
 
-    for rejects in &pstats.rejects_per_attempt {
+    for rejects in &stats.rejects_per_attempt {
         writeln!(file, "{}", rejects)?;
     }
 
@@ -317,14 +318,14 @@ fn write_rejects_per_attempt(pstats: &Stats, file: &mut impl Write) -> io::Resul
 /// # Arguments
 ///
 /// * `final_fractures` - Vector array of indices of fractures left after isolated fracture removal
-/// * `accepted_poly` - Vector array of all accetped fractures (before isolated fracture removal)
-/// * `int_pts` - Vector array of all intersections
+/// * `accepted_polys` - Vector array of all accetped fractures (before isolated fracture removal)
+/// * `intersections` - Vector array of all intersections
 /// * `mesh_center` - Center of the domain mesh
 /// * `file` - File to write into
 fn write_intersection_list(
     final_fractures: &[usize],
-    accepted_poly: &[Poly],
-    int_pts: &[IntersectionPoints],
+    accepted_polys: &[Poly],
+    intersections: &[Intersection],
     output_numbers: &[Option<usize>],
     mesh_center: &Vector3<f64>,
     int_file: &mut impl Write,
@@ -333,20 +334,21 @@ fn write_intersection_list(
     writeln!(int_file, "f1 f2 x y z length")?;
 
     for (i, &poly_idx) in final_fractures.iter().enumerate() {
-        let fract1 = i + 1;
+        let fracture1 = i + 1;
 
         // Write each intersection once, from the fracture with the smaller id
-        for &int_idx in &accepted_poly[poly_idx].intersection_index {
-            let intersection = &int_pts[int_idx];
-            let Some(fract2) = other_fracture_number(intersection, poly_idx, output_numbers) else {
+        for &int_idx in &accepted_polys[poly_idx].intersection_indices {
+            let intersection = &intersections[int_idx];
+            let Some(fracture2) = other_fracture_number(intersection, poly_idx, output_numbers)
+            else {
                 continue;
             };
 
-            if fract1 < fract2 {
+            if fracture1 < fracture2 {
                 write_mid_point(
                     int_file,
-                    fract1,
-                    fract2,
+                    fracture1,
+                    fracture2,
                     &intersection.p1,
                     &intersection.p2,
                     mesh_center,
@@ -363,15 +365,15 @@ fn write_intersection_list(
 /// # Arguments
 ///
 /// * `fp` - File to write information into
-/// * `fract1` - Fracture 1
-/// * `fract2` - Fracture 2
+/// * `fracture1` - Fracture 1
+/// * `fracture2` - Fracture 2
 /// * `point1` - First endpoint
 /// * `point2` - Second endpoint
 /// * `mesh_center` - Center of the domain mesh
 fn write_mid_point(
     fp: &mut impl Write,
-    fract1: usize,
-    fract2: usize,
+    fracture1: usize,
+    fracture2: usize,
     point1: &Point3<f64>,
     point2: &Point3<f64>,
     mesh_center: &Vector3<f64>,
@@ -381,8 +383,8 @@ fn write_mid_point(
     writeln!(
         fp,
         "{} {} {:.10} {:.10} {:.10} {:.10}",
-        fract1,
-        fract2,
+        fracture1,
+        fracture2,
         mid_point.x,
         mid_point.y,
         mid_point.z,

@@ -22,7 +22,7 @@ pub struct FractureFamily {
     pub radius: RadiusDistribution,
 
     /// Current index to the radii list 'radiiList'.
-    pub radii_idx: usize,
+    pub radii_index: usize,
 
     /// Initial list of fracture/polygon radii, sorted largest to smallest.
     pub radii_list: Vec<f64>,
@@ -94,19 +94,20 @@ impl FractureFamily {
     pub fn create_poly(
         &mut self,
         eps: f64,
-        fam_idx: usize,
+        family_index: usize,
         radius_opt: RadiusOption,
         generator: &mut Mt64,
     ) -> Result<Poly, DfngenError> {
         let radius = match radius_opt {
             RadiusOption::FromCacheOrRng | RadiusOption::FromRng => {
-                if self.radii_idx >= self.radii_list.len() || radius_opt == RadiusOption::FromRng {
+                if self.radii_index >= self.radii_list.len() || radius_opt == RadiusOption::FromRng
+                {
                     // If out of radii from list, insert random radius
                     self.sample_radius(generator)?
                 } else {
                     // Insert radius from list
-                    let radius = self.radii_list[self.radii_idx];
-                    self.radii_idx += 1;
+                    let radius = self.radii_list[self.radii_index];
+                    self.radii_index += 1;
                     radius
                 }
             }
@@ -115,7 +116,7 @@ impl FractureFamily {
 
         // New polygon to build
         let mut new_poly = Poly::new(self.number_of_points, radius, self.aspect_ratio);
-        new_poly.origin = FractureOrigin::Family(fam_idx);
+        new_poly.origin = FractureOrigin::Family(family_index);
 
         let beta = self.beta.unwrap_or_else(|| {
             let uniform_dist = Uniform::new(0., 2. * std::f64::consts::PI)
@@ -210,7 +211,7 @@ impl FractureFamilyBuilder {
                 .number_of_points
                 .ok_or("number of points is required".to_string())?,
             radius: self.radius.take().ok_or("radius is required".to_string())?,
-            radii_idx: 0,
+            radii_index: 0,
             radii_list: Vec::new(),
             region_id: self.region_id.ok_or("region_id is required".to_string())?,
             aspect_ratio: self
@@ -249,17 +250,17 @@ impl FractureFamilyCollection {
         generator: &mut Mt64,
     ) -> Result<(), DfngenError> {
         if force_large_fractures {
-            for shape in &mut self.families {
-                let radius = shape.radius.max;
-                shape.radii_list.push(radius);
+            for family in &mut self.families {
+                let radius = family.radius.max;
+                family.radii_list.push(radius);
             }
             n_poly -= self.families.len();
         }
 
-        for (frac_fam, probability) in self.families.iter_mut().zip(&self.probabilities) {
+        for (family, probability) in self.families.iter_mut().zip(&self.probabilities) {
             for _ in 0..((probability * n_poly as f64).ceil() as usize) {
-                let radius = frac_fam.sample_radius(generator)?;
-                frac_fam.radii_list.push(radius);
+                let radius = family.sample_radius(generator)?;
+                family.radii_list.push(radius);
             }
         }
 

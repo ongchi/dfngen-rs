@@ -41,7 +41,7 @@ fn main() -> ExitCode {
 
 /// Reads the input, generates the network and writes the output files.
 fn run(cli: &Cli) -> Result<(), DfngenError> {
-    let (mut input, frac_fam_col) = read_input(&cli.input_file)?;
+    let (mut input, family_collection) = read_input(&cli.input_file)?;
 
     if input.seed == 0 {
         input.seed = SystemTime::now()
@@ -52,7 +52,7 @@ fn run(cli: &Cli) -> Result<(), DfngenError> {
     // The bar starts with the first accepted stochastic fracture
     let (stop_condition, n_poly) = (input.stop_condition, input.n_poly);
     let mut progress = None;
-    let network = generate(input, frac_fam_col, &mut |update| {
+    let network = generate(input, family_collection, &mut |update| {
         progress
             .get_or_insert_with(|| GenerationProgress::new(stop_condition, n_poly))
             .update(update)

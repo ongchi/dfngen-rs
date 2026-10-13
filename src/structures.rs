@@ -5,12 +5,12 @@ use rand::Rng;
 use rand_mt::Mt64;
 use tracing::{error, info, warn};
 
-use crate::cg::intersection_checking;
+use crate::cg::check_intersections;
 use crate::distribution::{LogNormalSampling, TruncExp, TruncLogNormal, TruncPowerLaw};
 use crate::domain_mesh::DomainMesh;
 use crate::error::DfngenError;
 use crate::fracture::cluster_groups::ClusterGroups;
-use crate::fracture::insert_shape::print_reject_reason;
+use crate::fracture::insert_shape::log_reject_reason;
 use crate::fracture::poly::Poly;
 use crate::fracture::user_defined_fractures::DomainCheck;
 
@@ -84,14 +84,14 @@ pub struct RejectedFracture {
 /// the intersection has been shortened by shrinkIntersection()
 /// during FRAM.
 #[derive(Clone, Default)]
-pub struct IntersectionPoints {
+pub struct Intersection {
     /// Fracture 1, index of fracture in the accpeted polygons list that this
-    /// intersection belongs to ('fract1' and 'fract2' are in no particular order).
-    pub fract1: usize,
+    /// intersection belongs to ('fracture1' and 'fracture2' are in no particular order).
+    pub fracture1: usize,
 
     /// Fracture 2, index of fracture in the accpeted polygons list that this
-    /// intersection belongs to ('fract1' and 'fract2' are in no particular order).
-    pub fract2: usize,
+    /// intersection belongs to ('fracture1' and 'fracture2' are in no particular order).
+    pub fracture2: usize,
 
     /// Intersection endpoint 1
     pub p1: Point3<f64>,
@@ -99,11 +99,11 @@ pub struct IntersectionPoints {
     pub p2: Point3<f64>,
 
     /// Triple intersection points/nodes on intersection.
-    pub triple_points_idx: Vec<usize>,
+    pub triple_point_indices: Vec<usize>,
 
     /// Used to update book keeping for keeping track of overal intersection length
     /// that has been shortened from shrinkIntersection(). Used in intersectionChecking().
-    pub intersection_shortened: bool,
+    pub is_shortened: bool,
 }
 
 /// Holds temporary triple point data while FRAM is checking
@@ -118,12 +118,12 @@ pub struct IntersectionPoints {
 /// IF the fracture is accepted.
 ///
 /// If the fracture is rejected, this data is discraded.
-pub struct TriplePtTempData {
+pub struct CandidateTriplePoint {
     /// Triple intersection point.
     pub triple_point: Point3<f64>,
     /// Index to 'triplePoints' array in main() to where this point would be stored
     /// if the FRAM checks pass.
-    pub int_index: Vec<usize>,
+    pub intersection_indices: Vec<usize>,
 }
 
 /// Rejection reason counters.
@@ -150,35 +150,35 @@ pub struct RejectionReasons {
 /// Program and DFN statistics structure. Keeps various statistics about the DFN being generated.
 pub struct Stats {
     /// Counters for the number of polygons/fractures accepted by each stochastic
-    /// family. Elements in this array are in the same order as the stochastic shape
+    /// family. Elements in this array are in the same order as the stochastic family
     /// families array 'shapeFamilies' in main(). e.g. The counter for the second family
     /// in the shapeFamilies array is the second element in this array.
-    pub accepted_from_fam: Vec<usize>,
+    pub accepted_per_family: Vec<usize>,
 
     /// Counters for the number of polygons/fractures rejected by each stochastic
-    /// family. Elements in this array are in the same order as the stochastic shape
+    /// family. Elements in this array are in the same order as the stochastic family
     /// families array 'shapeFamilies' in main(). e.g. The counter for the second family
     /// in the shapeFamilies array is the second element in this array.
-    pub rejected_from_fam: Vec<usize>,
+    pub rejected_per_family: Vec<usize>,
 
     /// Number of fractures estimated for each stochastic family (see dryRun()).
-    /// Elements in this array are in the same order as the stochastic shape
+    /// Elements in this array are in the same order as the stochastic family
     /// families array 'shapeFamilies' in main(). e.g. The estimated number of
     /// fractures for the second family in the shapeFamilies array is the second
     /// element in this array.
-    pub expected_from_fam: Vec<usize>,
+    pub expected_per_family: Vec<usize>,
 
     /// Total number of accepted polygons/fractures for the DFN. This variable is
     /// updated as the DFN is generated.
-    pub accepted_poly_count: usize,
+    pub accepted_count: usize,
 
     /// Total number of rejected polygons/fractures for the DFN. This variable is
     /// updated as the DFN is generated.
-    pub rejected_poly_count: usize,
+    pub rejected_count: usize,
 
     /// Total number of polygon/fracture re-translations. This variable is updated
     /// as the DFN is generated.
-    pub retranslated_poly_count: u32,
+    pub retranslated_count: u32,
 
     /// Total area of fractures before isolated fracture removal. Variable is set in main() after
     /// DFN generation has completed.
@@ -213,7 +213,7 @@ pub struct Stats {
     pub rejects_per_attempt: Vec<usize>,
 
     /// Rejected User Fractures
-    pub rejected_user_fracture: Vec<usize>,
+    pub rejected_user_fractures: Vec<usize>,
 }
 
 pub enum RadiusFunction {
@@ -310,12 +310,12 @@ impl Default for Stats {
     /// All counters are zero.
     fn default() -> Self {
         Self {
-            accepted_from_fam: Vec::new(),
-            rejected_from_fam: Vec::new(),
-            expected_from_fam: Vec::new(),
-            accepted_poly_count: 0,
-            rejected_poly_count: 0,
-            retranslated_poly_count: 0,
+            accepted_per_family: Vec::new(),
+            rejected_per_family: Vec::new(),
+            expected_per_family: Vec::new(),
+            accepted_count: 0,
+            rejected_count: 0,
+            retranslated_count: 0,
             area_before_removal: 0.,
             area_after_removal: 0.,
             rejection_reasons: RejectionReasons::default(),
@@ -324,33 +324,33 @@ impl Default for Stats {
             discarded_length: 0.,
             // Counter of the rejects before the first accepted fracture
             rejects_per_attempt: vec![0],
-            rejected_user_fracture: Vec::new(),
+            rejected_user_fractures: Vec::new(),
         }
     }
 }
 
 #[derive(Default)]
-pub struct DFNGen {
+pub struct Dfn {
     // Statistics structure:
-    pub pstats: Stats,
+    pub stats: Stats,
 
     // Clusters of connected fractures
     pub clusters: ClusterGroups,
 
     // Vector to store accepted polygons/fractures
-    pub accepted_poly: Vec<Poly>,
+    pub accepted_polys: Vec<Poly>,
 
     // Rejected fractures. Stays empty unless PolyOptions::keep_rejected_fractures is set.
-    pub rejected_poly: Vec<RejectedFracture>,
+    pub rejected_polys: Vec<RejectedFracture>,
 
     // Vector for storing intersections
-    pub intpts: Vec<IntersectionPoints>,
+    pub intersections: Vec<Intersection>,
 
     // Vector for storing triple intersection points
     pub triple_points: Vec<Point3<f64>>,
 }
 
-impl DFNGen {
+impl Dfn {
     pub fn new() -> Self {
         Self::default()
     }
@@ -362,21 +362,24 @@ impl DFNGen {
     /// * `new_poly` - The fracture
     /// * `poly_id` - Number of the fracture in its file, from 1
     /// * `domain_check` - Domain check of the fracture
-    /// * `opts` - Options of the generation
+    /// * `options` - Options of the generation
     pub fn insert_poly(
         &mut self,
         mut new_poly: Poly,
         poly_id: usize,
         domain_check: DomainCheck,
-        opts: &PolyOptions,
+        options: &PolyOptions,
     ) {
-        let is_outside_box_domain =
-            new_poly.is_outside_box_domain(opts.min_feature_size, opts.eps, &opts.domain_size);
+        let is_outside_box_domain = new_poly.is_outside_box_domain(
+            options.min_feature_size,
+            options.eps,
+            &options.domain_size,
+        );
         let is_rejected = match domain_check {
             // Poly completely outside domain, or it intersects no cell of its region of the domain mesh
             DomainCheck::Regions(region_ids) => {
                 is_outside_box_domain
-                    || !opts
+                    || !options
                         .domain_mesh
                         .intersects_polygon_in_any_region(&new_poly.vertices, region_ids)
             }
@@ -384,9 +387,9 @@ impl DFNGen {
         };
 
         if is_rejected {
-            self.pstats.rejection_reasons.outside += 1;
-            self.pstats.rejected_poly_count += 1;
-            self.pstats.rejected_user_fracture.push(poly_id);
+            self.stats.rejection_reasons.outside += 1;
+            self.stats.rejected_count += 1;
+            self.stats.rejected_user_fractures.push(poly_id);
             match domain_check {
                 DomainCheck::Regions(region_ids) if !region_ids.is_empty() => warn!(
                     "User-defined fracture {}: rejected for being outside its regions of the domain.",
@@ -402,17 +405,17 @@ impl DFNGen {
 
         new_poly.assign_bounding_box();
         // Line of intersection and FRAM
-        let fram_result = intersection_checking(opts, &mut new_poly, self);
+        let fram_result = check_intersections(options, &mut new_poly, self);
 
         if let Err(reject_reason) = fram_result {
-            self.pstats.rejects_per_attempt[self.pstats.accepted_poly_count] += 1;
-            self.pstats.rejected_poly_count += 1;
-            self.pstats.rejected_user_fracture.push(poly_id);
+            self.stats.rejects_per_attempt[self.stats.accepted_count] += 1;
+            self.stats.rejected_count += 1;
+            self.stats.rejected_user_fractures.push(poly_id);
 
-            print_reject_reason(reject_reason, &new_poly);
+            log_reject_reason(reject_reason, &new_poly);
 
-            if opts.keep_rejected_fractures {
-                self.rejected_poly.push(RejectedFracture {
+            if options.keep_rejected_fractures {
+                self.rejected_polys.push(RejectedFracture {
                     poly: new_poly,
                     reason: reject_reason,
                 });
@@ -420,12 +423,12 @@ impl DFNGen {
         } else {
             // If intersection is ok (FRAM passed all tests)
             // Incriment counter of accepted polys
-            self.pstats.accepted_poly_count += 1;
+            self.stats.accepted_count += 1;
             // Calculate poly's area
             new_poly.assign_area();
             // Add new rejectsPerAttempt counter
-            self.pstats.rejects_per_attempt.push(0);
-            self.accepted_poly.push(new_poly); // Save newPoly to accepted polys list
+            self.stats.rejects_per_attempt.push(0);
+            self.accepted_polys.push(new_poly); // Save newPoly to accepted polys list
         }
     }
 
@@ -434,7 +437,7 @@ impl DFNGen {
     fn reset_state(&mut self) {
         self.clusters.clear();
         self.triple_points.clear();
-        self.intpts.clear();
+        self.intersections.clear();
     }
 
     /// Remove Fractures Smaller Than Minimum Size
@@ -454,26 +457,26 @@ impl DFNGen {
     /// Must be executed before getCluster()
     /// This funciton rebuilds the DFN. Using getCluster() before this
     /// funciton executes causes undefined behavior.
-    pub fn remove_small_fractures(&mut self, opts: &PolyOptions, min_size: f64) {
-        self.rebuild_with(opts, |poly| poly.xradius >= min_size);
+    pub fn remove_small_fractures(&mut self, options: &PolyOptions, min_size: f64) {
+        self.rebuild_with(options, |poly| poly.x_radius >= min_size);
     }
 
     /// Rebuilds the DFN (intersections, triple points, cluster groups) from
     /// the accepted fractures for which `is_kept` is true.
-    fn rebuild_with(&mut self, opts: &PolyOptions, is_kept: impl Fn(&Poly) -> bool) {
-        let previous_polys = std::mem::take(&mut self.accepted_poly);
+    fn rebuild_with(&mut self, options: &PolyOptions, is_kept: impl Fn(&Poly) -> bool) {
+        let previous_polys = std::mem::take(&mut self.accepted_polys);
         self.reset_state();
 
         for mut new_poly in previous_polys.into_iter().filter(|poly| is_kept(poly)) {
             new_poly.group = None; // Reset cluster group number
-            new_poly.intersection_index.clear(); // Remove ref to old intersections
+            new_poly.intersection_indices.clear(); // Remove ref to old intersections
 
             // Find line of intersection and FRAM check
-            let fram_result = intersection_checking(opts, &mut new_poly, self);
+            let fram_result = check_intersections(options, &mut new_poly, self);
 
             if fram_result.is_ok() {
-                // Intersections and triple points are saved within intersection_checking()
-                self.accepted_poly.push(new_poly);
+                // Intersections and triple points are saved within check_intersections()
+                self.accepted_polys.push(new_poly);
             } else {
                 error!("Error rebuilding dfn, previously accepted fracture was rejected during DFN rebuild.");
             }
@@ -489,7 +492,7 @@ pub struct PolyOptions {
     pub domain_size: Vector3<f64>,
     /// The cells which make the domain.
     pub domain_mesh: Rc<DomainMesh>,
-    pub r_fram: bool,
+    pub is_fram_relaxed: bool,
     pub is_fram_enabled: bool,
     pub triple_intersections: bool,
     /// False - FRAM does not check an intersection of two user-defined fractures.
@@ -546,7 +549,7 @@ mod tests {
             eps: 1e-9,
             domain_size: Vector3::new(10., 10., 10.),
             domain_mesh: Rc::new(l_shaped_mesh()),
-            r_fram: false,
+            is_fram_relaxed: false,
             is_fram_enabled: true,
             triple_intersections: false,
             check_user_fractures: true,
@@ -573,88 +576,88 @@ mod tests {
     }
 
     /// Inserts the same rectangle two times. FRAM rejects the second one.
-    fn insert_two_equal_rectangles(keep_rejected_fractures: bool) -> DFNGen {
-        let opts = poly_options(keep_rejected_fractures);
-        let mut dfngen = DFNGen::new();
+    fn insert_two_equal_rectangles(keep_rejected_fractures: bool) -> Dfn {
+        let options = poly_options(keep_rejected_fractures);
+        let mut dfn = Dfn::new();
 
         for poly_id in 1..=2 {
             let mut rectangle = Poly::new(4, 1., 1.);
             rectangle.normal = Vector3::new(0., 0., 1.);
-            dfngen.insert_poly(rectangle, poly_id, DomainCheck::Regions(&[]), &opts);
+            dfn.insert_poly(rectangle, poly_id, DomainCheck::Regions(&[]), &options);
         }
 
-        dfngen
+        dfn
     }
 
     /// Inserts a horizontal square with sides of 2 into the L-shaped domain mesh.
     /// The mesh has no cell where x and y are positive.
-    fn insert_square_into_l_shaped_mesh(center: [f64; 3]) -> DFNGen {
+    fn insert_square_into_l_shaped_mesh(center: [f64; 3]) -> Dfn {
         insert_square_into_regions(center, &[])
     }
 
     /// As `insert_square_into_l_shaped_mesh`, for a square which must intersect one of the regions.
     /// Region 1 is where y is negative, and region 2 is where x is negative and y is positive.
-    fn insert_square_into_regions(center: [f64; 3], region_ids: &[usize]) -> DFNGen {
-        let opts = poly_options(false);
-        let mut dfngen = DFNGen::new();
+    fn insert_square_into_regions(center: [f64; 3], region_ids: &[usize]) -> Dfn {
+        let options = poly_options(false);
+        let mut dfn = Dfn::new();
 
         let mut square = Poly::new(4, 2f64.sqrt(), 1.);
         square.normal = Vector3::new(0., 0., 1.);
         square.translate(Vector3::from(center));
-        dfngen.insert_poly(square, 1, DomainCheck::Regions(region_ids), &opts);
+        dfn.insert_poly(square, 1, DomainCheck::Regions(region_ids), &options);
 
-        dfngen
+        dfn
     }
 
     #[test]
     fn test_user_fracture_with_center_outside_the_mesh_is_accepted_if_it_intersects_a_cell() {
-        let dfngen = insert_square_into_l_shaped_mesh([0.5, 0.5, 0.]);
+        let dfn = insert_square_into_l_shaped_mesh([0.5, 0.5, 0.]);
 
-        assert_eq!(dfngen.accepted_poly.len(), 1);
+        assert_eq!(dfn.accepted_polys.len(), 1);
     }
 
     #[test]
     fn test_user_fracture_which_intersects_a_cell_of_its_region_is_accepted() {
-        let dfngen = insert_square_into_regions([2.5, -2.5, 0.], &[1]);
+        let dfn = insert_square_into_regions([2.5, -2.5, 0.], &[1]);
 
-        assert_eq!(dfngen.accepted_poly.len(), 1);
+        assert_eq!(dfn.accepted_polys.len(), 1);
     }
 
     #[test]
     fn test_user_fracture_which_intersects_only_cells_of_another_region_is_rejected() {
-        let dfngen = insert_square_into_regions([2.5, -2.5, 0.], &[2]);
+        let dfn = insert_square_into_regions([2.5, -2.5, 0.], &[2]);
 
-        assert_eq!(dfngen.pstats.rejected_user_fracture, [1]);
+        assert_eq!(dfn.stats.rejected_user_fractures, [1]);
     }
 
     #[test]
     fn test_user_fracture_which_intersects_a_cell_of_one_of_its_regions_is_accepted() {
-        let dfngen = insert_square_into_regions([2.5, -2.5, 0.], &[2, 1]);
+        let dfn = insert_square_into_regions([2.5, -2.5, 0.], &[2, 1]);
 
-        assert_eq!(dfngen.accepted_poly.len(), 1);
+        assert_eq!(dfn.accepted_polys.len(), 1);
     }
 
     #[test]
     fn test_user_fracture_which_intersects_no_cell_is_rejected() {
-        let dfngen = insert_square_into_l_shaped_mesh([2.5, 2.5, 0.]);
+        let dfn = insert_square_into_l_shaped_mesh([2.5, 2.5, 0.]);
 
-        assert_eq!(dfngen.pstats.rejected_user_fracture, [1]);
+        assert_eq!(dfn.stats.rejected_user_fractures, [1]);
     }
 
     #[test]
     fn test_rejected_user_fracture_is_kept_when_the_option_is_on() {
-        let dfngen = insert_two_equal_rectangles(true);
+        let dfn = insert_two_equal_rectangles(true);
 
-        assert_eq!(dfngen.accepted_poly.len(), 1);
-        assert_eq!(dfngen.rejected_poly.len(), 1);
-        assert_eq!(dfngen.rejected_poly[0].reason, RejectReason::CloseToEdge);
+        assert_eq!(dfn.accepted_polys.len(), 1);
+        assert_eq!(dfn.rejected_polys.len(), 1);
+        assert_eq!(dfn.rejected_polys[0].reason, RejectReason::CloseToEdge);
     }
 
     #[test]
     fn test_reject_after_the_first_accepted_fracture_is_counted_for_the_second_attempt() {
-        let dfngen = insert_two_equal_rectangles(false);
+        let dfn = insert_two_equal_rectangles(false);
 
-        assert_eq!(dfngen.pstats.rejects_per_attempt, [0, 1]);
+        assert_eq!(dfn.stats.rejects_per_attempt, [0, 1]);
     }
 
     /// Two horizontal squares with the shared edge x = -2, and a vertical
@@ -686,14 +689,14 @@ mod tests {
     ];
 
     /// Inserts user-defined polygons, each with its value of the `fracture_id` array.
-    fn insert_user_polygons(polygons: &[([[f64; 3]; 4], Option<u64>)]) -> DFNGen {
+    fn insert_user_polygons(polygons: &[([[f64; 3]; 4], Option<u64>)]) -> Dfn {
         insert_user_polygons_with_options(polygons, &poly_options(false))
     }
 
     fn insert_user_polygons_with_options(
         polygons: &[([[f64; 3]; 4], Option<u64>)],
-        opts: &PolyOptions,
-    ) -> DFNGen {
+        options: &PolyOptions,
+    ) -> Dfn {
         let fractures: Vec<UserFracture> = polygons
             .iter()
             .map(|(vertices, fracture_id)| UserFracture {
@@ -702,11 +705,11 @@ mod tests {
                 fracture_id: *fracture_id,
             })
             .collect();
-        let mut dfngen = DFNGen::new();
+        let mut dfn = Dfn::new();
 
-        insert_user_defined_fractures(&fractures, opts, &mut dfngen);
+        insert_user_defined_fractures(&fractures, options, &mut dfn);
 
-        dfngen
+        dfn
     }
 
     /// A horizontal square in the bounding box of the L-shaped mesh which
@@ -716,16 +719,16 @@ mod tests {
 
     #[test]
     fn test_piece_outside_the_mesh_is_accepted_with_a_piece_of_its_fracture_in_the_mesh() {
-        let dfngen = insert_user_polygons(&[(PIECE_OUTSIDE_MESH, Some(5)), (LEFT_PIECE, Some(5))]);
+        let dfn = insert_user_polygons(&[(PIECE_OUTSIDE_MESH, Some(5)), (LEFT_PIECE, Some(5))]);
 
-        assert_eq!(dfngen.accepted_poly.len(), 2);
+        assert_eq!(dfn.accepted_polys.len(), 2);
     }
 
     #[test]
     fn test_polygon_outside_the_mesh_is_rejected_with_only_another_fracture_in_the_mesh() {
-        let dfngen = insert_user_polygons(&[(PIECE_OUTSIDE_MESH, Some(5)), (LEFT_PIECE, Some(6))]);
+        let dfn = insert_user_polygons(&[(PIECE_OUTSIDE_MESH, Some(5)), (LEFT_PIECE, Some(6))]);
 
-        assert_eq!(dfngen.pstats.rejected_user_fracture, [1]);
+        assert_eq!(dfn.stats.rejected_user_fractures, [1]);
     }
 
     #[test]
@@ -735,10 +738,9 @@ mod tests {
             vertex[0] += 1.;
         }
 
-        let dfngen =
-            insert_user_polygons(&[(PIECE_OUTSIDE_MESH, Some(5)), (second_piece, Some(5))]);
+        let dfn = insert_user_polygons(&[(PIECE_OUTSIDE_MESH, Some(5)), (second_piece, Some(5))]);
 
-        assert_eq!(dfngen.pstats.rejected_user_fracture, [1, 2]);
+        assert_eq!(dfn.stats.rejected_user_fractures, [1, 2]);
     }
 
     /// A vertical square which crosses `LEFT_PIECE` at a distance of 0.05
@@ -751,94 +753,94 @@ mod tests {
     ];
 
     /// Inserts `LEFT_PIECE` and `SQUARE_NEAR_EDGE` as two user-defined fractures.
-    fn insert_user_fracture_near_edge(check_user_fractures: bool) -> DFNGen {
-        let opts = PolyOptions {
+    fn insert_user_fracture_near_edge(check_user_fractures: bool) -> Dfn {
+        let options = PolyOptions {
             check_user_fractures,
             ..poly_options(false)
         };
 
-        insert_user_polygons_with_options(&[(LEFT_PIECE, None), (SQUARE_NEAR_EDGE, None)], &opts)
+        insert_user_polygons_with_options(&[(LEFT_PIECE, None), (SQUARE_NEAR_EDGE, None)], &options)
     }
 
     #[test]
     fn test_neighbor_polygon_of_another_fracture_is_accepted_without_the_user_fracture_check() {
-        let opts = PolyOptions {
+        let options = PolyOptions {
             check_user_fractures: false,
             ..poly_options(false)
         };
 
-        let dfngen =
-            insert_user_polygons_with_options(&[(LEFT_PIECE, None), (RIGHT_PIECE, None)], &opts);
+        let dfn =
+            insert_user_polygons_with_options(&[(LEFT_PIECE, None), (RIGHT_PIECE, None)], &options);
 
-        assert_eq!(dfngen.accepted_poly.len(), 2);
+        assert_eq!(dfn.accepted_polys.len(), 2);
     }
 
     #[test]
     fn test_user_fracture_near_the_edge_of_a_user_fracture_is_rejected() {
-        let dfngen = insert_user_fracture_near_edge(true);
+        let dfn = insert_user_fracture_near_edge(true);
 
-        assert_eq!(dfngen.pstats.rejected_user_fracture, [2]);
+        assert_eq!(dfn.stats.rejected_user_fractures, [2]);
     }
 
     #[test]
     fn test_user_fracture_near_the_edge_of_a_user_fracture_is_accepted_without_the_user_fracture_check(
     ) {
-        let dfngen = insert_user_fracture_near_edge(false);
+        let dfn = insert_user_fracture_near_edge(false);
 
-        assert_eq!(dfngen.accepted_poly.len(), 2);
-        assert_eq!(dfngen.intpts.len(), 1);
+        assert_eq!(dfn.accepted_polys.len(), 2);
+        assert_eq!(dfn.intersections.len(), 1);
     }
 
     #[test]
     fn test_pieces_of_one_fracture_have_no_intersection() {
-        let dfngen = insert_user_polygons(&[(LEFT_PIECE, Some(0)), (RIGHT_PIECE, Some(0))]);
+        let dfn = insert_user_polygons(&[(LEFT_PIECE, Some(0)), (RIGHT_PIECE, Some(0))]);
 
-        assert_eq!(dfngen.accepted_poly.len(), 2);
-        assert!(dfngen.intpts.is_empty());
+        assert_eq!(dfn.accepted_polys.len(), 2);
+        assert!(dfn.intersections.is_empty());
     }
 
     #[test]
     fn test_pieces_of_one_fracture_are_in_one_cluster() {
-        let dfngen = insert_user_polygons(&[(LEFT_PIECE, Some(0)), (RIGHT_PIECE, Some(0))]);
+        let dfn = insert_user_polygons(&[(LEFT_PIECE, Some(0)), (RIGHT_PIECE, Some(0))]);
 
-        assert_eq!(dfngen.accepted_poly[0].group, dfngen.accepted_poly[1].group);
+        assert_eq!(dfn.accepted_polys[0].group, dfn.accepted_polys[1].group);
     }
 
     #[test]
     fn test_neighbor_polygon_of_another_fracture_is_rejected() {
-        let dfngen = insert_user_polygons(&[(LEFT_PIECE, Some(0)), (RIGHT_PIECE, Some(1))]);
+        let dfn = insert_user_polygons(&[(LEFT_PIECE, Some(0)), (RIGHT_PIECE, Some(1))]);
 
-        assert_eq!(dfngen.pstats.rejected_user_fracture, [2]);
+        assert_eq!(dfn.stats.rejected_user_fractures, [2]);
     }
 
     #[test]
     fn test_fracture_can_cross_the_shared_edge_of_two_pieces() {
-        let dfngen = insert_user_polygons(&[
+        let dfn = insert_user_polygons(&[
             (LEFT_PIECE, Some(0)),
             (RIGHT_PIECE, Some(0)),
             (CROSSING_SQUARE, None),
         ]);
 
-        assert_eq!(dfngen.accepted_poly.len(), 3);
-        assert_eq!(dfngen.intpts.len(), 2);
+        assert_eq!(dfn.accepted_polys.len(), 3);
+        assert_eq!(dfn.intersections.len(), 2);
     }
 
     #[test]
     fn test_fracture_cannot_cross_two_fractures_with_a_gap_less_than_h() {
-        let dfngen = insert_user_polygons(&[
+        let dfn = insert_user_polygons(&[
             (LEFT_PIECE, Some(0)),
             (RIGHT_PIECE_AFTER_GAP, Some(1)),
             (CROSSING_SQUARE, None),
         ]);
 
-        assert_eq!(dfngen.pstats.rejected_user_fracture, [3]);
+        assert_eq!(dfn.stats.rejected_user_fractures, [3]);
     }
 
     #[test]
     fn test_rejected_user_fracture_is_not_kept_when_the_option_is_off() {
-        let dfngen = insert_two_equal_rectangles(false);
+        let dfn = insert_two_equal_rectangles(false);
 
-        assert_eq!(dfngen.accepted_poly.len(), 1);
-        assert!(dfngen.rejected_poly.is_empty());
+        assert_eq!(dfn.accepted_polys.len(), 1);
+        assert!(dfn.rejected_polys.is_empty());
     }
 }

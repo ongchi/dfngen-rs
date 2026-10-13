@@ -75,13 +75,13 @@ impl ClusterGroups {
     /// * `group` - Group of the first fracture which the new fracture is connected to
     /// * `fracture_index` - Index which the new fracture gets in the accepted fractures
     /// * `bridged_groups` - Other groups which the new fracture is connected to
-    /// * `accepted_poly` - Accepted fractures. The fractures of the merged groups get `group`.
+    /// * `accepted_polys` - Accepted fractures. The fractures of the merged groups get `group`.
     pub fn add_connected(
         &mut self,
         group: usize,
         fracture_index: usize,
         bridged_groups: &[usize],
-        accepted_poly: &mut [Poly],
+        accepted_polys: &mut [Poly],
     ) {
         self.groups[group].size += 1;
         self.member_lists
@@ -105,7 +105,7 @@ impl ClusterGroups {
                 list.group = group;
 
                 for &member in &list.fractures {
-                    accepted_poly[member].group = Some(group);
+                    accepted_polys[member].group = Some(group);
                 }
             }
         }

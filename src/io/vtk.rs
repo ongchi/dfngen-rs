@@ -17,21 +17,24 @@ use crate::structures::RejectedFracture;
 /// # Arguments
 ///
 /// * `final_fractures` - Sorted indices of fractures left after isolated fracture removal
-/// * `accepted_poly` - All accepted fractures
+/// * `accepted_polys` - All accepted fractures
 /// * `mesh_center` - Center of the domain mesh
 /// * `output` - File to write to
 pub fn write_fractures_vtk(
     final_fractures: &[usize],
-    accepted_poly: &[Poly],
+    accepted_polys: &[Poly],
     mesh_center: &Vector3<f64>,
     output: &mut impl Write,
 ) -> io::Result<()> {
-    let polys: Vec<&Poly> = final_fractures.iter().map(|&i| &accepted_poly[i]).collect();
+    let polys: Vec<&Poly> = final_fractures
+        .iter()
+        .map(|&i| &accepted_polys[i])
+        .collect();
     write_geometry(output, &polys, mesh_center)?;
 
     writeln!(output, r#"<CellData Normals="normal">"#)?;
     write_data_array(output, "fracture_id", "Int32", 1, 1..=final_fractures.len())?;
-    write_accepted_cell_data(output, final_fractures, accepted_poly, mesh_center)?;
+    write_accepted_cell_data(output, final_fractures, accepted_polys, mesh_center)?;
     writeln!(output, "</CellData>")?;
 
     write_file_end(output)
@@ -46,23 +49,23 @@ pub fn write_fractures_vtk(
 /// # Arguments
 ///
 /// * `removed_fractures` - Sorted indices of the accepted fractures which were removed
-/// * `accepted_poly` - All accepted fractures
+/// * `accepted_polys` - All accepted fractures
 /// * `mesh_center` - Center of the domain mesh
 /// * `output` - File to write to
 pub fn write_removed_fractures_vtk(
     removed_fractures: &[usize],
-    accepted_poly: &[Poly],
+    accepted_polys: &[Poly],
     mesh_center: &Vector3<f64>,
     output: &mut impl Write,
 ) -> io::Result<()> {
     let polys: Vec<&Poly> = removed_fractures
         .iter()
-        .map(|&i| &accepted_poly[i])
+        .map(|&i| &accepted_polys[i])
         .collect();
     write_geometry(output, &polys, mesh_center)?;
 
     writeln!(output, r#"<CellData Normals="normal">"#)?;
-    write_accepted_cell_data(output, removed_fractures, accepted_poly, mesh_center)?;
+    write_accepted_cell_data(output, removed_fractures, accepted_polys, mesh_center)?;
     writeln!(output, "</CellData>")?;
 
     write_file_end(output)
@@ -84,15 +87,15 @@ pub fn write_removed_fractures_vtk(
 ///
 /// * `output` - File to write to
 /// * `fractures` - Indices of the accepted fractures to write
-/// * `accepted_poly` - All accepted fractures
+/// * `accepted_polys` - All accepted fractures
 /// * `mesh_center` - Center of the domain mesh
 fn write_accepted_cell_data(
     output: &mut impl Write,
     fractures: &[usize],
-    accepted_poly: &[Poly],
+    accepted_polys: &[Poly],
     mesh_center: &Vector3<f64>,
 ) -> io::Result<()> {
-    let polys: Vec<&Poly> = fractures.iter().map(|&i| &accepted_poly[i]).collect();
+    let polys: Vec<&Poly> = fractures.iter().map(|&i| &accepted_polys[i]).collect();
 
     write_data_array(
         output,
@@ -124,10 +127,10 @@ fn write_accepted_cell_data(
         "intersection_count",
         "Int32",
         1,
-        polys.iter().map(|poly| poly.intersection_index.len()),
+        polys.iter().map(|poly| poly.intersection_indices.len()),
     )?;
-    write_real_array(output, "x_radius", &polys, |poly| poly.xradius)?;
-    write_real_array(output, "y_radius", &polys, |poly| poly.yradius)?;
+    write_real_array(output, "x_radius", &polys, |poly| poly.x_radius)?;
+    write_real_array(output, "y_radius", &polys, |poly| poly.y_radius)?;
     write_real_array(output, "aspect_ratio", &polys, |poly| poly.aspect_ratio)?;
     write_real_array(output, "area", &polys, |poly| poly.area)?;
     write_vector_array(output, "normal", &polys, |poly| poly.normal)?;
@@ -147,15 +150,15 @@ fn write_accepted_cell_data(
 ///
 /// # Arguments
 ///
-/// * `rejected_poly` - All rejected fractures
+/// * `rejected_polys` - All rejected fractures
 /// * `mesh_center` - Center of the domain mesh
 /// * `output` - File to write to
 pub fn write_rejected_fractures_vtk(
-    rejected_poly: &[RejectedFracture],
+    rejected_polys: &[RejectedFracture],
     mesh_center: &Vector3<f64>,
     output: &mut impl Write,
 ) -> io::Result<()> {
-    let polys: Vec<&Poly> = rejected_poly
+    let polys: Vec<&Poly> = rejected_polys
         .iter()
         .map(|rejected| &rejected.poly)
         .collect();
@@ -175,10 +178,10 @@ pub fn write_rejected_fractures_vtk(
         "reject_code",
         "Int32",
         1,
-        rejected_poly.iter().map(|rejected| rejected.reason.code()),
+        rejected_polys.iter().map(|rejected| rejected.reason.code()),
     )?;
-    write_real_array(output, "x_radius", &polys, |poly| poly.xradius)?;
-    write_real_array(output, "y_radius", &polys, |poly| poly.yradius)?;
+    write_real_array(output, "x_radius", &polys, |poly| poly.x_radius)?;
+    write_real_array(output, "y_radius", &polys, |poly| poly.y_radius)?;
     write_real_array(output, "aspect_ratio", &polys, |poly| poly.aspect_ratio)?;
     write_vector_array(output, "normal", &polys, |poly| poly.normal)?;
     write_translation_array(output, &polys, mesh_center)?;
@@ -354,18 +357,18 @@ mod tests {
     }
 
     fn write_final_fractures_of_mesh(mesh_center: &Vector3<f64>) -> String {
-        let accepted_poly = three_accepted_fractures();
+        let accepted_polys = three_accepted_fractures();
 
         let mut output = Vec::new();
-        write_fractures_vtk(&[1, 2], &accepted_poly, mesh_center, &mut output).unwrap();
+        write_fractures_vtk(&[1, 2], &accepted_polys, mesh_center, &mut output).unwrap();
         String::from_utf8(output).unwrap()
     }
 
     fn write_removed_fractures() -> String {
-        let accepted_poly = three_accepted_fractures();
+        let accepted_polys = three_accepted_fractures();
 
         let mut output = Vec::new();
-        write_removed_fractures_vtk(&[0], &accepted_poly, &Vector3::zeros(), &mut output).unwrap();
+        write_removed_fractures_vtk(&[0], &accepted_polys, &Vector3::zeros(), &mut output).unwrap();
         String::from_utf8(output).unwrap()
     }
 

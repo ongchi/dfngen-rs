@@ -4,9 +4,11 @@ use tracing::info;
 
 use crate::error::DfngenError;
 use crate::fracture::fracture_family::{FractureFamilyCollection, RadiusOption};
-use crate::fracture::insert_shape::re_translate_poly;
+use crate::fracture::insert_shape::retranslate_poly;
 use crate::io::input::Input;
-use crate::math_functions::{cumsum, index_from_prob_and_p32_status, remove_family_probability};
+use crate::math_functions::{
+    cumulative_sum, index_from_probability_and_p32_status, remove_family_probability,
+};
 
 /// Estimate Number of Fractures When P32 Option is Used
 ///
@@ -19,40 +21,40 @@ use crate::math_functions::{cumsum, index_from_prob_and_p32_status, remove_famil
 /// # Arguments
 ///
 /// * `input` - Input structure
-/// * `frac_families` - Array of stochastic fracture families
+/// * `family_collection` - Array of stochastic fracture families
 /// * `generator` - Random number generator
 pub fn dry_run(
     input: &Input,
-    frac_families: &mut FractureFamilyCollection,
+    family_collection: &mut FractureFamilyCollection,
     generator: &mut Mt64,
 ) -> Result<(), DfngenError> {
     info!("Estimating number of fractures per family for defined fracture intensities (P32)...");
-    let dom_vol = input.domain_volume;
+    let domain_volume = input.domain_volume;
     // Probabilities of the families which have not met their P32 target.
     // This is a copy: the family probabilities must stay in their original state.
-    let mut probabilities = frac_families.probabilities.clone();
+    let mut probabilities = family_collection.probabilities.clone();
     let uniform_dist = Uniform::new(0., 1.)?;
-    let mut cdf = cumsum(&probabilities);
-    let mut family_index; // Holds index to shape family of fracture being generated
-    let mut force_large_fract_count = 0;
-    let mut p32_status = vec![false; frac_families.families.len()];
+    let mut cdf = cumulative_sum(&probabilities);
+    let mut family_index; // Index of the family of the fracture being generated
+    let mut forced_large_fracture_count = 0;
+    let mut p32_status = vec![false; family_collection.families.len()];
 
     'insertion: while p32_status.iter().any(|p| !p) {
         // Index to CDF array of current family being inserted
-        let cdf_idx;
+        let cdf_index;
         let mut reject_counter = 0;
-        let mut new_poly = if (force_large_fract_count < frac_families.families.len())
+        let mut new_poly = if (forced_large_fracture_count < family_collection.families.len())
             && input.force_large_fractures
         {
             // The CDF has no elements for completed families
-            cdf_idx = (0..force_large_fract_count)
+            cdf_index = (0..forced_large_fracture_count)
                 .filter(|i| !p32_status[*i])
                 .count();
 
-            family_index = force_large_fract_count;
-            force_large_fract_count += 1;
+            family_index = forced_large_fracture_count;
+            forced_large_fracture_count += 1;
 
-            frac_families.families[family_index].create_poly(
+            family_collection.families[family_index].create_poly(
                 input.eps,
                 family_index,
                 RadiusOption::MaxRadius,
@@ -61,10 +63,13 @@ pub fn dry_run(
         } else {
             // Choose a family based on probabiliyis AND their target p32 completion status
             // if a family has already met is fracture intinisty reqirement (p32) dont choose that family anymore
-            (family_index, cdf_idx) =
-                index_from_prob_and_p32_status(&p32_status, &cdf, generator.sample(uniform_dist));
+            (family_index, cdf_index) = index_from_probability_and_p32_status(
+                &p32_status,
+                &cdf,
+                generator.sample(uniform_dist),
+            );
 
-            frac_families.families[family_index].create_poly(
+            family_collection.families[family_index].create_poly(
                 input.eps,
                 family_index,
                 RadiusOption::FromRng,
@@ -83,10 +88,10 @@ pub fn dry_run(
                 continue 'insertion;
             }
 
-            // Retranslate poly and try again, preserving normal, size, and shape
-            re_translate_poly(
+            // Retranslate poly and try again, preserving normal, size, and family
+            retranslate_poly(
                 &mut new_poly,
-                &frac_families.families[family_index],
+                &family_collection.families[family_index],
                 generator,
             );
         }
@@ -94,28 +99,28 @@ pub fn dry_run(
         // Calculate poly's area
         new_poly.assign_area();
 
-        frac_families.families[family_index].add_area_to_p32(
+        family_collection.families[family_index].add_area_to_p32(
             new_poly.area,
-            dom_vol,
+            domain_volume,
             &input.region_volumes,
         );
 
         // Save radius for real DFN generation
-        frac_families.families[family_index]
+        family_collection.families[family_index]
             .radii_list
-            .push(new_poly.xradius);
+            .push(new_poly.x_radius);
 
         // If the last inserted polygon met the p32 requirement, set that family to no longer
         // insert any more fractures. adjust the CDF and family probabilities
-        if frac_families.families[family_index].current_p32
-            >= frac_families.families[family_index].p32_target
+        if family_collection.families[family_index].current_p32
+            >= family_collection.families[family_index].p32_target
         {
             p32_status[family_index] = true; //mark family as having its p32 requirement met
 
             // Remove the completed family from the probabilities and rebuild the CDF,
             // if there are still more families to insert
             if probabilities.len() > 1 {
-                cdf = remove_family_probability(&mut probabilities, cdf_idx);
+                cdf = remove_family_probability(&mut probabilities, cdf_index);
             }
         }
 
@@ -126,8 +131,8 @@ pub fn dry_run(
     } // End while loop for inserting polyons
 
     // Reset p32 to 0
-    for shape in &mut frac_families.families {
-        shape.current_p32 = 0.;
+    for family in &mut family_collection.families {
+        family.current_p32 = 0.;
     }
 
     Ok(())
