@@ -11,3 +11,4 @@ pub mod structures;
 pub use error::DfngenError;
 pub use generation::{generate, Network, ProgressUpdate};
 pub use io::input::read_input;
+pub use io::output::{write_output, write_output_to_folder};

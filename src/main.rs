@@ -1,8 +1,7 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use clap::Parser;
-use dfngen::io::output::write_output;
-use dfngen::{generate, read_input, DfngenError};
+use dfngen::{generate, read_input, write_output_to_folder, DfngenError};
 use tracing::{error, info};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
@@ -38,23 +37,13 @@ fn main() -> Result<(), DfngenError> {
     // The bar starts with the first accepted stochastic fracture
     let (stop_condition, n_poly) = (input.stop_condition, input.n_poly);
     let mut progress = None;
-    let mut network = generate(input, frac_fam_col, &mut |update| {
+    let network = generate(input, frac_fam_col, &mut |update| {
         progress
             .get_or_insert_with(|| GenerationProgress::new(stop_condition, n_poly))
             .update(update)
     })?;
 
-    // Write all output files
-    write_output(
-        &network.input,
-        &cli.output_folder,
-        &network.dfn.accepted_poly,
-        &network.dfn.rejected_poly,
-        &mut network.dfn.intpts,
-        &network.dfn.triple_points,
-        &network.dfn.pstats,
-        &network.final_fractures,
-    )?;
+    write_output_to_folder(&network, &cli.output_folder)?;
 
     info!("dfngen-rs - Complete");
 
