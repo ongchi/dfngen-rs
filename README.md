@@ -343,3 +343,61 @@ then has no valid polygon.
 `fractures.vtp`, `fractures_removed.vtp` and `fractures_rejected.vtp` together
 do not have all generated fractures. An accepted fracture which is removed later because it
 is smaller than `remove_fractures_less_than` is in none of these files.
+
+## Library
+
+The package is also the library `dfngen`. The `dfngen` binary is a small
+program which uses it. The library reads no file and writes no file, unless
+you call `read_input` or `write_output_to_folder`:
+
+```rust
+use std::io::{self, Write};
+
+use dfngen::{build_input_from_text, generate, read_input_file_names, write_output, DfngenError};
+
+fn generate_from_text(toml_text: &str, load: impl Fn(&str) -> String) -> Result<(), DfngenError> {
+    // The TOML input names the mesh file and the user-defined fracture file
+    let names = read_input_file_names(toml_text)?;
+    let mesh_text = load(&names.domain);
+    let fractures_text = names.user_fractures.as_deref().map(&load);
+
+    let (input, families) =
+        build_input_from_text(toml_text, &mesh_text, fractures_text.as_deref())?;
+
+    let network = generate(input, families, &mut |progress| {
+        eprintln!("{} fractures, {:.0} %", progress.accepted_count, 100. * progress.fraction);
+    })?;
+
+    // `create_file` gives the writer of each output file (see "Output files")
+    write_output(&network, &mut |file_name| {
+        println!("--- {file_name}");
+        Ok(Box::new(io::stdout()) as Box<dyn Write>)
+    })?;
+
+    Ok(())
+}
+```
+
+- `read_input(path)` does the same as `read_input_file_names` and
+  `build_input_from_text`, with the files of the file system.
+- `generate` uses `seed` as it is. Only the binary replaces `seed = 0` with
+  the system time.
+- `generate` calls the progress function after each accepted stochastic
+  fracture. `fraction` goes from 0 to 1.
+- `Network` has the input, the families, the accepted and rejected fractures,
+  the intersections, the statistics, and the indices of the final fractures.
+- The library writes its log with the `tracing` crate. Your program installs
+  the subscriber.
+- Only the items at the crate root are a stable interface. The modules are
+  public, but they can change.
+
+Without the default feature `cli`, the library has no dependency on `clap`,
+`indicatif` and `tracing-subscriber`, and it compiles for WebAssembly:
+
+```toml
+dfngen-rs = { version = "0.7", default-features = false }
+```
+
+```bash
+cargo check --lib --no-default-features --target wasm32-unknown-unknown
+```
