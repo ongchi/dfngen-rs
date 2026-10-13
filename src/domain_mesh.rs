@@ -10,17 +10,17 @@ const RELATIVE_TOLERANCE: f64 = 1e-9;
 /// One tetrahedron of a mesh cell, in the coordinates of the mesh file
 pub struct MeshTetrahedron {
     pub vertices: [Point3<f64>; 4],
-    /// Values of the `region` cell property above 0, each value one time.
-    /// Empty: the cell has no region.
-    pub regions: Vec<u64>,
+    /// The regions of the cell: positions in the region names which
+    /// `DomainMesh::new` gets. Empty: the cell has no region.
+    pub regions: Vec<usize>,
 }
 
-/// The cells of the mesh which have the same region value above 0.
-/// A cell with more than one region value is in each of these regions.
+/// The cells of the mesh which are in the region with this name.
+/// A cell can be in more than one region.
 #[derive(Debug, Clone, PartialEq)]
 pub struct MeshRegion {
-    /// Value of the `region` cell property
-    pub value: u64,
+    /// Name of the region: `<name>` of the cell data array `region__<name>`
+    pub name: String,
     /// Bounding box of the cells, with the mesh center at the origin
     pub bounds: Aabb,
     /// Sum of the cell volumes
@@ -215,9 +215,12 @@ pub struct DomainMesh {
 }
 
 impl DomainMesh {
-    /// Makes the domain from the tetrahedra of the mesh cells.
-    /// Tetrahedra with no volume are ignored.
-    pub fn new(mesh_tetrahedra: &[MeshTetrahedron]) -> Result<Self, String> {
+    /// Makes the domain from the tetrahedra of the mesh cells and the names
+    /// of the regions. Tetrahedra with no volume are ignored.
+    pub fn new(
+        mesh_tetrahedra: &[MeshTetrahedron],
+        region_names: &[String],
+    ) -> Result<Self, String> {
         let mesh_tetrahedra: Vec<&MeshTetrahedron> = mesh_tetrahedra
             .iter()
             .filter(|tetrahedron| tetrahedron_volume(&tetrahedron.vertices) > 0.)
@@ -236,17 +239,10 @@ impl DomainMesh {
         let size = mesh_bounds.extents();
         let tolerance = RELATIVE_TOLERANCE * size.norm();
 
-        let mut region_values: Vec<u64> = mesh_tetrahedra
+        let mut regions: Vec<MeshRegion> = region_names
             .iter()
-            .flat_map(|tetrahedron| tetrahedron.regions.iter().copied())
-            .collect();
-        region_values.sort();
-        region_values.dedup();
-
-        let mut regions: Vec<MeshRegion> = region_values
-            .iter()
-            .map(|&value| MeshRegion {
-                value,
+            .map(|name| MeshRegion {
+                name: name.clone(),
                 bounds: Aabb::new_invalid(),
                 volume: 0.,
             })
@@ -264,7 +260,7 @@ impl DomainMesh {
             let region_ids: Vec<usize> = mesh_tetrahedron
                 .regions
                 .iter()
-                .map(|&value| region_values.partition_point(|&other| other < value) + 1)
+                .map(|&position| position + 1)
                 .collect();
 
             volume += tetrahedron_volume;
@@ -308,7 +304,7 @@ impl DomainMesh {
         self.volume
     }
 
-    /// The regions of the mesh, in the order of their values.
+    /// The regions of the mesh, in the order of their names in `DomainMesh::new`.
     /// Region N of a tetrahedron or a family is `regions()[N - 1]`.
     pub fn regions(&self) -> &[MeshRegion] {
         &self.regions
@@ -352,6 +348,22 @@ impl DomainMesh {
             tetrahedron.is_in_region(region_id) && tetrahedron.intersects_polygon(vertices)
         })
     }
+
+    /// True if the convex polygon has a point in a cell of one or more of the
+    /// regions. No region means a cell of any region.
+    pub fn intersects_polygon_in_any_region(
+        &self,
+        vertices: &[Point3<f64>],
+        region_ids: &[usize],
+    ) -> bool {
+        if region_ids.is_empty() {
+            return self.intersects_polygon(vertices, 0);
+        }
+
+        region_ids
+            .iter()
+            .any(|&region_id| self.intersects_polygon(vertices, region_id))
+    }
 }
 
 #[cfg(test)]
@@ -359,7 +371,11 @@ pub mod test_meshes {
     use super::*;
 
     /// The 6 tetrahedra of a box with the given regions
-    pub fn box_tetrahedra(mins: [f64; 3], maxs: [f64; 3], regions: &[u64]) -> Vec<MeshTetrahedron> {
+    pub fn box_tetrahedra(
+        mins: [f64; 3],
+        maxs: [f64; 3],
+        regions: &[usize],
+    ) -> Vec<MeshTetrahedron> {
         let corner = |x: usize, y: usize, z: usize| {
             let select = |axis: usize, side: usize| [mins[axis], maxs[axis]][side];
             Point3::new(select(0, x), select(1, y), select(2, z))
@@ -382,24 +398,29 @@ pub mod test_meshes {
             .collect()
     }
 
-    /// Two boxes of 2 x 1 x 1 along x. The box in -x has the regions 1 and 2,
-    /// and the box in +x has the region 2.
-    pub fn mesh_with_a_cell_in_two_regions() -> DomainMesh {
-        let mut tetrahedra = box_tetrahedra([-2., 0., 0.], [0., 1., 1.], &[1, 2]);
-        tetrahedra.extend(box_tetrahedra([0., 0., 0.], [2., 1., 1.], &[2]));
+    pub fn region_names(names: &[&str]) -> Vec<String> {
+        names.iter().map(|name| name.to_string()).collect()
+    }
 
-        DomainMesh::new(&tetrahedra).unwrap()
+    /// Two boxes of 2 x 1 x 1 along x. The box in -x is in the regions `west`
+    /// (region 1) and `all` (region 2), and the box in +x is in the region `all`.
+    pub fn mesh_with_a_cell_in_two_regions() -> DomainMesh {
+        let mut tetrahedra = box_tetrahedra([-2., 0., 0.], [0., 1., 1.], &[0, 1]);
+        tetrahedra.extend(box_tetrahedra([0., 0., 0.], [2., 1., 1.], &[1]));
+
+        DomainMesh::new(&tetrahedra, &region_names(&["west", "all"])).unwrap()
     }
 
     /// An L shape in the x-y plane, 10 high in z, with its corner at (10, 20, 30):
-    /// two boxes of 5 x 5 with region 1 along x, and one box with region 2 in +y.
+    /// two boxes of 5 x 5 with the region `south` (region 1) along x, and one
+    /// box with the region `north` (region 2) in +y.
     /// The bounding box is 10 x 10 x 10 with its center at (15, 25, 35).
     pub fn l_shaped_mesh() -> DomainMesh {
-        let mut tetrahedra = box_tetrahedra([10., 20., 30.], [15., 25., 40.], &[1]);
-        tetrahedra.extend(box_tetrahedra([15., 20., 30.], [20., 25., 40.], &[1]));
-        tetrahedra.extend(box_tetrahedra([10., 25., 30.], [15., 30., 40.], &[2]));
+        let mut tetrahedra = box_tetrahedra([10., 20., 30.], [15., 25., 40.], &[0]);
+        tetrahedra.extend(box_tetrahedra([15., 20., 30.], [20., 25., 40.], &[0]));
+        tetrahedra.extend(box_tetrahedra([10., 25., 30.], [15., 30., 40.], &[1]));
 
-        DomainMesh::new(&tetrahedra).unwrap()
+        DomainMesh::new(&tetrahedra, &region_names(&["south", "north"])).unwrap()
     }
 }
 
@@ -443,11 +464,23 @@ mod tests {
     }
 
     #[test]
-    fn test_regions_are_in_the_order_of_their_values() {
+    fn test_regions_are_in_the_order_of_their_names() {
         let mesh = l_shaped_mesh();
-        let values: Vec<u64> = mesh.regions().iter().map(|region| region.value).collect();
+        let names: Vec<&str> = mesh
+            .regions()
+            .iter()
+            .map(|region| region.name.as_str())
+            .collect();
 
-        assert_eq!(values, [1, 2]);
+        assert_eq!(names, ["south", "north"]);
+    }
+
+    #[test]
+    fn test_region_with_no_cell_has_no_volume() {
+        let tetrahedra = box_tetrahedra([0.; 3], [1.; 3], &[]);
+        let mesh = DomainMesh::new(&tetrahedra, &region_names(&["empty"])).unwrap();
+
+        assert_eq!(mesh.regions()[0].volume, 0.);
     }
 
     #[test]
@@ -470,7 +503,7 @@ mod tests {
 
     #[test]
     fn test_mesh_without_regions_has_no_region() {
-        let mesh = DomainMesh::new(&box_tetrahedra([0.; 3], [1.; 3], &[])).unwrap();
+        let mesh = DomainMesh::new(&box_tetrahedra([0.; 3], [1.; 3], &[]), &[]).unwrap();
 
         assert!(mesh.regions().is_empty());
     }
@@ -479,7 +512,7 @@ mod tests {
     fn test_mesh_without_volume_is_rejected() {
         let flat_box = box_tetrahedra([0.; 3], [1., 1., 0.], &[]);
 
-        assert!(DomainMesh::new(&flat_box).is_err());
+        assert!(DomainMesh::new(&flat_box, &[]).is_err());
     }
 
     #[test]
@@ -560,10 +593,13 @@ mod tests {
             Point3::new(0., 4., 0.),
             Point3::new(0., 0., 4.),
         ];
-        let mesh = DomainMesh::new(&[MeshTetrahedron {
-            vertices,
-            regions: Vec::new(),
-        }])
+        let mesh = DomainMesh::new(
+            &[MeshTetrahedron {
+                vertices,
+                regions: Vec::new(),
+            }],
+            &[],
+        )
         .unwrap();
         let mut rng = Mt64::new(1);
         let count = 30000;

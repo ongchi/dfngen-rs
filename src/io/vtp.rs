@@ -5,7 +5,7 @@ use tracing::warn;
 
 use crate::error::DfngenError;
 use crate::io::vtu::{
-    find_child, find_data_array, read_component_count, read_regions, read_values, REGION_ARRAY,
+    find_child, find_data_array, read_component_count, read_region_arrays, read_values,
 };
 
 /// Cell kinds of a PolyData file which are not fractures. The cell data of
@@ -22,8 +22,9 @@ pub struct FracturePolygon {
     /// Vertices in the coordinates of the file
     pub vertices: Vec<[f64; 3]>,
 
-    /// Value of the cell data array `region`, 0 if the file has no such array
-    pub region: u64,
+    /// Names of the regions of the polygon: `<name>` of each cell data array
+    /// `region__<name>` in which the polygon has a value above 0.
+    pub regions: Vec<String>,
 
     /// Value of the cell data array `fracture_id`, `None` if the file has no
     /// such array. Polygons with the same value are pieces of one fracture.
@@ -34,7 +35,7 @@ pub struct FracturePolygon {
 ///
 /// Each polygon cell is one fracture, with the points of the cell as its
 /// vertices. The fractures are in the order of the cells. The cell data array
-/// `region` (optional) gives the region of each fracture. The cell data array
+/// arrays `region__<name>` (optional) give the regions of each fracture. The cell data array
 /// `fracture_id` (optional) gives the fracture of each polygon, for a fracture
 /// of more than one polygon. The point data and the other cell data of the
 /// file are ignored.
@@ -95,20 +96,7 @@ fn read_piece(piece: Node, fracture_count: usize) -> Result<Vec<FracturePolygon>
     let cell_count = cell_count_before_polygons + offsets.len() + cell_count_after_polygons;
     let cell_data = piece.children().find(|node| node.has_tag_name("CellData"));
 
-    let regions =
-        match cell_data.and_then(|cell_data| find_data_array(cell_data, REGION_ARRAY).ok()) {
-            Some(region_array) => {
-                if read_component_count(region_array)? != 1 {
-                    return Err(format!(
-                    "the {} array must have one value for each fracture (NumberOfComponents=\"1\")",
-                    REGION_ARRAY
-                ));
-                }
-
-                read_regions(region_array, cell_count)?
-            }
-            None => Vec::new(),
-        };
+    let region_arrays = read_region_arrays(piece, cell_count)?;
 
     let user_fracture_ids = cell_data
         .and_then(|cell_data| find_data_array(cell_data, FRACTURE_ID_ARRAY).ok())
@@ -141,10 +129,13 @@ fn read_piece(piece: Node, fracture_count: usize) -> Result<Vec<FracturePolygon>
 
         fractures.push(FracturePolygon {
             vertices: point_ids.iter().map(|&id| points[id]).collect(),
-            region: regions
-                .get(cell_count_before_polygons + cell)
-                .and_then(|cell_regions| cell_regions.first().copied())
-                .unwrap_or(0),
+            regions: region_arrays
+                .iter()
+                .filter(|region_array| {
+                    region_array.is_cell_in_region[cell_count_before_polygons + cell]
+                })
+                .map(|region_array| region_array.name.clone())
+                .collect(),
             fracture_id: user_fracture_ids
                 .as_ref()
                 .map(|ids| ids[cell_count_before_polygons + cell]),
@@ -321,60 +312,67 @@ mod tests {
         assert!(message.contains("not a VTK PolyData"), "{message}");
     }
 
-    fn region_cell_data(values: &str) -> String {
-        format!(
-            r#"<CellData>
-            <DataArray type="Int64" Name="region" format="ascii">{values}</DataArray>
-            </CellData>"#
-        )
+    /// `CellData` element with a `region__<name>` array for each name and its values
+    fn region_cell_data(arrays: &[(&str, &str)]) -> String {
+        let data_arrays: String = arrays
+            .iter()
+            .map(|(name, values)| {
+                format!(
+                    r#"<DataArray type="Int64" Name="region__{name}" format="ascii">{values}</DataArray>"#
+                )
+            })
+            .collect();
+
+        format!("<CellData>{data_arrays}</CellData>")
     }
 
-    fn regions(file: &str) -> Vec<u64> {
+    fn regions(file: &str) -> Vec<Vec<String>> {
         parse_user_fractures(file)
             .unwrap()
-            .iter()
-            .map(|fracture| fracture.region)
+            .into_iter()
+            .map(|fracture| fracture.regions)
             .collect()
     }
 
     #[test]
-    fn test_region_array_gives_the_region_of_each_fracture() {
-        let file = square_and_triangle_file(&region_cell_data("2 0"));
+    fn test_region_array_with_a_value_above_0_gives_a_region_of_the_fracture() {
+        let file = square_and_triangle_file(&region_cell_data(&[("rock", "1 0"), ("clay", "0 1")]));
 
-        assert_eq!(regions(&file), [2, 0]);
+        assert_eq!(regions(&file), [["rock"], ["clay"]]);
     }
 
     #[test]
-    fn test_file_without_region_array_gives_the_region_0() {
-        assert_eq!(regions(&square_and_triangle_file("")), [0, 0]);
+    fn test_fracture_with_a_value_above_0_in_two_region_arrays_has_two_regions() {
+        let file = square_and_triangle_file(&region_cell_data(&[("rock", "1 1"), ("clay", "0 1")]));
+
+        assert_eq!(regions(&file), [vec!["rock"], vec!["rock", "clay"]]);
+    }
+
+    #[test]
+    fn test_file_without_region_arrays_gives_no_region() {
+        assert!(regions(&square_and_triangle_file(""))
+            .iter()
+            .all(Vec::is_empty));
     }
 
     #[test]
     fn test_region_array_with_one_value_for_two_cells_is_rejected() {
-        let message = error_message(&square_and_triangle_file(&region_cell_data("2")));
+        let message = error_message(&square_and_triangle_file(&region_cell_data(&[(
+            "rock", "1",
+        )])));
 
         assert!(
-            message.contains("the region array must have one value for each cell"),
-            "{message}"
-        );
-    }
-
-    #[test]
-    fn test_region_array_with_two_components_is_rejected() {
-        let cell_data = region_cell_data("2 1 0 0").replace(
-            r#"Name="region""#,
-            r#"Name="region" NumberOfComponents="2""#,
-        );
-        let message = error_message(&square_and_triangle_file(&cell_data));
-
-        assert!(
-            message.contains("the region array must have one value for each fracture"),
+            message.contains("region__rock must have one value for each cell"),
             "{message}"
         );
     }
 
     fn fracture_id_cell_data(values: &str) -> String {
-        region_cell_data(values).replace("region", "fracture_id")
+        format!(
+            r#"<CellData>
+            <DataArray type="Int64" Name="fracture_id" format="ascii">{values}</DataArray>
+            </CellData>"#
+        )
     }
 
     fn fracture_ids(file: &str) -> Vec<Option<u64>> {
@@ -439,12 +437,13 @@ mod tests {
             <DataArray type="Int64" Name="offsets" format="ascii">2</DataArray>
             </Lines>
             {}"#,
-            region_cell_data("7 2 1")
+            region_cell_data(&[("rock", "1 1 0")])
         );
+        let expected: [&[&str]; 2] = [&["rock"], &[]];
 
         assert_eq!(
             regions(&square_and_triangle_file(&line_and_regions)),
-            [2, 1]
+            expected
         );
     }
 }

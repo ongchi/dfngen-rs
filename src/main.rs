@@ -541,7 +541,7 @@ fn log_family_location(frac_fam: &FractureFamily, input: &Input) {
         0 => info!("Region: Whole Domain"),
         region_id => info!(
             "Region: {} of the domain mesh",
-            input.domain_mesh.regions()[region_id - 1].value
+            input.domain_mesh.regions()[region_id - 1].name
         ),
     }
 }

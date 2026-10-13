@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
-<!-- Fracture 1 is in the regions 1 and 2 of the mesh, and it must intersect
-     region 2. Fracture 2 has the region 0 (any region); it is in the corner of
-     the bounding box which has no cell, thus it is rejected. -->
+<!-- Fracture 1 is in the regions south and north of the mesh, and it must
+     intersect the region north. Fracture 2 has no region (any cell); it is in
+     the corner of the bounding box which has no cell, thus it is rejected. -->
 <VTKFile type="PolyData" version="1.0" byte_order="LittleEndian">
 <PolyData>
 <Piece NumberOfPoints="8" NumberOfVerts="0" NumberOfLines="0" NumberOfStrips="0" NumberOfPolys="2">
@@ -33,9 +33,9 @@
 8
 </DataArray>
 </Polys>
-<CellData Scalars="region">
-<DataArray type="Int32" Name="region" format="ascii">
-2 0
+<CellData Scalars="region__north">
+<DataArray type="Int32" Name="region__north" format="ascii">
+1 0
 </DataArray>
 </CellData>
 </Piece>

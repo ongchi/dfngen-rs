@@ -31,7 +31,6 @@ rejected_fractures = false
 number_of_points = 8
 probability = 0.18173431734317344
 aspect_ratio = 1.0
-region = 0
 p32_target = 0.00591
 radius = { distribution = "truncated_power_law", alpha = 2.5, min = 15.0, max = 500.0 }
 orientation = { trend = 90.0, plunge = 0.0, kappa = 22.0 }
@@ -40,7 +39,6 @@ orientation = { trend = 90.0, plunge = 0.0, kappa = 22.0 }
 number_of_points = 8
 probability = 0.14760147601476015
 aspect_ratio = 1.0
-region = 0
 p32_target = 0.0048
 radius = { distribution = "truncated_power_law", alpha = 2.7, min = 15.0, max = 500.0 }
 orientation = { trend = 180.0, plunge = 0.0, kappa = 22.0 }
@@ -49,7 +47,6 @@ orientation = { trend = 180.0, plunge = 0.0, kappa = 22.0 }
 number_of_points = 8
 probability = 0.6706642066420664
 aspect_ratio = 1.0
-region = 0
 p32_target = 0.02181
 radius = { distribution = "truncated_power_law", alpha = 2.4, min = 15.0, max = 500.0 }
 orientation = { trend = 360.0, plunge = 90.0, kappa = 10.0 }

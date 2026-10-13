@@ -34,16 +34,15 @@ rejected_fractures = false
 number_of_points = 8
 probability = 0.6
 aspect_ratio = 1.0
-region = 0
 radius = { distribution = "truncated_power_law", alpha = 2.5, min = 1.0, max = 5.0 }
 orientation = { theta = 0.0, phi = 0.0, kappa = 8.0 }
 
-# Only the cells with region = 2
+# Only the cells of the region north
 [[family]]
 number_of_points = 12
 probability = 0.4
 aspect_ratio = 2.0
-region = 2
+region = "north"
 beta = 30.0
 radius = { distribution = "constant", value = 1.5 }
 orientation = { theta = 45.0, phi = 15.0, kappa = 20.0 }

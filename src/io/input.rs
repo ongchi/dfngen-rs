@@ -220,7 +220,9 @@ struct FamilySection {
     number_of_points: usize,
     probability: f64,
     aspect_ratio: f64,
-    region: usize,
+    /// Name of a region of the domain mesh (optional). Without it, the
+    /// family uses the whole mesh.
+    region: Option<String>,
     beta: Option<f64>,
     p32_target: Option<f64>,
     radius: RadiusSection,
@@ -292,21 +294,30 @@ fn parse_input_file(text: &str) -> Result<InputFile, DfngenError> {
     toml::from_str(text).map_err(|e| invalid_input(e.to_string()))
 }
 
-/// Position in the mesh regions (starts at 1) of the region value of a family
-/// or of a user-defined fracture. 0 is the whole mesh.
-fn find_mesh_region_id(region_value: u64, mesh_regions: &[MeshRegion]) -> Result<usize, String> {
-    if region_value == 0 {
+/// Position in the mesh regions (starts at 1) of the region name of a family
+/// or of a user-defined fracture. No name gives 0, the whole mesh.
+fn find_mesh_region_id(
+    region_name: Option<&str>,
+    mesh_regions: &[MeshRegion],
+) -> Result<usize, String> {
+    let Some(region_name) = region_name else {
         return Ok(0);
-    }
+    };
 
-    mesh_regions
+    match mesh_regions
         .iter()
-        .position(|region| region.value == region_value)
-        .map(|position| position + 1)
-        .ok_or(format!(
-            "no cell of the domain mesh has the region {}",
-            region_value
-        ))
+        .position(|region| region.name == region_name)
+    {
+        Some(position) if mesh_regions[position].volume > 0. => Ok(position + 1),
+        Some(_) => Err(format!(
+            "no cell of the domain mesh is in the region {}",
+            region_name
+        )),
+        None => Err(format!(
+            "the domain mesh has no region {} (no cell data array region__{})",
+            region_name, region_name
+        )),
+    }
 }
 
 /// Builds the input options and the stochastic fracture families.
@@ -425,7 +436,7 @@ fn build_input(
 }
 
 /// Moves a polygon of the user-defined fracture file to the coordinates of
-/// the generation (the center of the mesh at the origin), and finds its region
+/// the generation (the center of the mesh at the origin), and finds its regions
 /// in the mesh.
 fn build_user_fracture(
     polygon: &FracturePolygon,
@@ -439,7 +450,11 @@ fn build_user_fracture(
             .iter()
             .map(|&vertex| (Vector3::from(vertex) - domain_center).into())
             .collect(),
-        region_id: find_mesh_region_id(polygon.region, domain_mesh.regions())?,
+        region_ids: polygon
+            .regions
+            .iter()
+            .map(|region| find_mesh_region_id(Some(region), domain_mesh.regions()))
+            .collect::<Result<_, _>>()?,
         fracture_id: polygon.fracture_id,
     })
 }
@@ -457,7 +472,7 @@ fn build_family(
     id: usize,
     context: &FamilyContext,
 ) -> Result<FractureFamily, String> {
-    let region_id = find_mesh_region_id(section.region as u64, context.domain_mesh.regions())?;
+    let region_id = find_mesh_region_id(section.region.as_deref(), context.domain_mesh.regions())?;
 
     let mut builder = FractureFamilyBuilder::default();
 
@@ -616,7 +631,7 @@ pub mod test_inputs {
     "#;
 
     /// Reads the sections with the L-shaped mesh as the domain. The mesh has
-    /// the regions 1 and 2, and its center is (15, 25, 35).
+    /// the regions `south` and `north`, and its center is (15, 25, 35).
     pub fn parse(sections: &[&str]) -> Result<(Input, FractureFamilyCollection), DfngenError> {
         build_input(
             parse_input_file(&sections.concat())?,
@@ -635,7 +650,7 @@ pub mod test_inputs {
 mod tests {
     use super::test_inputs::{parse, GENERAL_OPTIONS};
     use super::*;
-    use crate::domain_mesh::test_meshes::l_shaped_mesh;
+    use crate::domain_mesh::test_meshes::{box_tetrahedra, l_shaped_mesh, region_names};
     use crate::structures::RadiusFunction;
 
     const RECTANGLE_FAMILY: &str = r#"
@@ -643,7 +658,6 @@ mod tests {
         number_of_points = 4
         probability = 0.6
         aspect_ratio = 1.5
-        region = 0
         radius = { distribution = "log_normal", log_mean = 0.5, sd = 0.4, min = 1.0, max = 4.0 }
         orientation = { trend = 90.0, plunge = 30.0, kappa = 10.0 }
     "#;
@@ -653,7 +667,6 @@ mod tests {
         number_of_points = 8
         probability = 0.4
         aspect_ratio = 1.0
-        region = 0
         beta = 90.0
         radius = { distribution = "truncated_power_law", alpha = 2.5, min = 1.0, max = 5.0 }
         orientation = { theta = 0.0, phi = 0.0, kappa = 8.0 }
@@ -707,33 +720,74 @@ mod tests {
         );
     }
 
+    /// `RECTANGLE_FAMILY` with the given value of the `region` key
+    fn rectangle_family_with_region(region: &str) -> String {
+        RECTANGLE_FAMILY.replace(
+            "aspect_ratio = 1.5",
+            &format!("aspect_ratio = 1.5\nregion = {region}"),
+        )
+    }
+
     #[test]
-    fn test_family_region_selects_the_mesh_region_with_that_value() {
-        let family = RECTANGLE_FAMILY.replace("region = 0", "region = 2");
+    fn test_family_region_selects_the_mesh_region_with_that_name() {
+        let family = rectangle_family_with_region(r#""north""#);
         let (_, families) = parse(&[GENERAL_OPTIONS, &family]).unwrap();
 
         assert_eq!(families.families[0].region_id, 2);
     }
 
     #[test]
+    fn test_family_without_region_uses_the_whole_mesh() {
+        let (_, families) = parse(&[GENERAL_OPTIONS, RECTANGLE_FAMILY]).unwrap();
+
+        assert_eq!(families.families[0].region_id, 0);
+    }
+
+    #[test]
     fn test_family_with_region_which_the_mesh_does_not_have_is_rejected() {
-        let family = RECTANGLE_FAMILY.replace("region = 0", "region = 3");
+        let family = rectangle_family_with_region(r#""east""#);
         let message = error_message(parse(&[GENERAL_OPTIONS, &family]));
 
         assert!(
-            message.contains("no cell of the domain mesh has the region 3"),
+            message.contains("the domain mesh has no region east"),
+            "{message}"
+        );
+    }
+
+    #[test]
+    fn test_family_with_a_number_as_region_is_rejected() {
+        let family = rectangle_family_with_region("0");
+        let message = error_message(parse(&[GENERAL_OPTIONS, &family]));
+
+        assert!(message.contains("expected a string"), "{message}");
+    }
+
+    #[test]
+    fn test_family_with_region_which_has_no_cell_is_rejected() {
+        let tetrahedra = box_tetrahedra([0.; 3], [1.; 3], &[]);
+        let mesh = DomainMesh::new(&tetrahedra, &region_names(&["empty"])).unwrap();
+        let options = [GENERAL_OPTIONS, &rectangle_family_with_region(r#""empty""#)].concat();
+
+        let message = error_message(build_input(
+            parse_input_file(&options).unwrap(),
+            mesh,
+            Vec::new(),
+        ));
+
+        assert!(
+            message.contains("no cell of the domain mesh is in the region empty"),
             "{message}"
         );
     }
 
     /// Builds the input with one triangle in the L-shaped mesh as the
     /// user-defined fracture. The first vertex is the center of the mesh.
-    fn parse_with_triangle_of_region(
-        region: u64,
+    fn parse_with_triangle_of_regions(
+        regions: &[&str],
     ) -> Result<(Input, FractureFamilyCollection), DfngenError> {
         let triangle = FracturePolygon {
             vertices: vec![[15., 25., 35.], [16., 25., 35.], [16., 26., 35.]],
-            region,
+            regions: regions.iter().map(|region| region.to_string()).collect(),
             fracture_id: Some(4),
         };
 
@@ -746,32 +800,31 @@ mod tests {
 
     #[test]
     fn test_user_fracture_coordinates_are_moved_by_the_mesh_center() {
-        let (input, _) = parse_with_triangle_of_region(0).unwrap();
+        let (input, _) = parse_with_triangle_of_regions(&[]).unwrap();
 
         assert_eq!(input.user_fractures[0].vertices[0], [0., 0., 0.]);
     }
 
     #[test]
-    fn test_user_fracture_region_selects_the_mesh_region_with_that_value() {
-        let (input, _) = parse_with_triangle_of_region(2).unwrap();
+    fn test_user_fracture_regions_select_the_mesh_regions_with_those_names() {
+        let (input, _) = parse_with_triangle_of_regions(&["north", "south"]).unwrap();
 
-        assert_eq!(input.user_fractures[0].region_id, 2);
+        assert_eq!(input.user_fractures[0].region_ids, [2, 1]);
     }
 
     #[test]
     fn test_user_fracture_keeps_the_fracture_id_of_its_polygon() {
-        let (input, _) = parse_with_triangle_of_region(0).unwrap();
+        let (input, _) = parse_with_triangle_of_regions(&[]).unwrap();
 
         assert_eq!(input.user_fractures[0].fracture_id, Some(4));
     }
 
     #[test]
     fn test_user_fracture_with_region_which_the_mesh_does_not_have_is_rejected() {
-        let message = error_message(parse_with_triangle_of_region(3));
+        let message = error_message(parse_with_triangle_of_regions(&["east"]));
 
         assert!(
-            message
-                .contains("user-defined fracture 1: no cell of the domain mesh has the region 3"),
+            message.contains("user-defined fracture 1: the domain mesh has no region east"),
             "{message}"
         );
     }

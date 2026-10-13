@@ -291,7 +291,6 @@ def convert_families(dat: DatFile, prefix: str, probabilities: list[str]) -> lis
             f"number_of_points = {point_count}",
             f"probability = {number(probabilities.pop(0))}",
             f"aspect_ratio = {number(values('aspect')[i])}",
-            "region = 0",
         ]
         if has_beta[i]:
             lines.append(f"beta = {angle(next(betas), is_degree)}")

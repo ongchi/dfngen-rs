@@ -53,7 +53,7 @@ rejected_fractures = false
 number_of_points = 8               # 3 or more; 4 gives a rectangle
 probability = 0.4
 aspect_ratio = 1.0
-region = 0                         # 0 = whole domain, N = the cells with the region N
+region = "marble"                  # optional; a region of the mesh (see below). Without it: the whole mesh
 beta = 30.0                        # optional; without it the rotation is uniform
 p32_target = 0.5                   # necessary only for stop_condition "p32"
 radius = { distribution = "truncated_power_law", alpha = 2.5, min = 1.0, max = 5.0 }
@@ -112,29 +112,32 @@ definition of the domain. `tests/data/mesh_domain` is an example, and
 - All coordinates in the input file and in the output files are the coordinates
   of the mesh file.
 
-Regions of the mesh: the cell data array `region` (optional) gives one integer
-of 0 or more for each cell. `region = N` of a family (N > 0) puts the fracture
-centers of the family only in the cells with the value N, and the P32 volume of
-the family is the volume of these cells. `region = 0` of a family is the whole
-mesh. Without the `region` array, all cells have the region 0. A family with a
-region value which no cell has is an error.
+Regions of the mesh: each cell data array with a name `region__<name>`
+(optional) is one region with the name `<name>`. The array has one value for
+each cell (one component). A cell with a value above 0 is in the region. Thus
+each region is one scalar array, which ParaView can show and use in a
+Threshold filter.
 
-A cell can be in more than one region: give the `region` array the attribute
-`NumberOfComponents="N"`, and N integers for each cell. Each value above 0 puts
-the cell in that region. Use 0 for the values which a cell does not need; the
-position of a value has no meaning. The volume of a region is the sum of the
-volumes of all its cells, thus the sum of the region volumes can be larger than
-the volume of the mesh. In this example, the first cell is in the regions 1 and
-2, the second cell is in the region 2, and the third cell has no region
-(`tests/data/all_input_options` is an example):
+`region = "<name>"` of a family puts the fracture centers of the family only in
+the cells of that region, and the P32 volume of the family is the volume of
+these cells. A family without the `region` key uses the whole mesh. A name
+which the mesh does not have, and a region with no cell, are errors.
+
+A cell can be in more than one region, and in none. The volume of a region is
+the sum of the volumes of all its cells, thus the sum of the region volumes can
+be larger than the volume of the mesh. In this example, the first cell is in
+the regions `marble` and `north`, the second cell is in the region `north`, and
+the third cell has no region (`tests/data/all_input_options` is an example):
 
 ```xml
-<DataArray type="Int32" Name="region" NumberOfComponents="2" format="ascii">
-1 2
-2 0
-0 0
-</DataArray>
+<CellData>
+<DataArray type="Int32" Name="region__marble" format="ascii">1 0 0</DataArray>
+<DataArray type="Int32" Name="region__north" format="ascii">1 1 0</DataArray>
+</CellData>
 ```
+
+A cell data array with the name `region` (the format of the versions before
+0.7.0) is ignored, as all other cell data.
 
 A cell is split into tetrahedra for the sampling of the centers, the check of
 the user-defined fractures and the volume. This is approximate for a
@@ -172,15 +175,15 @@ must be before the first table (`[domain]`) of the input file.
 - A polygon must have 3 points or more. The fractures are inserted in the
   order of the cells.
 - The coordinates are those of the mesh file.
-- The cell data array `region` (optional) gives the region of each fracture:
-  one integer of 0 or more for each cell of the file. A fracture has one
-  region: an array with more than one component is an error. A
-  fracture with the region N (N > 0) is accepted only if it intersects a cell
-  of the mesh with the region N. If not, it is rejected as a fracture outside
-  the domain. The fracture is not cut at the region: a part of it can be in
-  other regions. A fracture with the region 0, or a file without the array, is
-  checked against all cells. A region value which no cell of the mesh has is
-  an error. `tests/data/mesh_domain` is an example.
+- The cell data arrays `region__<name>` (optional) give the regions of each
+  fracture, as in the mesh file: a polygon with a value above 0 in the array
+  `region__<name>` has the region `<name>`. A fracture can have many regions,
+  and none. A fracture with regions is accepted only if it intersects a cell
+  of the mesh in one or more of its regions. If not, it is rejected as a
+  fracture outside the domain. The fracture is not cut at a region: a part of
+  it can be in other regions. A fracture with no region is checked against all
+  cells. A region of a fracture which the mesh does not have, or which has no
+  cell, is an error. `tests/data/mesh_domain` is an example.
 - The cell data array `fracture_id` (optional) gives the fracture of each
   polygon: one integer of 0 or more for each cell of the file. Polygons with
   the same value are the pieces of one fracture, for example a surface from
@@ -195,7 +198,7 @@ must be before the first table (`[domain]`) of the input file.
     FRAM does not compare its intersections with the two pieces to each other.
 
   - The domain check is for the fracture. If one piece has a part in the
-    domain (it intersects a cell of the mesh, or of its region), no piece of
+    domain (it intersects a cell of the mesh, or of its regions), no piece of
     the fracture is rejected as outside the domain. Thus an accepted piece
     can be fully outside the mesh or in cells of another region, and its
     area is in the total area and in P32. With `truncate_fractures = true`, a
@@ -215,7 +218,7 @@ must be before the first table (`[domain]`) of the input file.
   at the user-defined fractures.
 - The point data and the other cell data of the file are ignored. Thus
   `fractures.vtp` of a run can be the user-defined fractures of a new run. It
-  has no `region` array, so its fractures have the region 0. Its `fracture_id`
+  has no `region__<name>` array, so its fractures have no region. Its `fracture_id`
   array has a different number for each polygon, so each polygon is one
   fracture.
 - Cells which are not polygons (vertices, lines, strips) are ignored with a

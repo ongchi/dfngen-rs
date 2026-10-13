@@ -33,7 +33,6 @@ rejected_fractures = true
 number_of_points = 8
 probability = 0.4
 aspect_ratio = 1.0
-region = 0
 radius = { distribution = "exponential", mean = 2.0, min = 1.0, max = 5.0 }
 orientation = { dip = 30.0, strike = 10.0, kappa = 8.0 }
 
@@ -41,7 +40,7 @@ orientation = { dip = 30.0, strike = 10.0, kappa = 8.0 }
 number_of_points = 12
 probability = 0.3
 aspect_ratio = 2.0
-region = 1
+region = "center"
 beta = 25.0
 radius = { distribution = "constant", value = 2.0 }
 orientation = { dip = 60.0, strike = 200.0, kappa = 20.0 }
@@ -50,6 +49,6 @@ orientation = { dip = 60.0, strike = 200.0, kappa = 20.0 }
 number_of_points = 4
 probability = 0.3
 aspect_ratio = 1.5
-region = 2
+region = "center_and_east"
 radius = { distribution = "log_normal", log_mean = 0.8465735902799727, sd = 0.4, min = 1.4142135623730951, max = 5.656854249492381, sampling = "inverse_cdf" }
 orientation = { dip = 45.0, strike = 90.0, kappa = 10.0 }

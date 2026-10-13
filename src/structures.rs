@@ -403,11 +403,11 @@ impl DFNGen {
         );
         let is_rejected = match domain_check {
             // Poly completely outside domain, or it intersects no cell of its region of the domain mesh
-            DomainCheck::Region(region_id) => {
+            DomainCheck::Regions(region_ids) => {
                 is_outside_box_domain
                     || !opts
                         .domain_mesh
-                        .intersects_polygon(&new_poly.vertices, region_id)
+                        .intersects_polygon_in_any_region(&new_poly.vertices, region_ids)
             }
             // The truncation left no polygon. A whole polygon is kept.
             DomainCheck::FractureIsInDomain => {
@@ -420,8 +420,8 @@ impl DFNGen {
             self.pstats.rejected_poly_count += 1;
             self.pstats.rejected_user_fracture.push(poly_id);
             match domain_check {
-                DomainCheck::Region(region_id) if region_id != 0 => warn!(
-                    "User-defined fracture {}: rejected for being outside its region of the domain.",
+                DomainCheck::Regions(region_ids) if !region_ids.is_empty() => warn!(
+                    "User-defined fracture {}: rejected for being outside its regions of the domain.",
                     poly_id
                 ),
                 _ => warn!(
@@ -618,7 +618,7 @@ mod tests {
         for poly_id in 1..=2 {
             let mut rectangle = Poly::new(4, 1., 1.);
             rectangle.normal = Vector3::new(0., 0., 1.);
-            dfngen.insert_poly(rectangle, poly_id, DomainCheck::Region(0), &opts);
+            dfngen.insert_poly(rectangle, poly_id, DomainCheck::Regions(&[]), &opts);
         }
 
         dfngen
@@ -627,19 +627,19 @@ mod tests {
     /// Inserts a horizontal square with sides of 2 into the L-shaped domain mesh.
     /// The mesh has no cell where x and y are positive.
     fn insert_square_into_l_shaped_mesh(center: [f64; 3]) -> DFNGen {
-        insert_square_into_region(center, 0)
+        insert_square_into_regions(center, &[])
     }
 
-    /// As `insert_square_into_l_shaped_mesh`, for a square which must intersect the region.
+    /// As `insert_square_into_l_shaped_mesh`, for a square which must intersect one of the regions.
     /// Region 1 is where y is negative, and region 2 is where x is negative and y is positive.
-    fn insert_square_into_region(center: [f64; 3], region_id: usize) -> DFNGen {
+    fn insert_square_into_regions(center: [f64; 3], region_ids: &[usize]) -> DFNGen {
         let opts = poly_options(false);
         let mut dfngen = DFNGen::new();
 
         let mut square = Poly::new(4, 2f64.sqrt(), 1.);
         square.normal = Vector3::new(0., 0., 1.);
         square.translate(Vector3::from(center));
-        dfngen.insert_poly(square, 1, DomainCheck::Region(region_id), &opts);
+        dfngen.insert_poly(square, 1, DomainCheck::Regions(region_ids), &opts);
 
         dfngen
     }
@@ -653,16 +653,23 @@ mod tests {
 
     #[test]
     fn test_user_fracture_which_intersects_a_cell_of_its_region_is_accepted() {
-        let dfngen = insert_square_into_region([2.5, -2.5, 0.], 1);
+        let dfngen = insert_square_into_regions([2.5, -2.5, 0.], &[1]);
 
         assert_eq!(dfngen.accepted_poly.len(), 1);
     }
 
     #[test]
     fn test_user_fracture_which_intersects_only_cells_of_another_region_is_rejected() {
-        let dfngen = insert_square_into_region([2.5, -2.5, 0.], 2);
+        let dfngen = insert_square_into_regions([2.5, -2.5, 0.], &[2]);
 
         assert_eq!(dfngen.pstats.rejected_user_fracture, [1]);
+    }
+
+    #[test]
+    fn test_user_fracture_which_intersects_a_cell_of_one_of_its_regions_is_accepted() {
+        let dfngen = insert_square_into_regions([2.5, -2.5, 0.], &[2, 1]);
+
+        assert_eq!(dfngen.accepted_poly.len(), 1);
     }
 
     #[test]
@@ -729,7 +736,7 @@ mod tests {
             .iter()
             .map(|(vertices, fracture_id)| UserFracture {
                 vertices: vertices.to_vec(),
-                region_id: 0,
+                region_ids: Vec::new(),
                 fracture_id: *fracture_id,
             })
             .collect();

@@ -32,7 +32,6 @@ rejected_fractures = false
 number_of_points = 4
 probability = 0.5
 aspect_ratio = 1.0
-region = 0
 p32_target = 1.4568217933106986
 radius = { distribution = "log_normal", log_mean = 1.9365735902799728, sd = 0.15, min = 1.4142135623730951, max = 14.142135623730951 }
 orientation = { trend = 231.0, plunge = 41.0, kappa = 8.0 }
@@ -41,7 +40,6 @@ orientation = { trend = 231.0, plunge = 41.0, kappa = 8.0 }
 number_of_points = 4
 probability = 0.5
 aspect_ratio = 1.0
-region = 0
 p32_target = 1.4568217933106986
 radius = { distribution = "log_normal", log_mean = 1.9365735902799728, sd = 0.15, min = 1.4142135623730951, max = 14.142135623730951 }
 orientation = { trend = 40.0, plunge = 46.0, kappa = 9.0 }

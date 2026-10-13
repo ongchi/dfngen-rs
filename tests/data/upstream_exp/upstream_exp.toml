@@ -32,6 +32,5 @@ rejected_fractures = false
 number_of_points = 4
 probability = 1.0
 aspect_ratio = 1.0
-region = 0
 radius = { distribution = "exponential", mean = 3.5355339059327378, min = 1.4142135623730951, max = 14.142135623730951 }
 orientation = { theta = 0.0, phi = 0.0, kappa = 0.1 }

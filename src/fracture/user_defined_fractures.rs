@@ -28,7 +28,7 @@ pub fn insert_user_defined_fractures(
     for (i, fracture) in fractures.iter().enumerate() {
         let domain_check = match fracture.fracture_id {
             Some(id) if fracture_ids_in_domain.contains(&id) => DomainCheck::FractureIsInDomain,
-            _ => DomainCheck::Region(fracture.region_id),
+            _ => DomainCheck::Regions(&fracture.region_ids),
         };
         dfngen.insert_poly(fracture.to_poly(), i + 1, domain_check, poly_opts);
     }
@@ -37,7 +37,7 @@ pub fn insert_user_defined_fractures(
 }
 
 /// True if the polygon has a part in the box domain and intersects a cell of
-/// its region of the domain mesh.
+/// one of its regions of the domain mesh.
 fn is_piece_in_domain(fracture: &UserFracture, opts: &PolyOptions) -> bool {
     let mut poly = fracture.to_poly();
 
@@ -48,14 +48,15 @@ fn is_piece_in_domain(fracture: &UserFracture, opts: &PolyOptions) -> bool {
         opts.domain_boundary_mode,
     ) && opts
         .domain_mesh
-        .intersects_polygon(&poly.vertices, fracture.region_id)
+        .intersects_polygon_in_any_region(&poly.vertices, &fracture.region_ids)
 }
 
 /// Domain check of a user-defined fracture at its insertion.
 #[derive(Clone, Copy)]
-pub enum DomainCheck {
-    /// The polygon must intersect a cell of this region of the domain mesh, 0 = any region.
-    Region(usize),
+pub enum DomainCheck<'a> {
+    /// The polygon must intersect a cell of one of these regions of the
+    /// domain mesh. No region means a cell of any region.
+    Regions(&'a [usize]),
 
     /// The polygon is a piece of a fracture which has a piece in the domain.
     /// It is rejected only if the domain truncation leaves no polygon.
@@ -68,10 +69,10 @@ pub enum DomainCheck {
 pub struct UserFracture {
     pub vertices: Vec<[f64; 3]>,
 
-    /// Region of the domain mesh which the fracture must intersect. 0 is any
-    /// region, greater than 0 is the position of the region in
-    /// `DomainMesh::regions` plus 1.
-    pub region_id: usize,
+    /// Regions of the domain mesh: the fracture must intersect a cell of one
+    /// of them. Each is the position of the region in `DomainMesh::regions`
+    /// plus 1. Empty is a cell of any region.
+    pub region_ids: Vec<usize>,
 
     /// Value of the `fracture_id` array of the file. Polygons with the same
     /// value are pieces of one fracture. `None` if the file has no such array.
@@ -140,7 +141,7 @@ mod tests {
     fn test_triangle_by_vertices_has_its_normal() {
         let triangle = UserFracture {
             vertices: vec![[0., 0., 0.], [1., 0., 0.], [1., 1., 0.]],
-            region_id: 0,
+            region_ids: Vec::new(),
             fracture_id: None,
         };
 

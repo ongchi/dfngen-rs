@@ -5,9 +5,12 @@
 <VTKFile type="UnstructuredGrid" version="1.0" byte_order="LittleEndian">
 <UnstructuredGrid>
 <Piece NumberOfPoints="16" NumberOfCells="4">
-<CellData Scalars="region">
-<DataArray type="Int32" Name="region" format="ascii">
-1 1 2 2
+<CellData Scalars="region__south">
+<DataArray type="Int32" Name="region__south" format="ascii">
+1 1 0 0
+</DataArray>
+<DataArray type="Int32" Name="region__north" format="ascii">
+0 0 1 1
 </DataArray>
 </CellData>
 <Points>

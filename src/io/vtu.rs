@@ -7,13 +7,22 @@ use roxmltree::{Document, Node};
 use crate::domain_mesh::{DomainMesh, MeshTetrahedron};
 use crate::error::DfngenError;
 
-/// Name of the cell data array which gives the region of each cell
-pub(super) const REGION_ARRAY: &str = "region";
+/// Prefix of the name of a cell data array which gives one region:
+/// `region__<name>`
+const REGION_ARRAY_PREFIX: &str = "region__";
+
+/// One cell data array `region__<name>`
+pub(super) struct RegionArray {
+    /// `<name>` of the array name
+    pub name: String,
+    /// For each cell of the piece: true if its value is above 0
+    pub is_cell_in_region: Vec<bool>,
+}
 
 /// Reads the domain from a VTK XML UnstructuredGrid file (`.vtu`, ASCII)
 ///
 /// The cells can be tetrahedra, voxels, hexahedra, wedges and pyramids. The
-/// cell data array `region` (optional) gives the region of each cell.
+/// cell data arrays `region__<name>` (optional) give the regions of each cell.
 pub fn read_domain_mesh(path: &Path) -> Result<DomainMesh, DfngenError> {
     let invalid_mesh =
         |message: String| DfngenError::InvalidInput(format!("{}: {}", path.display(), message));
@@ -37,16 +46,22 @@ fn parse_domain_mesh(text: &str) -> Result<DomainMesh, String> {
     }
 
     let mut tetrahedra = Vec::new();
+    let mut region_names = Vec::new();
 
     for piece in root.descendants().filter(|node| node.has_tag_name("Piece")) {
-        tetrahedra.extend(read_piece(piece)?);
+        tetrahedra.extend(read_piece(piece, &mut region_names)?);
     }
 
-    DomainMesh::new(&tetrahedra)
+    DomainMesh::new(&tetrahedra, &region_names)
 }
 
 /// Reads the cells of one `Piece` element and splits them into tetrahedra.
-fn read_piece(piece: Node) -> Result<Vec<MeshTetrahedron>, String> {
+///
+/// # Arguments
+///
+/// * `piece` - `Piece` element
+/// * `region_names` - Names of the regions of the pieces before this one. The new names of this piece are added.
+fn read_piece(piece: Node, region_names: &mut Vec<String>) -> Result<Vec<MeshTetrahedron>, String> {
     let points_element = find_child(piece, "Points")?;
     let cells_element = find_child(piece, "Cells")?;
 
@@ -69,14 +84,22 @@ fn read_piece(piece: Node) -> Result<Vec<MeshTetrahedron>, String> {
         .map(|&coordinates| Point3::from(coordinates))
         .collect();
 
-    let regions = match piece
-        .children()
-        .find(|node| node.has_tag_name("CellData"))
-        .and_then(|cell_data| find_data_array(cell_data, REGION_ARRAY).ok())
-    {
-        Some(region_array) => read_regions(region_array, types.len())?,
-        None => vec![Vec::new(); types.len()],
-    };
+    // Each region array with its position in the region names
+    let mut region_arrays = Vec::new();
+
+    for region_array in read_region_arrays(piece, types.len())? {
+        let position = match region_names
+            .iter()
+            .position(|name| *name == region_array.name)
+        {
+            Some(position) => position,
+            None => {
+                region_names.push(region_array.name.clone());
+                region_names.len() - 1
+            }
+        };
+        region_arrays.push((position, region_array));
+    }
 
     let mut tetrahedra = Vec::new();
     let mut cell_start = 0;
@@ -93,10 +116,15 @@ fn read_piece(piece: Node) -> Result<Vec<MeshTetrahedron>, String> {
 
         let local_tetrahedra = split_cell_into_tetrahedra(cell_type, point_ids.len())
             .map_err(|message| format!("cell {}: {}", cell, message))?;
+        let cell_regions: Vec<usize> = region_arrays
+            .iter()
+            .filter(|(_, region_array)| region_array.is_cell_in_region[cell])
+            .map(|&(position, _)| position)
+            .collect();
 
         tetrahedra.extend(local_tetrahedra.iter().map(|local_ids| MeshTetrahedron {
             vertices: local_ids.map(|local_id| points[point_ids[local_id]]),
-            regions: regions[cell].clone(),
+            regions: cell_regions.clone(),
         }));
 
         cell_start = cell_end;
@@ -122,54 +150,64 @@ pub(super) fn read_component_count(data_array: Node) -> Result<usize, String> {
     }
 }
 
-/// Reads the `region` array: `NumberOfComponents` integers of 0 or more for
-/// each cell. The array can have a real type, but each value must be a whole
-/// number.
+/// Reads the cell data arrays `region__<name>` of a piece, in the order of
+/// the file. Each array is one region, with one value for each cell: a cell
+/// with a value above 0 is in the region.
 ///
-/// # Returns
+/// # Arguments
 ///
-/// The regions of each cell: its values above 0 in ascending order, each
-/// value one time
-pub(super) fn read_regions(region_array: Node, cell_count: usize) -> Result<Vec<Vec<u64>>, String> {
-    let component_count = read_component_count(region_array)?;
-    let values: Vec<f64> = read_values(region_array)?;
+/// * `piece` - `Piece` element
+/// * `cell_count` - Number of cells of the piece
+pub(super) fn read_region_arrays(
+    piece: Node,
+    cell_count: usize,
+) -> Result<Vec<RegionArray>, String> {
+    let Some(cell_data) = piece.children().find(|node| node.has_tag_name("CellData")) else {
+        return Ok(Vec::new());
+    };
 
-    if values.len() != cell_count * component_count {
-        return Err(format!(
-            "the {} array must have {} for each cell, but it has {} values for {} cells",
-            REGION_ARRAY,
-            if component_count == 1 {
-                "one value".to_string()
-            } else {
-                format!("{} values", component_count)
-            },
-            values.len(),
-            cell_count
-        ));
+    let mut region_arrays = Vec::new();
+
+    for data_array in cell_data
+        .children()
+        .filter(|node| node.has_tag_name("DataArray"))
+    {
+        let array_name = data_array.attribute("Name").unwrap_or_default();
+        let Some(name) = array_name.strip_prefix(REGION_ARRAY_PREFIX) else {
+            continue;
+        };
+
+        if name.is_empty() {
+            return Err(format!(
+                "the array {} has no region name after the prefix",
+                array_name
+            ));
+        }
+        if read_component_count(data_array)? != 1 {
+            return Err(format!(
+                "the array {} must have one value for each cell (NumberOfComponents=\"1\")",
+                array_name
+            ));
+        }
+
+        let values: Vec<f64> = read_values(data_array)?;
+
+        if values.len() != cell_count {
+            return Err(format!(
+                "the array {} must have one value for each cell, but it has {} values for {} cells",
+                array_name,
+                values.len(),
+                cell_count
+            ));
+        }
+
+        region_arrays.push(RegionArray {
+            name: name.to_string(),
+            is_cell_in_region: values.iter().map(|&value| value > 0.).collect(),
+        });
     }
 
-    values
-        .chunks(component_count)
-        .map(|cell_values| {
-            let mut cell_regions = Vec::new();
-
-            for &value in cell_values {
-                if value < 0. || value.fract() != 0. {
-                    return Err(format!(
-                        "the {} value {} is not an integer of 0 or more",
-                        REGION_ARRAY, value
-                    ));
-                }
-                if value > 0. {
-                    cell_regions.push(value as u64);
-                }
-            }
-            cell_regions.sort();
-            cell_regions.dedup();
-
-            Ok(cell_regions)
-        })
-        .collect()
+    Ok(region_arrays)
 }
 
 /// Splits a cell into tetrahedra.
@@ -344,10 +382,10 @@ mod tests {
         )
     }
 
-    fn region_array(vtk_type: &str, values: &str) -> String {
+    fn region_array(name: &str, values: &str) -> String {
         format!(
-            r#"<DataArray type="{}" Name="region" format="ascii">{}</DataArray>"#,
-            vtk_type, values
+            r#"<DataArray type="Int32" Name="region__{}" format="ascii">{}</DataArray>"#,
+            name, values
         )
     }
 
@@ -406,92 +444,93 @@ mod tests {
         assert!(mesh.regions().is_empty());
     }
 
-    #[test]
-    fn test_region_array_gives_the_regions() {
-        let mesh = parse_domain_mesh(&two_cubes_file(&region_array("Int32", "7 3"))).unwrap();
-        let values: Vec<u64> = mesh.regions().iter().map(|region| region.value).collect();
-
-        assert_eq!(values, [3, 7]);
-    }
-
-    #[test]
-    fn test_region_array_with_real_type_is_read() {
-        let mesh = parse_domain_mesh(&two_cubes_file(&region_array("Float64", "1.0 2.0"))).unwrap();
-
-        assert_eq!(mesh.regions().len(), 2);
-    }
-
-    #[test]
-    fn test_region_value_which_is_not_an_integer_is_rejected() {
-        let message = error_message(&two_cubes_file(&region_array("Float64", "1.5 2")));
-
-        assert!(message.contains("not an integer of 0 or more"), "{message}");
-    }
-
-    #[test]
-    fn test_negative_region_value_is_rejected() {
-        let message = error_message(&two_cubes_file(&region_array("Int32", "-1 2")));
-
-        assert!(message.contains("not an integer of 0 or more"), "{message}");
-    }
-
-    #[test]
-    fn test_region_array_with_too_few_values_is_rejected() {
-        let message = error_message(&two_cubes_file(&region_array("Int32", "1")));
-
-        assert!(message.contains("one value for each cell"), "{message}");
-    }
-
-    fn region_array_with_components(component_count: &str, values: &str) -> String {
-        format!(
-            r#"<DataArray type="Int32" Name="region" NumberOfComponents="{}" format="ascii">{}</DataArray>"#,
-            component_count, values
-        )
-    }
-
-    /// Volume of each region of the two cubes (rounded to 9 decimals), in the
-    /// order of the region values
-    fn region_volumes(values_of_two_components: &str) -> Vec<(u64, f64)> {
-        let file = two_cubes_file(&region_array_with_components("2", values_of_two_components));
-
-        parse_domain_mesh(&file)
+    /// Name and volume (rounded to 9 decimals) of each region of the two cubes
+    fn region_volumes(cell_data: &str) -> Vec<(String, f64)> {
+        parse_domain_mesh(&two_cubes_file(cell_data))
             .unwrap()
             .regions()
             .iter()
-            .map(|region| (region.value, (region.volume * 1e9).round() / 1e9))
+            .map(|region| (region.name.clone(), (region.volume * 1e9).round() / 1e9))
+            .collect()
+    }
+
+    fn named_volumes(volumes: &[(&str, f64)]) -> Vec<(String, f64)> {
+        volumes
+            .iter()
+            .map(|&(name, volume)| (name.to_string(), volume))
             .collect()
     }
 
     #[test]
-    fn test_region_array_with_two_components_puts_a_cell_in_two_regions() {
-        assert_eq!(region_volumes("1 2  2 3"), [(1, 1.), (2, 2.), (3, 1.)]);
+    fn test_each_region_array_is_one_region_in_the_order_of_the_file() {
+        let cell_data = region_array("rock", "1 0") + &region_array("clay", "0 1");
+
+        assert_eq!(
+            region_volumes(&cell_data),
+            named_volumes(&[("rock", 1.), ("clay", 1.)])
+        );
     }
 
     #[test]
-    fn test_region_value_0_of_a_component_is_no_region() {
-        assert_eq!(region_volumes("1 2  0 2"), [(1, 1.), (2, 2.)]);
+    fn test_cell_with_a_value_above_0_in_two_arrays_is_in_two_regions() {
+        let cell_data = region_array("rock", "1 1") + &region_array("clay", "0 5");
+
+        assert_eq!(
+            region_volumes(&cell_data),
+            named_volumes(&[("rock", 2.), ("clay", 1.)])
+        );
     }
 
     #[test]
-    fn test_same_region_value_two_times_in_a_cell_counts_one_time() {
-        assert_eq!(region_volumes("4 4  0 0"), [(4, 1.)]);
+    fn test_region_array_with_real_type_is_read() {
+        let cell_data = region_array("rock", "1.0 0.0").replace("Int32", "Float64");
+
+        assert_eq!(region_volumes(&cell_data), named_volumes(&[("rock", 1.)]));
     }
 
     #[test]
-    fn test_region_array_with_too_few_values_for_its_components_is_rejected() {
-        let file = two_cubes_file(&region_array_with_components("2", "1 2 3"));
-        let message = error_message(&file);
+    fn test_array_with_the_name_region_is_ignored() {
+        let cell_data = region_array("rock", "1 2").replace("region__rock", "region");
+        let mesh = parse_domain_mesh(&two_cubes_file(&cell_data)).unwrap();
+
+        assert!(mesh.regions().is_empty());
+    }
+
+    #[test]
+    fn test_region_array_with_too_few_values_is_rejected() {
+        let message = error_message(&two_cubes_file(&region_array("rock", "1")));
 
         assert!(
-            message.contains("must have 2 values for each cell"),
+            message.contains("region__rock must have one value for each cell"),
             "{message}"
         );
     }
 
     #[test]
-    fn test_region_array_with_0_components_is_rejected() {
-        let file = two_cubes_file(&region_array_with_components("0", "1 2"));
-        let message = error_message(&file);
+    fn test_region_array_with_two_components_is_rejected() {
+        let cell_data =
+            region_array("rock", "1 2 3 4").replace("format=", r#"NumberOfComponents="2" format="#);
+        let message = error_message(&two_cubes_file(&cell_data));
+
+        assert!(
+            message.contains("region__rock must have one value for each cell"),
+            "{message}"
+        );
+    }
+
+    #[test]
+    fn test_region_array_without_a_region_name_is_rejected() {
+        let cell_data = region_array("", "1 0");
+        let message = error_message(&two_cubes_file(&cell_data));
+
+        assert!(message.contains("has no region name"), "{message}");
+    }
+
+    #[test]
+    fn test_data_array_with_0_components_is_rejected() {
+        let cell_data =
+            region_array("rock", "1 2").replace("format=", r#"NumberOfComponents="0" format="#);
+        let message = error_message(&two_cubes_file(&cell_data));
 
         assert!(message.contains("invalid NumberOfComponents"), "{message}");
     }
