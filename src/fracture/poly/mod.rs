@@ -42,13 +42,12 @@ pub struct Poly {
     /// stochastic fracture and for a file without the array.
     pub user_fracture_id: Option<u64>,
 
-    /// Fracture cluster number which the fracture belongs to. This variable is used to keep
-    /// track of fracture connectivity. When a fracture first intersects another fracture,
-    /// it inherits its cluster group number (groupNum). If a fracture does not intersect
-    /// any other fractures, it is given a new and unique cluster group number. When a
-    /// fracture bridges two different clusters, all clusters are merged to be have the
-    /// cluster group number of the first intersecting fracture.
-    pub group_num: usize,
+    /// Cluster group of the fracture (see `ClusterGroups`). It keeps track of the fracture
+    /// connectivity. A fracture gets the group of the first fracture which it intersects.
+    /// A fracture which intersects no fracture gets a new group. When a fracture bridges
+    /// two groups, the groups are merged into the group of the first intersecting fracture.
+    /// `None` until the fracture is checked against the accepted fractures.
+    pub group: Option<usize>,
 
     /// Polygon area (Not calculated until after DFN generation has completed).
     pub area: f64,
@@ -86,7 +85,7 @@ impl Default for Poly {
         Self {
             origin: FractureOrigin::Family(0),
             user_fracture_id: None,
-            group_num: 0,
+            group: None,
             area: 0.,
             xradius: 0.,
             yradius: 0.,

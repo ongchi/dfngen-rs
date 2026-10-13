@@ -1,228 +1,237 @@
-use tracing::{error, info};
-
-use crate::structures::{FractureGroups, GroupData, Stats};
+use tracing::info;
 
 use super::poly::Poly;
 
-//     This code goes through all the polygons accepted into the domain and returns the indexes to those polygons
-//     which stay.
-//     Isoloated fractures and Polygons with no intersections are removed
-//
-// groupData structure:
-// ***********************
-//     groupData keeps information as to how many polygons are in the group or cluster.
-//     There is also a valid variable (0 or 1).
-//     If a polygon connects two different groups, one of the groups is merged together with the other. The one which
-//     nolonger exists has it's valid variable set to 0.
-//
-//     The groupData structure array, or vector, is aligned with the group numbers. If you want to know about group 3 for
-//     example, you will look at groupData[ (3-1) ], minus 1 because the array starts at 0 while groups start at 1.
-//     If valid = 1 in the structure, that group still exists and has not been merged
-//
-// fractGroups structure:
-// *************************
-//     fractGroups[] holds the actual pointers/index numbers to the polygon array along with the group number. Unlike
-//     groupData[] described above, fractGroups does not stay aligned to group numbers. To keep from copying, deleting, and
-//     re-allocating memory when groups merge together, we simply change the variable groupNum to the new group number.
-//
-//     Because of this, there will be multiples of the same group numbers, but with different polygons listed. To get all the
-//     polygons from a group we must search the fractGroups array for all matching groups
-//
-
-/// Get Fracture Clusters
-///
-/// Gets the wanted fracture clusters before writing output files.
-///
-/// # Returns
-///
-/// Vector of indices to fractures which remained after isolated fracture removal.
-pub fn get_cluster(
-    keep_isolated_fractures: bool,
-    keep_only_largest_cluster: bool,
-    pstats: &Stats,
-) -> Vec<usize> {
-    // The max number of groups is pstats.nextGroupNum - 1
-    let mut matching_groups = Vec::new();
-    let mut final_poly_list = Vec::new();
-
-    info!("In cluster groups");
-    info!("Number of fractures: {}", pstats.accepted_poly_count);
-    info!("Number of groups: {}", pstats.group_data.len());
-
-    if !keep_isolated_fractures {
-        // NOTE: (groupNumber-1) = corresponding groupData structures' index of the arary
-        //       similarly, the index of groupData + 1 = groupNumber (due to groupNumber starting at 1, array starting at 0)
-
-        // Find all matching groups:
-        // Get matching groups from pstats.groupData[]
-        for i in 0..pstats.group_data.len() {
-            // If the data is valid, meaning that group still exists (hasn't been merged to a new group) and
-            // if the group has more than 1 fracture meaning there are intersections
-            if pstats.group_data[i].valid && pstats.group_data[i].size > 1 {
-                matching_groups.push(i + 1); // Save matching group number
-            }
-        }
-
-        if keep_only_largest_cluster && matching_groups.len() > 1 {
-            // If only keeping the largest cluster, save only the largest group
-            matching_groups = vec![largest_group(&matching_groups, &pstats.group_data)];
-        }
-
-        // Gather the final polygon numbers/indecies.
-        for gid in matching_groups {
-            final_poly_list.extend(
-                pstats
-                    .fract_group
-                    .iter()
-                    .filter(|fg| fg.group_num == gid)
-                    .flat_map(|fg| &fg.poly_list),
-            );
-        }
-    } else {
-        info!("Number of fractures: {}", pstats.accepted_poly_count);
-        final_poly_list.extend(0..pstats.accepted_poly_count);
-    }
-
-    final_poly_list
+/// One cluster group
+struct Group {
+    /// Number of fractures in the group
+    size: usize,
+    /// False after the group was merged into another group
+    is_valid: bool,
 }
 
-/// Assign New Polygon to a Cluster
+/// Fractures which went into one group together
 ///
-/// Assigns a new polygon/fracture to a new cluster group number.
-/// Assumes 'newPoly' does not intersect with any other fractures.
-///
-/// # Arguments
-///
-/// * `newPoly` - New polygon
-/// * `pstats` - Program stats structure
-/// * `newPolyIndex` - Index of 'newPoly' in the 'acceptedPoly' array (array of all accepted polys)
-pub fn assign_group(new_poly: &mut Poly, pstats: &mut Stats, new_poly_index: usize) {
-    new_poly.group_num = pstats.next_group_num;
-    let mut new_group_data = GroupData::new(); // Keeps fracture cluster data
-                                               // Incriment groupData's poly count
-    new_group_data.size += 1;
-    pstats.group_data.push(new_group_data);
-    let mut new_group = FractureGroups::new(pstats.next_group_num); // 'newPoly' had no intersections, put it in a new group
-    pstats.next_group_num += 1;
-    new_group.poly_list.push(new_poly_index); // Save index (number) of newPoly
-    pstats.fract_group.push(new_group);
+/// A merge of two groups changes only `group` of the lists of the merged
+/// group. Thus more than one list can have the same group.
+struct MemberList {
+    group: usize,
+    /// Indices of the accepted fractures
+    fractures: Vec<usize>,
 }
 
-/// Update Cluster Groups
+/// Clusters of connected fractures
 ///
-/// Updates fracture cluster group data for the addition of 'newPoly'.
-///
-/// If 'newPoly' did not bridge any clusters together, 'newPoly' is added to the cluster of
-/// the first polygon it intersected with. The cluster groups  boundary connectivity data is
-/// updated, clusters fracture count is incremented, and 'newPoly' is added to
-/// the list of polygons.
-///
-/// If 'newPoly' bridged two or more clusters, the function also merges the multiple
-/// cluster groups into a single group. 'newPoly' is first added to group of the first
-/// fracture it intersected with. Then, any remaining cluster groups 'newPoly' intersected with
-/// will have their group number changed to match that of 'newPolys' group number (see struct FractureGroups).
-/// Inside the GroupData structure, all polygons will have their group number updated to the new group number.
-/// Once polygons and struct FractureGroups have been updated, the FractureGroups corresponding GroupData
-/// structure will have its valid bit set to false. (This is more efficient than deleting the GroupData
-/// element from its array, which causes memory re-allocation and copying).
-///
-/// The GroupData structure contains information about it's corresponding FractureGroups structure (see GroupData).
-/// To access the cooresponding GroupData structure from a cluster group number, the index to the GroupData array
-/// within the Stats structure (pstats variable) will be the the cluster group number subtracted by 1.
-/// e.g. If you need to access the GroupData structure for cluster group 10, it will be the variable:
-///     pstats.groupData[10-1]
-/// To access the corresponding FractureGroups structure for a cluster group number, you must search the FractureGroups
-/// structure array and search for ALL matching group numbers (pstats.fractGroup[i].groupNum).
-///
-/// # Arguments
-///
-/// * `newPoly` - Reference to new polygon
-/// * `acceptedPoly` - Array of all accepted polygons
-/// * `encounteredGroups` - Array of group numbers for any other bridged fracture cluster groups
-/// * `pstats` - Program statistics structure (contains fracture cluster data)
-/// * `newPolyIndex` - Index of 'newPoly' once placed into the array of all accepted polygons
-pub fn update_groups(
-    new_poly: &Poly,
-    accepted_poly: &mut [Poly],
-    encountered_groups: &[usize],
-    pstats: &mut Stats,
-    new_poly_index: usize,
-) {
-    // NOTE: Groups start at 1, but array starts at zero hence the groupNum-1 for index
-    let group_index = new_poly.group_num - 1;
+/// Each accepted fracture is in one group. A fracture with no connection gets
+/// a new group. A fracture which connects two or more groups merges them. The
+/// number of a group is its position in the order in which the groups were made.
+#[derive(Default)]
+pub struct ClusterGroups {
+    /// All groups which were made, by group number. A merged group stays, as not valid.
+    groups: Vec<Group>,
+    member_lists: Vec<MemberList>,
+}
 
-    // Add newPoly to its group: size and list of polygons
-    pstats.group_data[group_index].size += 1;
-
-    match pstats
-        .fract_group
-        .iter_mut()
-        .find(|group| group.group_num == new_poly.group_num)
-    {
-        Some(group) => group.poly_list.push(new_poly_index),
-        None => error!("Group not found"),
+impl ClusterGroups {
+    /// Number of groups which were made. The merged groups are included.
+    pub fn group_count(&self) -> usize {
+        self.groups.len()
     }
 
-    // Merge each other group which newPoly bridges into the group of newPoly
-    for &gid in encountered_groups {
-        if pstats.group_data[gid - 1].valid {
-            pstats.group_data[group_index].size += pstats.group_data[gid - 1].size;
-            // Mark merged groups group data as invalid
-            pstats.group_data[gid - 1].valid = false;
-        }
+    /// Removes all groups.
+    pub fn clear(&mut self) {
+        self.groups.clear();
+        self.member_lists.clear();
+    }
 
-        for group in pstats
-            .fract_group
+    /// Puts a fracture with no connection into a new group.
+    ///
+    /// # Arguments
+    ///
+    /// * `fracture_index` - Index of the fracture in the accepted fractures
+    ///
+    /// # Returns
+    ///
+    /// The number of the new group
+    pub fn add_isolated(&mut self, fracture_index: usize) -> usize {
+        let group = self.groups.len();
+        self.groups.push(Group {
+            size: 1,
+            is_valid: true,
+        });
+        self.member_lists.push(MemberList {
+            group,
+            fractures: vec![fracture_index],
+        });
+
+        group
+    }
+
+    /// Puts a fracture into the group of a fracture which it is connected to,
+    /// and merges the other groups which it connects into that group.
+    ///
+    /// # Arguments
+    ///
+    /// * `group` - Group of the first fracture which the new fracture is connected to
+    /// * `fracture_index` - Index which the new fracture gets in the accepted fractures
+    /// * `bridged_groups` - Other groups which the new fracture is connected to
+    /// * `accepted_poly` - Accepted fractures. The fractures of the merged groups get `group`.
+    pub fn add_connected(
+        &mut self,
+        group: usize,
+        fracture_index: usize,
+        bridged_groups: &[usize],
+        accepted_poly: &mut [Poly],
+    ) {
+        self.groups[group].size += 1;
+        self.member_lists
             .iter_mut()
-            .filter(|group| group.group_num == gid)
-        {
-            group.group_num = new_poly.group_num;
+            .find(|list| list.group == group)
+            .expect("the group of an accepted fracture has a member list")
+            .fractures
+            .push(fracture_index);
 
-            for &poly_index in &group.poly_list {
-                accepted_poly[poly_index].group_num = new_poly.group_num;
+        for &bridged in bridged_groups {
+            if self.groups[bridged].is_valid {
+                self.groups[group].size += self.groups[bridged].size;
+                self.groups[bridged].is_valid = false;
+            }
+
+            for list in self
+                .member_lists
+                .iter_mut()
+                .filter(|list| list.group == bridged)
+            {
+                list.group = group;
+
+                for &member in &list.fractures {
+                    accepted_poly[member].group = Some(group);
+                }
             }
         }
     }
-}
 
-/// Group number of the group with the most polygons. The first one wins a tie.
-///
-/// NOTE: (groupNumber-1) = index of the corresponding groupData structure
-fn largest_group(group_numbers: &[usize], group_data: &[GroupData]) -> usize {
-    let mut largest = group_numbers[0];
+    /// Selects the fractures which stay in the network.
+    ///
+    /// # Arguments
+    ///
+    /// * `keep_isolated_fractures` - If true, all accepted fractures stay
+    /// * `keep_only_largest_cluster` - If true, only the group with the most fractures stays
+    /// * `accepted_count` - Number of accepted fractures
+    ///
+    /// # Returns
+    ///
+    /// Indices of the fractures in the groups of 2 or more fractures, in no
+    /// special order, or of all accepted fractures.
+    pub fn final_fractures(
+        &self,
+        keep_isolated_fractures: bool,
+        keep_only_largest_cluster: bool,
+        accepted_count: usize,
+    ) -> Vec<usize> {
+        info!("In cluster groups");
+        info!("Number of fractures: {}", accepted_count);
+        info!("Number of groups: {}", self.group_count());
 
-    for &gid in group_numbers {
-        if group_data[gid - 1].size > group_data[largest - 1].size {
-            largest = gid;
+        if keep_isolated_fractures {
+            info!("Number of fractures: {}", accepted_count);
+            return (0..accepted_count).collect();
         }
+
+        // A group which is valid was not merged into another group, and a
+        // group of more than 1 fracture has an intersection
+        let mut connected_groups: Vec<usize> = self
+            .groups
+            .iter()
+            .enumerate()
+            .filter(|(_, group)| group.is_valid && group.size > 1)
+            .map(|(number, _)| number)
+            .collect();
+
+        if keep_only_largest_cluster {
+            if let Some(largest) = self.largest_group(&connected_groups) {
+                connected_groups = vec![largest];
+            }
+        }
+
+        connected_groups
+            .iter()
+            .flat_map(|&group| {
+                self.member_lists
+                    .iter()
+                    .filter(move |list| list.group == group)
+                    .flat_map(|list| &list.fractures)
+            })
+            .copied()
+            .collect()
     }
 
-    largest
+    /// Group with the most fractures of the given groups. The first one wins a tie.
+    fn largest_group(&self, groups: &[usize]) -> Option<usize> {
+        groups.iter().copied().reduce(|largest, group| {
+            if self.groups[group].size > self.groups[largest].size {
+                group
+            } else {
+                largest
+            }
+        })
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    fn group_with_size(size: usize) -> GroupData {
-        GroupData {
-            size,
-            ..GroupData::new()
+    /// Groups 0, 1 and 2 with the given numbers of fractures
+    fn groups_with_sizes(sizes: [usize; 3]) -> ClusterGroups {
+        ClusterGroups {
+            groups: sizes
+                .into_iter()
+                .map(|size| Group {
+                    size,
+                    is_valid: true,
+                })
+                .collect(),
+            member_lists: Vec::new(),
         }
     }
 
     #[test]
     fn test_largest_group_is_selected_by_size_not_by_group_number() {
-        // Group numbers 1, 2, 3 have 2, 50, and 7 polygons
-        let group_data = [group_with_size(2), group_with_size(50), group_with_size(7)];
+        let clusters = groups_with_sizes([2, 50, 7]);
 
-        assert_eq!(largest_group(&[1, 2, 3], &group_data), 2);
+        assert_eq!(clusters.largest_group(&[0, 1, 2]), Some(1));
     }
 
     #[test]
     fn test_largest_group_looks_only_at_the_given_groups() {
-        let group_data = [group_with_size(2), group_with_size(50), group_with_size(7)];
+        let clusters = groups_with_sizes([2, 50, 7]);
 
-        assert_eq!(largest_group(&[1, 3], &group_data), 3);
+        assert_eq!(clusters.largest_group(&[0, 2]), Some(2));
+    }
+
+    #[test]
+    fn test_fracture_which_connects_two_groups_merges_them() {
+        let mut clusters = ClusterGroups::default();
+        let mut fractures = vec![Poly::default(), Poly::default()];
+        for (index, fracture) in fractures.iter_mut().enumerate() {
+            fracture.group = Some(clusters.add_isolated(index));
+        }
+
+        // Fracture 2 is connected to fracture 0 (group 0) and to fracture 1 (group 1)
+        clusters.add_connected(0, 2, &[1], &mut fractures);
+
+        let mut final_fractures = clusters.final_fractures(false, false, 3);
+        final_fractures.sort_unstable();
+        assert_eq!(final_fractures, [0, 1, 2]);
+        assert_eq!(fractures[1].group, Some(0));
+    }
+
+    #[test]
+    fn test_fracture_with_no_connection_is_not_a_final_fracture() {
+        let mut clusters = ClusterGroups::default();
+        clusters.add_isolated(0);
+
+        assert!(clusters.final_fractures(false, false, 1).is_empty());
     }
 }

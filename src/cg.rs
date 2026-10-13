@@ -6,7 +6,7 @@ use parry3d_f64::shape::Segment;
 
 use crate::{
     fracture::{
-        cluster_groups::{assign_group, update_groups},
+        cluster_groups::ClusterGroups,
         poly::{FractureOrigin, Poly},
     },
     math_functions::{max_elmt_idx, sorted_index, sum_deviation},
@@ -558,6 +558,7 @@ pub fn intersection_checking(
     accepted_poly: &mut [Poly],
     int_pts_list: &mut Vec<IntersectionPoints>,
     pstats: &mut Stats,
+    clusters: &mut ClusterGroups,
     triple_points: &mut Vec<Point3<f64>>,
 ) -> Result<(), RejectReason> {
     // List of fractures which new fracture intersected.
@@ -645,57 +646,53 @@ pub fn intersection_checking(
     // Done searching intersections. All FRAM tests have passed. Polygon is accetepd.
 
     // After searching for intersections, if newPoly still has no intersection or group:
-    if new_poly.group_num == 0 {
-        // 'newPoly' had no intersections. Assign it to its own/new group number
-        assign_group(new_poly, pstats, new_poly_index);
-    } else {
-        // Intersections exist and were accepted, newPoly already has group number
-        // Save temp. intersections to intPts (permanent array),
-        // Update all intersected polygons intersection-points index lists and intersection count
-        // Update polygon group lists
-        // Append temp intersection points array to permanent one
-        int_pts_list.extend(temp_int_pts.clone());
+    let Some(group) = new_poly.group else {
+        // 'newPoly' had no intersections. Assign it to its own/new group number.
+        // It has no intersection lengths for the statistics.
+        new_poly.group = Some(clusters.add_isolated(new_poly_index));
+        return Ok(());
+    };
 
-        // Update poly's indexs to intersections list (intpts)
-        for i in 0..temp_intersect_list.len() {
-            // Update each intersected poly's intersection index
-            accepted_poly[temp_intersect_list[i]]
-                .intersection_index
-                .push(int_pts_index + i);
-            // intPtsIndex+i will be the index position of the intersection once it is saved to the intersections array
-        }
+    // Intersections exist and were accepted, newPoly already has group number
+    // Save temp. intersections to intPts (permanent array),
+    // Update all intersected polygons intersection-points index lists and intersection count
+    // Update polygon group lists
+    // Append temp intersection points array to permanent one
+    int_pts_list.extend(temp_int_pts.clone());
 
-        // Fracture is now accepted.
-        // Update intersection structures with triple intersection points.
-        // triple intersection points will be found 3 times (3 fractures make up one triple int point)
-        // We need only to save the point to the permanent triplePoints array once, and then give each intersection a
-        // reference to it.
-        if opts.triple_intersections {
-            let trip_index = triple_points.len();
+    // Update poly's indexs to intersections list (intpts)
+    for i in 0..temp_intersect_list.len() {
+        // Update each intersected poly's intersection index
+        accepted_poly[temp_intersect_list[i]]
+            .intersection_index
+            .push(int_pts_index + i);
+        // intPtsIndex+i will be the index position of the intersection once it is saved to the intersections array
+    }
 
-            for (j, tri_pt_tmp) in temp_data.iter().enumerate() {
-                // Loop through newly found triple points
-                triple_points.push(tri_pt_tmp.triple_point);
+    // Fracture is now accepted.
+    // Update intersection structures with triple intersection points.
+    // triple intersection points will be found 3 times (3 fractures make up one triple int point)
+    // We need only to save the point to the permanent triplePoints array once, and then give each intersection a
+    // reference to it.
+    if opts.triple_intersections {
+        let trip_index = triple_points.len();
 
-                // Update index pointers to the triple intersection points
-                for ii in 0..tri_pt_tmp.int_index.len() {
-                    let idx = tri_pt_tmp.int_index[ii];
-                    int_pts_list[idx].triple_points_idx.push(trip_index + j);
-                }
+        for (j, tri_pt_tmp) in temp_data.iter().enumerate() {
+            // Loop through newly found triple points
+            triple_points.push(tri_pt_tmp.triple_point);
+
+            // Update index pointers to the triple intersection points
+            for ii in 0..tri_pt_tmp.int_index.len() {
+                let idx = tri_pt_tmp.int_index[ii];
+                int_pts_list[idx].triple_points_idx.push(trip_index + j);
             }
         }
-
-        // ***********************
-        // Update group numbers **
-        // ***********************
-        update_groups(
-            new_poly,
-            accepted_poly,
-            &encountered_groups,
-            pstats,
-            new_poly_index,
-        );
     }
+
+    // ***********************
+    // Update group numbers **
+    // ***********************
+    clusters.add_connected(group, new_poly_index, &encountered_groups, accepted_poly);
 
     // Keep track of how much intersection length we are looising from 'shrinkIntersection()'
     // Calculate and store total original intersection length (all intersections)
@@ -721,10 +718,14 @@ pub fn intersection_checking(
 /// the group of `poly` goes into `encountered_groups`, for the merge of the
 /// groups when `new_poly` is accepted.
 fn join_group(new_poly: &mut Poly, poly: &Poly, encountered_groups: &mut Vec<usize>) {
-    if new_poly.group_num == 0 {
-        new_poly.group_num = poly.group_num;
-    } else if new_poly.group_num != poly.group_num {
-        encountered_groups.push(poly.group_num);
+    let group = poly
+        .group
+        .expect("an accepted fracture has a cluster group");
+
+    match new_poly.group {
+        None => new_poly.group = Some(group),
+        Some(new_poly_group) if new_poly_group != group => encountered_groups.push(group),
+        Some(_) => {}
     }
 }
 

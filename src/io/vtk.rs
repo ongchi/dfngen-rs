@@ -114,7 +114,10 @@ fn write_accepted_cell_data(
         "cluster",
         "Int32",
         1,
-        polys.iter().map(|poly| poly.group_num),
+        // The cluster numbers of the file start at 1
+        polys
+            .iter()
+            .map(|poly| poly.group.map_or(0, |group| group + 1)),
     )?;
     write_data_array(
         output,

@@ -5,7 +5,6 @@ use tracing::{info, warn};
 
 use crate::cg::intersection_checking;
 use crate::error::DfngenError;
-use crate::fracture::cluster_groups::get_cluster;
 use crate::fracture::fracture_estimating::dry_run;
 use crate::fracture::fracture_family::{FractureFamily, FractureFamilyCollection, RadiusOption};
 use crate::fracture::insert_shape::{print_reject_reason, re_translate_poly};
@@ -153,10 +152,10 @@ pub fn generate(
     // a list of polygon indices. If input option
     // keepOnlyLargestCluster = 1, return largest
     // cluster. DFN will keep all fractures with intersections.
-    let mut final_fractures = get_cluster(
+    let mut final_fractures = dfngen.clusters.final_fractures(
         input.keep_isolated_fractures,
         input.keep_only_largest_cluster,
-        &dfngen.pstats,
+        dfngen.pstats.accepted_poly_count,
     );
     // Sort fracture indices to retain order by acceptance
     final_fractures.sort();
@@ -335,6 +334,7 @@ fn insert_stochastic_fractures(
                 &mut dfngen.accepted_poly,
                 &mut dfngen.intpts,
                 &mut dfngen.pstats,
+                &mut dfngen.clusters,
                 &mut dfngen.triple_points,
             );
 

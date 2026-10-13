@@ -9,6 +9,7 @@ use crate::cg::intersection_checking;
 use crate::distribution::{LogNormalSampling, TruncExp, TruncLogNormal, TruncPowerLaw};
 use crate::domain_mesh::DomainMesh;
 use crate::error::DfngenError;
+use crate::fracture::cluster_groups::ClusterGroups;
 use crate::fracture::insert_shape::print_reject_reason;
 use crate::fracture::poly::Poly;
 use crate::fracture::user_defined_fractures::DomainCheck;
@@ -125,41 +126,6 @@ pub struct TriplePtTempData {
     pub int_index: Vec<usize>,
 }
 
-/// FractureGroups is a structure used to keep track of which fractures are in
-/// each cluster. FractureGroups works in conjunction with GroupData.
-///
-/// FractGroups holds pointers/index numbers to the polygons belonging to  group number 'groupNum'. Unlike
-/// GroupData, fractGroups does not stay aligned to cluster group numbers. To keep from copying, deleteing, and
-/// re-allocating memory when groups merge together, we simply change the variable 'groupNum' to the new group
-/// number and leave the polygon pointer/index list as is.
-///
-/// Because of this, there will be multiple FractureGroups objects with the same group number when
-/// fracture clusters merge together, but with differnt polygons listed. To get all the
-/// polygons from a group we must search the fractGroups array for all matching groups and look at each of their
-/// polgon lists.
-pub struct FractureGroups {
-    /// Fracture cluster group number.
-    pub group_num: usize,
-    /// List of polygon indices in the 'acceptedPoly' array in main() which belong to this group.
-    pub poly_list: Vec<usize>,
-}
-
-/// GroupData works in conjunction with 'FractureGroups'
-/// GroupData keeps track of which group numbers ('groupNum' in above struct)
-/// Connect to which boundaries. When a cluster of fractures bridges two
-/// groups/clusters, One of the groups 'valid' bool is set to 0 (not valid).
-/// The fractures whos valid bool becomes 0 are moved to the other group
-/// In the 'GroupData' structure array, FractureGroups.groupNum-1 is the index
-/// to the corresponding GroupData struct in the GroupData array.
-#[derive(Default)]
-pub struct GroupData {
-    /// Number of polygons in group.
-    pub size: usize,
-    /// Valid bit, True if group this structures data is still valid, false otherwise.
-    /// Data can become invalid when fracture cluster groups merge together.
-    pub valid: bool,
-}
-
 /// Rejection reason counters.
 #[derive(Default)]
 pub struct RejectionReasons {
@@ -181,10 +147,7 @@ pub struct RejectionReasons {
     pub inter_close_to_inter: usize,
 }
 
-/// TODO: Make singleton
-/// Program and DFN statisistics structure. Keeps various statistics, including
-/// fracture cluster information, about the DFN being generated.
-#[derive(Default)]
+/// Program and DFN statistics structure. Keeps various statistics about the DFN being generated.
 pub struct Stats {
     /// Counters for the number of polygons/fractures accepted by each stochastic
     /// family. Elements in this array are in the same order as the stochastic shape
@@ -225,10 +188,6 @@ pub struct Stats {
     /// DFN generation has completed.
     pub area_after_removal: f64,
 
-    /// Used to assign group/cluster numbers. 'nextGroupNum initializes to 1, and is used to
-    /// assign a fracture a group number, and is then incremented.
-    pub next_group_num: usize,
-
     /// RejectionReasons structure holds counters for all rejection reasons.
     pub rejection_reasons: RejectionReasons,
 
@@ -253,10 +212,6 @@ pub struct Stats {
     /// new fractures.
     pub rejects_per_attempt: Vec<usize>,
 
-    /// Fracture cluster data. See struct FractureGroup.
-    pub fract_group: Vec<FractureGroups>,
-    /// Fracture cluster data. See struct GroupData.
-    pub group_data: Vec<GroupData>,
     /// Rejected User Fractures
     pub rejected_user_fracture: Vec<usize>,
 }
@@ -351,42 +306,36 @@ impl RadiusDistribution {
     }
 }
 
-impl FractureGroups {
-    /// Initializes polyList vector to reserve enough memory for 100 floats.
-    pub fn new(group_num: usize) -> Self {
+impl Default for Stats {
+    /// All counters are zero.
+    fn default() -> Self {
         Self {
-            poly_list: Vec::new(),
-            group_num,
-        }
-    }
-}
-
-impl GroupData {
-    /// Initializes size to zero and valid to true.
-    pub fn new() -> Self {
-        Self {
-            valid: true,
-            ..Default::default()
-        }
-    }
-}
-
-impl Stats {
-    /// Initializes all counters to zero. Initializes
-    /// nextGroupNum to 1. (See implementation for details)
-    pub fn new() -> Self {
-        Self {
-            next_group_num: 1,
+            accepted_from_fam: Vec::new(),
+            rejected_from_fam: Vec::new(),
+            expected_from_fam: Vec::new(),
+            accepted_poly_count: 0,
+            rejected_poly_count: 0,
+            retranslated_poly_count: 0,
+            area_before_removal: 0.,
+            area_after_removal: 0.,
+            rejection_reasons: RejectionReasons::default(),
+            intersections_shortened: 0,
+            original_length: 0.,
+            discarded_length: 0.,
             // Counter of the rejects before the first accepted fracture
             rejects_per_attempt: vec![0],
-            ..Default::default()
+            rejected_user_fracture: Vec::new(),
         }
     }
 }
 
+#[derive(Default)]
 pub struct DFNGen {
     // Statistics structure:
     pub pstats: Stats,
+
+    // Clusters of connected fractures
+    pub clusters: ClusterGroups,
 
     // Vector to store accepted polygons/fractures
     pub accepted_poly: Vec<Poly>,
@@ -401,21 +350,9 @@ pub struct DFNGen {
     pub triple_points: Vec<Point3<f64>>,
 }
 
-impl Default for DFNGen {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl DFNGen {
     pub fn new() -> Self {
-        Self {
-            pstats: Stats::new(),
-            accepted_poly: Vec::new(),
-            rejected_poly: Vec::new(),
-            intpts: Vec::new(),
-            triple_points: Vec::new(),
-        }
+        Self::default()
     }
 
     /// Inserts a user-defined fracture, or rejects it.
@@ -471,6 +408,7 @@ impl DFNGen {
             &mut self.accepted_poly,
             &mut self.intpts,
             &mut self.pstats,
+            &mut self.clusters,
             &mut self.triple_points,
         );
 
@@ -502,11 +440,9 @@ impl DFNGen {
     /// Resets intersection, triple point, and cluster group state.
     /// Used before rebuilding the DFN (e.g. after removing fractures).
     fn reset_state(&mut self) {
-        self.pstats.group_data.clear();
-        self.pstats.fract_group.clear();
+        self.clusters.clear();
         self.triple_points.clear();
         self.intpts.clear();
-        self.pstats.next_group_num = 1;
     }
 
     /// Remove Fractures Smaller Than Minimum Size
@@ -538,7 +474,7 @@ impl DFNGen {
 
         for poly in self.accepted_poly.iter().filter(|poly| is_kept(poly)) {
             let mut new_poly = poly.clone();
-            new_poly.group_num = 0; // Reset cluster group number
+            new_poly.group = None; // Reset cluster group number
             new_poly.intersection_index.clear(); // Remove ref to old intersections
 
             // Find line of intersection and FRAM check
@@ -548,6 +484,7 @@ impl DFNGen {
                 &mut final_poly_list,
                 &mut self.intpts,
                 &mut self.pstats,
+                &mut self.clusters,
                 &mut self.triple_points,
             );
 
@@ -882,10 +819,7 @@ mod tests {
     fn test_pieces_of_one_fracture_are_in_one_cluster() {
         let dfngen = insert_user_polygons(&[(LEFT_PIECE, Some(0)), (RIGHT_PIECE, Some(0))]);
 
-        assert_eq!(
-            dfngen.accepted_poly[0].group_num,
-            dfngen.accepted_poly[1].group_num
-        );
+        assert_eq!(dfngen.accepted_poly[0].group, dfngen.accepted_poly[1].group);
     }
 
     #[test]

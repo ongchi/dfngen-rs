@@ -18,7 +18,7 @@ use super::poly::Poly;
 /// * `frac_fam` - Fracture family structure which Polygon belongs to
 /// * `generator` - Random Generator
 pub fn re_translate_poly(new_poly: &mut Poly, frac_fam: &FractureFamily, generator: &mut Mt64) {
-    new_poly.group_num = 0; // Clear cluster group information
+    new_poly.group = None; // Clear cluster group information
     new_poly.intersection_index.clear(); // Clear any saved intersections
 
     // Move poly back to origin
