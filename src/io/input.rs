@@ -73,6 +73,11 @@ pub struct Input {
     ///     True  - On  (Accept)
     pub triple_intersections: bool,
 
+    /// FRAM for an intersection of two user-defined fractures
+    ///     False - Off, FRAM rejects no user-defined fracture because of another one
+    ///     True  - On (default)
+    pub check_user_fractures: bool,
+
     /// DFN will only keep clusters with connections to
     /// domain boundaries which are set to 1:
     ///
@@ -190,6 +195,7 @@ struct FramSection {
     disable: bool,
     relaxed: bool,
     triple_intersections: bool,
+    check_user_fractures: Option<bool>,
 }
 
 #[derive(Deserialize)]
@@ -326,6 +332,10 @@ fn build_input(
         info!("Running with relaxed FRAM. Mesh may not be fully conforming");
     }
 
+    if file.fram.check_user_fractures == Some(false) {
+        info!("FRAM does not check two user-defined fractures which intersect");
+    }
+
     let region_volumes: Vec<f64> = domain_mesh
         .regions()
         .iter()
@@ -390,6 +400,7 @@ fn build_input(
         disable_fram: file.fram.disable,
         r_fram: file.fram.relaxed,
         triple_intersections: file.fram.triple_intersections,
+        check_user_fractures: file.fram.check_user_fractures.unwrap_or(true),
         boundary_faces: file.clusters.boundary_faces,
         keep_only_largest_cluster: file.clusters.keep_only_largest,
         keep_isolated_fractures: file.clusters.keep_isolated_fractures,
@@ -429,6 +440,7 @@ fn build_user_fracture(
             .map(|&vertex| (Vector3::from(vertex) - domain_center).into())
             .collect(),
         region_id: find_mesh_region_id(polygon.region, domain_mesh.regions())?,
+        fracture_id: polygon.fracture_id,
     })
 }
 
@@ -722,6 +734,7 @@ mod tests {
         let triangle = FracturePolygon {
             vertices: vec![[15., 25., 35.], [16., 25., 35.], [16., 26., 35.]],
             region,
+            fracture_id: Some(4),
         };
 
         build_input(
@@ -743,6 +756,13 @@ mod tests {
         let (input, _) = parse_with_triangle_of_region(2).unwrap();
 
         assert_eq!(input.user_fractures[0].region_id, 2);
+    }
+
+    #[test]
+    fn test_user_fracture_keeps_the_fracture_id_of_its_polygon() {
+        let (input, _) = parse_with_triangle_of_region(0).unwrap();
+
+        assert_eq!(input.user_fractures[0].fracture_id, Some(4));
     }
 
     #[test]
@@ -821,6 +841,24 @@ mod tests {
         let message = error_message(parse(&[&options]));
 
         assert!(message.contains("missing field `seed`"), "{}", message);
+    }
+
+    #[test]
+    fn test_user_fracture_check_is_on_without_its_key() {
+        let (input, _) = parse(&[GENERAL_OPTIONS]).unwrap();
+
+        assert!(input.check_user_fractures);
+    }
+
+    #[test]
+    fn test_user_fracture_check_is_off_with_its_key_false() {
+        let options = GENERAL_OPTIONS.replace(
+            "triple_intersections = true",
+            "triple_intersections = true\ncheck_user_fractures = false",
+        );
+        let (input, _) = parse(&[&options]).unwrap();
+
+        assert!(!input.check_user_fractures);
     }
 
     #[test]

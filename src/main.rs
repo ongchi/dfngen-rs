@@ -67,6 +67,7 @@ fn main() -> Result<(), DfngenError> {
         r_fram: input.r_fram,
         disable_fram: input.disable_fram,
         triple_intersections: input.triple_intersections,
+        check_user_fractures: input.check_user_fractures,
         keep_rejected_fractures: input.output_rejected_fractures,
     };
 

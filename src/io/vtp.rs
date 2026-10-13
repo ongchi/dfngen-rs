@@ -13,6 +13,9 @@ use crate::io::vtu::{
 const CELL_ELEMENTS_BEFORE_POLYGONS: [&str; 2] = ["Verts", "Lines"];
 const CELL_ELEMENTS_AFTER_POLYGONS: [&str; 1] = ["Strips"];
 
+/// Name of the cell data array which gives the fracture of each polygon
+const FRACTURE_ID_ARRAY: &str = "fracture_id";
+
 /// A polygon cell of the user-defined fracture file
 #[derive(Debug)]
 pub struct FracturePolygon {
@@ -21,14 +24,20 @@ pub struct FracturePolygon {
 
     /// Value of the cell data array `region`, 0 if the file has no such array
     pub region: u64,
+
+    /// Value of the cell data array `fracture_id`, `None` if the file has no
+    /// such array. Polygons with the same value are pieces of one fracture.
+    pub fracture_id: Option<u64>,
 }
 
 /// Reads the user-defined fractures from a VTK XML PolyData file (`.vtp`, ASCII)
 ///
 /// Each polygon cell is one fracture, with the points of the cell as its
 /// vertices. The fractures are in the order of the cells. The cell data array
-/// `region` (optional) gives the region of each fracture. The point data and
-/// the other cell data of the file are ignored.
+/// `region` (optional) gives the region of each fracture. The cell data array
+/// `fracture_id` (optional) gives the fracture of each polygon, for a fracture
+/// of more than one polygon. The point data and the other cell data of the
+/// file are ignored.
 pub fn read_user_fractures(path: &Path) -> Result<Vec<FracturePolygon>, DfngenError> {
     let invalid_file =
         |message: String| DfngenError::InvalidInput(format!("{}: {}", path.display(), message));
@@ -83,26 +92,28 @@ fn read_piece(piece: Node, fracture_count: usize) -> Result<Vec<FracturePolygon>
     let cell_count_before_polygons = count_ignored_cells(piece, &CELL_ELEMENTS_BEFORE_POLYGONS)?;
     let cell_count_after_polygons = count_ignored_cells(piece, &CELL_ELEMENTS_AFTER_POLYGONS)?;
 
-    let regions = match piece
-        .children()
-        .find(|node| node.has_tag_name("CellData"))
-        .and_then(|cell_data| find_data_array(cell_data, REGION_ARRAY).ok())
-    {
-        Some(region_array) => {
-            if read_component_count(region_array)? != 1 {
-                return Err(format!(
+    let cell_count = cell_count_before_polygons + offsets.len() + cell_count_after_polygons;
+    let cell_data = piece.children().find(|node| node.has_tag_name("CellData"));
+
+    let regions =
+        match cell_data.and_then(|cell_data| find_data_array(cell_data, REGION_ARRAY).ok()) {
+            Some(region_array) => {
+                if read_component_count(region_array)? != 1 {
+                    return Err(format!(
                     "the {} array must have one value for each fracture (NumberOfComponents=\"1\")",
                     REGION_ARRAY
                 ));
-            }
+                }
 
-            read_regions(
-                region_array,
-                cell_count_before_polygons + offsets.len() + cell_count_after_polygons,
-            )?
-        }
-        None => Vec::new(),
-    };
+                read_regions(region_array, cell_count)?
+            }
+            None => Vec::new(),
+        };
+
+    let user_fracture_ids = cell_data
+        .and_then(|cell_data| find_data_array(cell_data, FRACTURE_ID_ARRAY).ok())
+        .map(|id_array| read_user_fracture_ids(id_array, cell_count))
+        .transpose()?;
 
     let mut fractures = Vec::with_capacity(offsets.len());
     let mut cell_start = 0;
@@ -134,12 +145,38 @@ fn read_piece(piece: Node, fracture_count: usize) -> Result<Vec<FracturePolygon>
                 .get(cell_count_before_polygons + cell)
                 .and_then(|cell_regions| cell_regions.first().copied())
                 .unwrap_or(0),
+            fracture_id: user_fracture_ids
+                .as_ref()
+                .map(|ids| ids[cell_count_before_polygons + cell]),
         });
 
         cell_start = cell_end;
     }
 
     Ok(fractures)
+}
+
+/// Reads the `fracture_id` array: one integer of 0 or more for each cell.
+fn read_user_fracture_ids(id_array: Node, cell_count: usize) -> Result<Vec<u64>, String> {
+    if read_component_count(id_array)? != 1 {
+        return Err(format!(
+            "the {} array must have one value for each fracture (NumberOfComponents=\"1\")",
+            FRACTURE_ID_ARRAY
+        ));
+    }
+
+    let ids: Vec<u64> = read_values(id_array)?;
+
+    if ids.len() != cell_count {
+        return Err(format!(
+            "the {} array must have one value for each cell, but it has {} values for {} cells",
+            FRACTURE_ID_ARRAY,
+            ids.len(),
+            cell_count
+        ));
+    }
+
+    Ok(ids)
 }
 
 /// Number of cells of the given kinds in the piece. These cells are not
@@ -332,6 +369,64 @@ mod tests {
 
         assert!(
             message.contains("the region array must have one value for each fracture"),
+            "{message}"
+        );
+    }
+
+    fn fracture_id_cell_data(values: &str) -> String {
+        region_cell_data(values).replace("region", "fracture_id")
+    }
+
+    fn fracture_ids(file: &str) -> Vec<Option<u64>> {
+        parse_user_fractures(file)
+            .unwrap()
+            .iter()
+            .map(|fracture| fracture.fracture_id)
+            .collect()
+    }
+
+    #[test]
+    fn test_fracture_id_array_gives_the_fracture_of_each_polygon() {
+        let file = square_and_triangle_file(&fracture_id_cell_data("0 7"));
+
+        assert_eq!(fracture_ids(&file), [Some(0), Some(7)]);
+    }
+
+    #[test]
+    fn test_file_without_fracture_id_array_gives_no_fracture_id() {
+        assert_eq!(fracture_ids(&square_and_triangle_file("")), [None, None]);
+    }
+
+    #[test]
+    fn test_fracture_id_array_with_one_value_for_two_cells_is_rejected() {
+        let message = error_message(&square_and_triangle_file(&fracture_id_cell_data("2")));
+
+        assert!(
+            message.contains("the fracture_id array must have one value for each cell"),
+            "{message}"
+        );
+    }
+
+    #[test]
+    fn test_fracture_id_array_with_two_components_is_rejected() {
+        let cell_data = fracture_id_cell_data("2 1 0 0").replace(
+            r#"Name="fracture_id""#,
+            r#"Name="fracture_id" NumberOfComponents="2""#,
+        );
+        let message = error_message(&square_and_triangle_file(&cell_data));
+
+        assert!(
+            message.contains("the fracture_id array must have one value for each fracture"),
+            "{message}"
+        );
+    }
+
+    #[test]
+    fn test_negative_fracture_id_is_rejected() {
+        let message = error_message(&square_and_triangle_file(&fracture_id_cell_data("-1 0")));
+
+        assert!(
+            message.contains("the DataArray fracture_id has the invalid value -1"),
             "{message}"
         );
     }

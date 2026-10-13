@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use parry3d_f64::na::{center, distance, Point3};
 
 use crate::structures::{DFNGen, PolyOptions};
@@ -9,16 +11,55 @@ pub const USER_FRACTURE_FAMILY: isize = -1;
 
 /// Inserts the user-defined fractures in the order of their file.
 /// Returns the number of them.
+///
+/// A fracture of more than one polygon (`fracture_id`) is in the domain if one
+/// of its pieces is in the domain. Then no piece of it is rejected as outside.
 pub fn insert_user_defined_fractures(
     fractures: &[UserFracture],
     poly_opts: &PolyOptions,
     dfngen: &mut DFNGen,
 ) -> usize {
+    let fracture_ids_in_domain: HashSet<u64> = fractures
+        .iter()
+        .filter(|fracture| is_piece_in_domain(fracture, poly_opts))
+        .filter_map(|fracture| fracture.fracture_id)
+        .collect();
+
     for (i, fracture) in fractures.iter().enumerate() {
-        dfngen.insert_poly(fracture.to_poly(), i + 1, fracture.region_id, poly_opts);
+        let domain_check = match fracture.fracture_id {
+            Some(id) if fracture_ids_in_domain.contains(&id) => DomainCheck::FractureIsInDomain,
+            _ => DomainCheck::Region(fracture.region_id),
+        };
+        dfngen.insert_poly(fracture.to_poly(), i + 1, domain_check, poly_opts);
     }
 
     fractures.len()
+}
+
+/// True if the polygon has a part in the box domain and intersects a cell of
+/// its region of the domain mesh.
+fn is_piece_in_domain(fracture: &UserFracture, opts: &PolyOptions) -> bool {
+    let mut poly = fracture.to_poly();
+
+    !poly.domain_truncation(
+        opts.h,
+        opts.eps,
+        &opts.domain_size,
+        opts.domain_boundary_mode,
+    ) && opts
+        .domain_mesh
+        .intersects_polygon(&poly.vertices, fracture.region_id)
+}
+
+/// Domain check of a user-defined fracture at its insertion.
+#[derive(Clone, Copy)]
+pub enum DomainCheck {
+    /// The polygon must intersect a cell of this region of the domain mesh, 0 = any region.
+    Region(usize),
+
+    /// The polygon is a piece of a fracture which has a piece in the domain.
+    /// It is rejected only if the domain truncation leaves no polygon.
+    FractureIsInDomain,
 }
 
 /// A fracture which the user defines by its vertices, in the file of the
@@ -31,12 +72,17 @@ pub struct UserFracture {
     /// region, greater than 0 is the position of the region in
     /// `DomainMesh::regions` plus 1.
     pub region_id: usize,
+
+    /// Value of the `fracture_id` array of the file. Polygons with the same
+    /// value are pieces of one fracture. `None` if the file has no such array.
+    pub fracture_id: Option<u64>,
 }
 
 impl UserFracture {
     pub fn to_poly(&self) -> Poly {
         let mut poly = Poly {
             family_num: USER_FRACTURE_FAMILY,
+            user_fracture_id: self.fracture_id,
             ..Default::default()
         };
         let nodes = &self.vertices;
@@ -95,6 +141,7 @@ mod tests {
         let triangle = UserFracture {
             vertices: vec![[0., 0., 0.], [1., 0., 0.], [1., 1., 0.]],
             region_id: 0,
+            fracture_id: None,
         };
 
         assert_eq!(triangle.to_poly().normal, Vector3::new(0., 0., 1.));

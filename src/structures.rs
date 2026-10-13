@@ -12,6 +12,7 @@ use crate::domain_mesh::DomainMesh;
 use crate::error::DfngenError;
 use crate::fracture::insert_shape::print_reject_reason;
 use crate::fracture::poly::{DomainBoundaryMode, Poly};
+use crate::fracture::user_defined_fractures::DomainCheck;
 
 /// A fracture which was not accepted, with the FRAM reject code of its last attempt.
 pub struct RejectedFracture {
@@ -385,38 +386,48 @@ impl DFNGen {
     ///
     /// * `new_poly` - The fracture
     /// * `poly_id` - Number of the fracture in its file, from 1
-    /// * `region_id` - Region of the domain mesh which the fracture must intersect, 0 = any region
+    /// * `domain_check` - Domain check of the fracture
     /// * `opts` - Options of the generation
     pub fn insert_poly(
         &mut self,
         mut new_poly: Poly,
         poly_id: usize,
-        region_id: usize,
+        domain_check: DomainCheck,
         opts: &PolyOptions,
     ) {
-        if new_poly.domain_truncation(
+        let is_outside_box_domain = new_poly.domain_truncation(
             opts.h,
             opts.eps,
             &opts.domain_size,
             opts.domain_boundary_mode,
-        ) || !opts
-            .domain_mesh
-            .intersects_polygon(&new_poly.vertices, region_id)
-        {
+        );
+        let is_rejected = match domain_check {
             // Poly completely outside domain, or it intersects no cell of its region of the domain mesh
+            DomainCheck::Region(region_id) => {
+                is_outside_box_domain
+                    || !opts
+                        .domain_mesh
+                        .intersects_polygon(&new_poly.vertices, region_id)
+            }
+            // The truncation left no polygon. A whole polygon is kept.
+            DomainCheck::FractureIsInDomain => {
+                is_outside_box_domain && opts.domain_boundary_mode == DomainBoundaryMode::Truncate
+            }
+        };
+
+        if is_rejected {
             self.pstats.rejection_reasons.outside += 1;
             self.pstats.rejected_poly_count += 1;
             self.pstats.rejected_user_fracture.push(poly_id);
-            if region_id == 0 {
-                warn!(
-                    "User-defined fracture {}: rejected for being outside the defined domain.",
-                    poly_id
-                );
-            } else {
-                warn!(
+            match domain_check {
+                DomainCheck::Region(region_id) if region_id != 0 => warn!(
                     "User-defined fracture {}: rejected for being outside its region of the domain.",
                     poly_id
-                );
+                ),
+                _ => warn!(
+                    "User-defined fracture {}: rejected for being outside the defined domain.",
+                    poly_id
+                ),
             }
             return;
         }
@@ -536,6 +547,8 @@ pub struct PolyOptions {
     pub r_fram: bool,
     pub disable_fram: bool,
     pub triple_intersections: bool,
+    /// False - FRAM does not check an intersection of two user-defined fractures.
+    pub check_user_fractures: bool,
     pub keep_rejected_fractures: bool,
 }
 
@@ -543,6 +556,7 @@ pub struct PolyOptions {
 mod tests {
     use super::*;
     use crate::domain_mesh::test_meshes::l_shaped_mesh;
+    use crate::fracture::user_defined_fractures::{insert_user_defined_fractures, UserFracture};
 
     fn assert_samples_are_within_limits(distribution: RadiusDistribution) {
         let generator = Rc::new(RefCell::new(Mt64::new(1)));
@@ -591,6 +605,7 @@ mod tests {
             r_fram: false,
             disable_fram: false,
             triple_intersections: false,
+            check_user_fractures: true,
             keep_rejected_fractures,
         }
     }
@@ -603,7 +618,7 @@ mod tests {
         for poly_id in 1..=2 {
             let mut rectangle = Poly::new(4, 1., 1.);
             rectangle.normal = Vector3::new(0., 0., 1.);
-            dfngen.insert_poly(rectangle, poly_id, 0, &opts);
+            dfngen.insert_poly(rectangle, poly_id, DomainCheck::Region(0), &opts);
         }
 
         dfngen
@@ -624,7 +639,7 @@ mod tests {
         let mut square = Poly::new(4, 2f64.sqrt(), 1.);
         square.normal = Vector3::new(0., 0., 1.);
         square.translate(Vector3::from(center));
-        dfngen.insert_poly(square, 1, region_id, &opts);
+        dfngen.insert_poly(square, 1, DomainCheck::Region(region_id), &opts);
 
         dfngen
     }
@@ -671,6 +686,186 @@ mod tests {
         let dfngen = insert_two_equal_rectangles(false);
 
         assert_eq!(dfngen.pstats.rejects_per_attempt, [0, 1]);
+    }
+
+    /// Two horizontal squares with the shared edge x = -2, and a vertical
+    /// square which crosses that edge. All are in the L-shaped domain mesh.
+    const LEFT_PIECE: [[f64; 3]; 4] = [
+        [-3., -3., 0.],
+        [-2., -3., 0.],
+        [-2., -2., 0.],
+        [-3., -2., 0.],
+    ];
+    const RIGHT_PIECE: [[f64; 3]; 4] = [
+        [-2., -3., 0.],
+        [-1., -3., 0.],
+        [-1., -2., 0.],
+        [-2., -2., 0.],
+    ];
+    /// `RIGHT_PIECE` with a gap of 0.05 (less than h) to `LEFT_PIECE`
+    const RIGHT_PIECE_AFTER_GAP: [[f64; 3]; 4] = [
+        [-1.95, -3., 0.],
+        [-0.95, -3., 0.],
+        [-0.95, -2., 0.],
+        [-1.95, -2., 0.],
+    ];
+    const CROSSING_SQUARE: [[f64; 3]; 4] = [
+        [-2.5, -2.5, -0.5],
+        [-1.5, -2.5, -0.5],
+        [-1.5, -2.5, 0.5],
+        [-2.5, -2.5, 0.5],
+    ];
+
+    /// Inserts user-defined polygons, each with its value of the `fracture_id` array.
+    fn insert_user_polygons(polygons: &[([[f64; 3]; 4], Option<u64>)]) -> DFNGen {
+        insert_user_polygons_with_options(polygons, &poly_options(false))
+    }
+
+    fn insert_user_polygons_with_options(
+        polygons: &[([[f64; 3]; 4], Option<u64>)],
+        opts: &PolyOptions,
+    ) -> DFNGen {
+        let fractures: Vec<UserFracture> = polygons
+            .iter()
+            .map(|(vertices, fracture_id)| UserFracture {
+                vertices: vertices.to_vec(),
+                region_id: 0,
+                fracture_id: *fracture_id,
+            })
+            .collect();
+        let mut dfngen = DFNGen::new();
+
+        insert_user_defined_fractures(&fractures, opts, &mut dfngen);
+
+        dfngen
+    }
+
+    /// A horizontal square in the bounding box of the L-shaped mesh which
+    /// intersects no cell of it.
+    const PIECE_OUTSIDE_MESH: [[f64; 3]; 4] =
+        [[2., 2., 0.], [3., 2., 0.], [3., 3., 0.], [2., 3., 0.]];
+
+    #[test]
+    fn test_piece_outside_the_mesh_is_accepted_with_a_piece_of_its_fracture_in_the_mesh() {
+        let dfngen = insert_user_polygons(&[(PIECE_OUTSIDE_MESH, Some(5)), (LEFT_PIECE, Some(5))]);
+
+        assert_eq!(dfngen.accepted_poly.len(), 2);
+    }
+
+    #[test]
+    fn test_polygon_outside_the_mesh_is_rejected_with_only_another_fracture_in_the_mesh() {
+        let dfngen = insert_user_polygons(&[(PIECE_OUTSIDE_MESH, Some(5)), (LEFT_PIECE, Some(6))]);
+
+        assert_eq!(dfngen.pstats.rejected_user_fracture, [1]);
+    }
+
+    #[test]
+    fn test_fracture_with_all_pieces_outside_the_mesh_is_rejected() {
+        let mut second_piece = PIECE_OUTSIDE_MESH;
+        for vertex in &mut second_piece {
+            vertex[0] += 1.;
+        }
+
+        let dfngen =
+            insert_user_polygons(&[(PIECE_OUTSIDE_MESH, Some(5)), (second_piece, Some(5))]);
+
+        assert_eq!(dfngen.pstats.rejected_user_fracture, [1, 2]);
+    }
+
+    /// A vertical square which crosses `LEFT_PIECE` at a distance of 0.05
+    /// (less than h) from its edge x = -2.
+    const SQUARE_NEAR_EDGE: [[f64; 3]; 4] = [
+        [-2.05, -2.8, -0.5],
+        [-2.05, -2.2, -0.5],
+        [-2.05, -2.2, 0.5],
+        [-2.05, -2.8, 0.5],
+    ];
+
+    /// Inserts `LEFT_PIECE` and `SQUARE_NEAR_EDGE` as two user-defined fractures.
+    fn insert_user_fracture_near_edge(check_user_fractures: bool) -> DFNGen {
+        let opts = PolyOptions {
+            check_user_fractures,
+            ..poly_options(false)
+        };
+
+        insert_user_polygons_with_options(&[(LEFT_PIECE, None), (SQUARE_NEAR_EDGE, None)], &opts)
+    }
+
+    #[test]
+    fn test_neighbor_polygon_of_another_fracture_is_accepted_without_the_user_fracture_check() {
+        let opts = PolyOptions {
+            check_user_fractures: false,
+            ..poly_options(false)
+        };
+
+        let dfngen =
+            insert_user_polygons_with_options(&[(LEFT_PIECE, None), (RIGHT_PIECE, None)], &opts);
+
+        assert_eq!(dfngen.accepted_poly.len(), 2);
+    }
+
+    #[test]
+    fn test_user_fracture_near_the_edge_of_a_user_fracture_is_rejected() {
+        let dfngen = insert_user_fracture_near_edge(true);
+
+        assert_eq!(dfngen.pstats.rejected_user_fracture, [2]);
+    }
+
+    #[test]
+    fn test_user_fracture_near_the_edge_of_a_user_fracture_is_accepted_without_the_user_fracture_check(
+    ) {
+        let dfngen = insert_user_fracture_near_edge(false);
+
+        assert_eq!(dfngen.accepted_poly.len(), 2);
+        assert_eq!(dfngen.intpts.len(), 1);
+    }
+
+    #[test]
+    fn test_pieces_of_one_fracture_have_no_intersection() {
+        let dfngen = insert_user_polygons(&[(LEFT_PIECE, Some(0)), (RIGHT_PIECE, Some(0))]);
+
+        assert_eq!(dfngen.accepted_poly.len(), 2);
+        assert!(dfngen.intpts.is_empty());
+    }
+
+    #[test]
+    fn test_pieces_of_one_fracture_are_in_one_cluster() {
+        let dfngen = insert_user_polygons(&[(LEFT_PIECE, Some(0)), (RIGHT_PIECE, Some(0))]);
+
+        assert_eq!(
+            dfngen.accepted_poly[0].group_num,
+            dfngen.accepted_poly[1].group_num
+        );
+    }
+
+    #[test]
+    fn test_neighbor_polygon_of_another_fracture_is_rejected() {
+        let dfngen = insert_user_polygons(&[(LEFT_PIECE, Some(0)), (RIGHT_PIECE, Some(1))]);
+
+        assert_eq!(dfngen.pstats.rejected_user_fracture, [2]);
+    }
+
+    #[test]
+    fn test_fracture_can_cross_the_shared_edge_of_two_pieces() {
+        let dfngen = insert_user_polygons(&[
+            (LEFT_PIECE, Some(0)),
+            (RIGHT_PIECE, Some(0)),
+            (CROSSING_SQUARE, None),
+        ]);
+
+        assert_eq!(dfngen.accepted_poly.len(), 3);
+        assert_eq!(dfngen.intpts.len(), 2);
+    }
+
+    #[test]
+    fn test_fracture_cannot_cross_two_fractures_with_a_gap_less_than_h() {
+        let dfngen = insert_user_polygons(&[
+            (LEFT_PIECE, Some(0)),
+            (RIGHT_PIECE_AFTER_GAP, Some(1)),
+            (CROSSING_SQUARE, None),
+        ]);
+
+        assert_eq!(dfngen.pstats.rejected_user_fracture, [3]);
     }
 
     #[test]

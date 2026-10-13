@@ -18,6 +18,11 @@ pub struct Poly {
     /// 1 for each addition family. Families are in the order of the input file.
     pub family_num: isize,
 
+    /// Value of the `fracture_id` array of the user-defined fracture file.
+    /// Polygons with the same value are pieces of one fracture. `None` for a
+    /// stochastic fracture and for a file without the array.
+    pub user_fracture_id: Option<u64>,
+
     /// Fracture cluster number which the fracture belongs to. This variable is used to keep
     /// track of fracture connectivity. When a fracture first intersects another fracture,
     /// it inherits its cluster group number (groupNum). If a fracture does not intersect
@@ -75,6 +80,7 @@ impl Default for Poly {
     fn default() -> Self {
         Self {
             family_num: 0,
+            user_fracture_id: None,
             group_num: 0,
             area: 0.,
             xradius: 0.,
@@ -93,6 +99,11 @@ impl Default for Poly {
 }
 
 impl Poly {
+    /// True if the two polygons are pieces of the same user-defined fracture.
+    pub fn is_piece_of_same_fracture(&self, other: &Poly) -> bool {
+        self.user_fracture_id.is_some() && self.user_fracture_id == other.user_fracture_id
+    }
+
     /// Creates a polygon on the x-y plane, with its center at the origin.
     ///
     /// The polygon is a regular polygon with its vertices on a circle of the

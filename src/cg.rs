@@ -8,6 +8,7 @@ use crate::{
     fracture::{
         cluster_groups::{assign_group, update_groups},
         poly::Poly,
+        user_defined_fractures::USER_FRACTURE_FAMILY,
     },
     math_functions::{max_elmt_idx, sorted_index, sum_deviation},
     structures::{IntersectionPoints, PolyOptions, Stats, TriplePtTempData},
@@ -204,6 +205,7 @@ fn find_intersections(flag: &mut i32, poly1: &Poly, poly2: &Poly, eps: f64) -> I
 /// * `triple_points` - Triple points for entire DFN
 /// * `temp_int_pts` - Temp intersection points. Must keep intersections and triple points as temp
 ///   data untill newPoly has been accepted
+/// * `accepted_poly` - Array of all accepted polygons
 ///
 /// # Returns
 ///
@@ -223,6 +225,7 @@ fn fram(
     temp_data: &mut Vec<TriplePtTempData>,
     triple_points: &[Point3<f64>],
     temp_int_pts: &[IntersectionPoints],
+    accepted_poly: &[Poly],
 ) -> i32 {
     /******* Check for intersection of length less than h *******/
     if (int_pts.p1 - int_pts.p2).magnitude() < h {
@@ -260,7 +263,15 @@ fn fram(
         // Check distance from new intersection to intersections already
         // existing on newPoly
         // Also checks for undetected triple points
-        if check_dist_to_new_intersections(temp_int_pts, int_pts, temp_data, h, eps) {
+        if check_dist_to_new_intersections(
+            temp_int_pts,
+            int_pts,
+            temp_data,
+            poly2,
+            accepted_poly,
+            h,
+            eps,
+        ) {
             pstats.rejection_reasons.inter_close_to_inter += 1;
             return -5;
         }
@@ -358,6 +369,8 @@ fn check_dist_to_old_intersections(
 /// * `temp_int_pts` - Array of intersections previously found on newPoly
 /// * `int_pts` - Current intersection being checked, intersection between newPoly and poly2
 /// * `temp_tri_pts` - Temp triple points, triple points found on newPoly
+/// * `poly2` - Poly2
+/// * `accepted_poly` - Array of all accepted polygons
 /// * `min_distance` - Minimum distance allowed if not a triple intersection
 /// * `eps` - Epsilon value for floating point comparisons
 ///
@@ -375,12 +388,21 @@ fn check_dist_to_new_intersections(
     temp_int_pts: &[IntersectionPoints],
     int_pts: &IntersectionPoints,
     temp_tri_pts: &[TriplePtTempData],
+    poly2: &Poly,
+    accepted_poly: &[Poly],
     min_distance: f64,
     eps: f64,
 ) -> bool {
     let intersection = [int_pts.p1, int_pts.p2];
 
     for tmp_int in temp_int_pts {
+        // `fract1` of an intersection on newPoly is the index of the other polygon.
+        // The intersections with two pieces of one user-defined fracture can
+        // touch, at the shared edge of the pieces.
+        if accepted_poly[tmp_int.fract1 as usize].is_piece_of_same_fracture(poly2) {
+            continue;
+        }
+
         let int2 = [tmp_int.p1, tmp_int.p2];
 
         if are_segments_farther_than(&intersection, &int2, min_distance) {
@@ -564,6 +586,13 @@ pub fn intersection_checking(
         let mut flag = 0;
         let mut intersection;
 
+        if new_poly.is_piece_of_same_fracture(poly) {
+            // Pieces of one user-defined fracture are always in the same group.
+            // Their contact is not an intersection, and FRAM does not check it.
+            join_group(new_poly, poly, &mut encountered_groups);
+            continue;
+        }
+
         // NOTE: findIntersections() searches bounding boxes
         // Bounding box search
         if check_bounding_box(new_poly, poly) {
@@ -576,25 +605,31 @@ pub fn intersection_checking(
                 temp_original_intersection.push(intersection.clone());
                 // FRAM returns 0 if no intersection problems.
                 // 'count' is number of already accepted intersections on new poly
-                let reject_code = if opts.disable_fram {
-                    0
-                } else {
-                    fram(
-                        opts.h,
-                        opts.eps,
-                        opts.r_fram,
-                        opts.triple_intersections,
-                        &mut intersection,
-                        count,
-                        int_pts_list,
-                        new_poly,
-                        poly,
-                        pstats,
-                        &mut temp_data,
-                        triple_points,
-                        &temp_int_pts,
-                    )
-                };
+                let is_user_fracture_pair = new_poly.family_num == USER_FRACTURE_FAMILY
+                    && poly.family_num == USER_FRACTURE_FAMILY;
+
+                // The option can turn off FRAM for two user-defined fractures
+                let reject_code =
+                    if opts.disable_fram || (is_user_fracture_pair && !opts.check_user_fractures) {
+                        0
+                    } else {
+                        fram(
+                            opts.h,
+                            opts.eps,
+                            opts.r_fram,
+                            opts.triple_intersections,
+                            &mut intersection,
+                            count,
+                            int_pts_list,
+                            new_poly,
+                            poly,
+                            pstats,
+                            &mut temp_data,
+                            triple_points,
+                            &temp_int_pts,
+                            accepted_poly,
+                        )
+                    };
 
                 // If intersection is NOT rejected
                 if reject_code == 0 {
@@ -609,14 +644,7 @@ pub fn intersection_checking(
                     count += 1; // Increment counter of number of fractures intersecting with newPoly
                     temp_int_pts.push(intersection); // Save intersection
 
-                    // If newPoly has not been assigned to a group,
-                    // assign the group of the other intersecting fracture
-                    if new_poly.group_num == 0 {
-                        new_poly.group_num = poly.group_num;
-                    } else if new_poly.group_num != poly.group_num {
-                        // Poly bridged two different groupsa
-                        encountered_groups.push(poly.group_num);
-                    }
+                    join_group(new_poly, poly, &mut encountered_groups);
                 } else {
                     // 'newPoly' rejected
                     // SAVE REJECTED POLYS HERE IF THIS FUNCTINALITY IS NEEDED
@@ -697,6 +725,19 @@ pub fn intersection_checking(
     }
 
     0
+}
+
+/// Puts `new_poly` into the group of `poly`, a fracture which it is connected to.
+///
+/// If `new_poly` has a group already and the group of `poly` is another one,
+/// the group of `poly` goes into `encountered_groups`, for the merge of the
+/// groups when `new_poly` is accepted.
+fn join_group(new_poly: &mut Poly, poly: &Poly, encountered_groups: &mut Vec<usize>) {
+    if new_poly.group_num == 0 {
+        new_poly.group_num = poly.group_num;
+    } else if new_poly.group_num != poly.group_num {
+        encountered_groups.push(poly.group_num);
+    }
 }
 
 /// Disatance from intersection line to Nodes/Vertices

@@ -36,6 +36,7 @@ remove_fractures_less_than = 0.0
 disable = false
 relaxed = false
 triple_intersections = true
+check_user_fractures = true        # optional, default true; false = no FRAM for two user-defined fractures (see below)
 
 [clusters]
 boundary_faces = [true, true, false, false, false, false]  # +x, -x, +y, -y, +z, -z
@@ -180,9 +181,43 @@ must be before the first table (`[domain]`) of the input file.
   other regions. A fracture with the region 0, or a file without the array, is
   checked against all cells. A region value which no cell of the mesh has is
   an error. `tests/data/mesh_domain` is an example.
+- The cell data array `fracture_id` (optional) gives the fracture of each
+  polygon: one integer of 0 or more for each cell of the file. Polygons with
+  the same value are the pieces of one fracture, for example a surface from
+  field data. Without the array, each polygon is one fracture. For two pieces
+  of one fracture:
+  - FRAM does not check them against each other, and their contact is not an
+    intersection in the output.
+  - They are always in the same cluster, also if they do not touch. Thus a
+    fracture of 2 or more accepted pieces is not removed as an isolated
+    fracture.
+  - A fracture which intersects the two pieces can cross their shared edge.
+    FRAM does not compare its intersections with the two pieces to each other.
+
+  - The domain check is for the fracture. If one piece has a part in the
+    domain (it intersects a cell of the mesh, or of its region), no piece of
+    the fracture is rejected as outside the domain. Thus an accepted piece
+    can be fully outside the mesh or in cells of another region, and its
+    area is in the total area and in P32. With `truncate_fractures = true`, a
+    piece with no part in the bounding box of the mesh has no polygon after
+    the cut and is rejected.
+
+  The pieces must not cross each other; the code does not check this. FRAM
+  accepts or rejects each piece alone: with `check_user_fractures = true`, it
+  can reject one piece of a fracture and accept another. Each piece has its
+  own line in the output files.
+- `fram.check_user_fractures = false` turns off FRAM for an intersection of
+  two user-defined fractures. Then each user-defined fracture in the domain
+  (and in its region) is accepted. The intersection is recorded as FRAM finds
+  it: it is not shortened, and such a pair gives no triple intersection point.
+  An intersection of a stochastic fracture with a user-defined fracture keeps
+  all FRAM checks. The network then does not obey the minimum feature size `h`
+  at the user-defined fractures.
 - The point data and the other cell data of the file are ignored. Thus
   `fractures.vtp` of a run can be the user-defined fractures of a new run. It
-  has no `region` array, so its fractures have the region 0.
+  has no `region` array, so its fractures have the region 0. Its `fracture_id`
+  array has a different number for each polygon, so each polygon is one
+  fracture.
 - Cells which are not polygons (vertices, lines, strips) are ignored with a
   warning.
 - A user-defined fracture has no radius in its file. `x_radius`, `y_radius` and
@@ -251,6 +286,7 @@ in 3D. Cell N is final fracture N.
 | `fracture_id` | Number of the final fracture, starts at 1. |
 | `accepted_id` | Number in the order of acceptance, starts at 1. |
 | `family` | 0 user-defined fracture, > 0 stochastic family. |
+| `user_fracture_id` | Value of the `fracture_id` array of the user-defined fracture file. -1 for a stochastic fracture and for a file without the array. |
 | `cluster` | Number of the connected group of fractures. |
 | `truncated` | 1 if the domain cut the fracture, else 0. |
 | `intersection_count` | Number of intersections with other accepted fractures. |
@@ -279,6 +315,7 @@ then has no valid polygon.
 | Array | Content |
 |---|---|
 | `family` | Same numbers as in `fractures.vtp`. |
+| `user_fracture_id` | Same values as in `fractures.vtp`. |
 | `reject_code` | Reason for the rejection of the last attempt. See the table below. |
 | `truncated` | 1 if the domain cut the fracture, else 0. |
 | `x_radius`, `y_radius`, `aspect_ratio` | Size before truncation. |

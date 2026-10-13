@@ -88,6 +88,7 @@ pub fn write_removed_fractures_vtk(
 ///
 /// * `accepted_id` - Number of the fracture in the order of acceptance (starts at 1)
 /// * `family` - Family number: 0 user-defined fracture, > 0 stochastic family
+/// * `user_fracture_id` - Value of the `fracture_id` array of the user-defined fracture file, -1 if none
 /// * `cluster` - Number of the connected group of fractures
 /// * `truncated` - 1 if the fracture was cut by the domain, else 0
 /// * `intersection_count` - Number of intersections with other accepted fractures
@@ -127,6 +128,7 @@ fn write_accepted_cell_data(
         1,
         polys.iter().map(|poly| poly.family_num + 1),
     )?;
+    write_user_fracture_id_array(output, &polys)?;
     write_data_array(
         output,
         "cluster",
@@ -168,6 +170,7 @@ fn write_accepted_cell_data(
 /// One polygon cell is written for each rejected fracture, at the position of its
 /// last attempt, with the cell data:
 /// * `family` - Family number: 0 user-defined fracture, > 0 stochastic family
+/// * `user_fracture_id` - Value of the `fracture_id` array of the user-defined fracture file, -1 if none
 /// * `reject_code` - FRAM reject code of the last attempt
 /// * `truncated` - 1 if the fracture was cut by the domain, else 0
 /// * `x_radius`, `y_radius`, `aspect_ratio` - Size before truncation
@@ -198,6 +201,7 @@ pub fn write_rejected_fractures_vtk(
         1,
         polys.iter().map(|poly| poly.family_num + 1),
     )?;
+    write_user_fracture_id_array(output, &polys)?;
     write_data_array(
         output,
         "reject_code",
@@ -348,6 +352,20 @@ fn write_data_array<T: Display>(
     writeln!(output, "</DataArray>")
 }
 
+/// Writes the cell data array `user_fracture_id`: the value of the `fracture_id`
+/// array of the user-defined fracture file, -1 for a fracture without it.
+fn write_user_fracture_id_array(output: &mut impl Write, polys: &[&Poly]) -> io::Result<()> {
+    write_data_array(
+        output,
+        "user_fracture_id",
+        "Int64",
+        1,
+        polys
+            .iter()
+            .map(|poly| poly.user_fracture_id.map_or(-1, |id| id as i64)),
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -358,6 +376,7 @@ mod tests {
     fn three_accepted_fractures() -> (Vec<Poly>, [usize; 3]) {
         let mut rectangle = Poly::new(4, 1., 2.);
         rectangle.family_num = USER_FRACTURE_FAMILY;
+        rectangle.user_fracture_id = Some(7);
         let mut small_ellipse = Poly::new(6, 3., 1.);
         small_ellipse.family_num = 0;
         small_ellipse.area = 20.;
@@ -527,10 +546,24 @@ mod tests {
     }
 
     #[test]
+    fn test_removed_user_fracture_has_its_user_fracture_id() {
+        let file = write_removed_fractures();
+
+        assert_eq!(data_array(&file, "user_fracture_id"), ["7"]);
+    }
+
+    #[test]
+    fn test_fracture_without_user_fracture_id_has_the_value_minus_one() {
+        let file = write_final_fractures();
+
+        assert_eq!(data_array(&file, "user_fracture_id"), ["-1", "-1"]);
+    }
+
+    #[test]
     fn test_removed_fractures_file_has_no_fracture_id() {
         let file = write_removed_fractures();
 
-        assert!(!file.contains(r#"Name="fracture_id""#));
+        assert!(!file.contains(r#" Name="fracture_id""#));
     }
 
     #[test]
@@ -553,6 +586,6 @@ mod tests {
     fn test_rejected_fracture_has_no_fracture_id() {
         let file = write_rejected_rectangle();
 
-        assert!(!file.contains(r#"Name="fracture_id""#));
+        assert!(!file.contains(r#" Name="fracture_id""#));
     }
 }
