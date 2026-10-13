@@ -10,6 +10,11 @@ pub enum DfngenError {
     LogNormalSampling(#[from] crate::distribution::log_norm::Error),
     #[error(transparent)]
     ExponentialSampling(#[from] crate::distribution::exp::Error),
+    #[error("Family {family}: cannot sample a fracture radius: {source}")]
+    FamilyRadius {
+        family: usize,
+        source: Box<DfngenError>,
+    },
     #[error("Too many fractures are being generated with radii less than minimum radius.")]
     InefficientSampling,
     #[error("Invalid input file: {0}")]

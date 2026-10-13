@@ -4,7 +4,6 @@ use parry3d_f64::na::Vector3;
 use rand::Rng;
 use rand_distr::Uniform;
 use rand_mt::Mt64;
-use tracing::error;
 
 use crate::distribution::Fisher;
 use crate::domain_mesh::DomainMesh;
@@ -78,6 +77,16 @@ impl FractureFamily {
             .coords
     }
 
+    /// Samples a radius from the radius distribution of the family.
+    fn sample_radius(&self, generator: &mut Mt64) -> Result<f64, DfngenError> {
+        self.radius
+            .sample(generator)
+            .map_err(|source| DfngenError::FamilyRadius {
+                family: self.id,
+                source: Box::new(source),
+            })
+    }
+
     pub fn normal_vector(&self, rng: &mut Mt64) -> Vector3<f64> {
         rng.sample(&self.orientation)
     }
@@ -88,22 +97,12 @@ impl FractureFamily {
         fam_idx: usize,
         radius_opt: RadiusOption,
         generator: &mut Mt64,
-    ) -> Poly {
+    ) -> Result<Poly, DfngenError> {
         let radius = match radius_opt {
             RadiusOption::FromCacheOrRng | RadiusOption::FromRng => {
                 if self.radii_idx >= self.radii_list.len() || radius_opt == RadiusOption::FromRng {
                     // If out of radii from list, insert random radius
-                    match self.radius.sample(generator) {
-                        Ok(radius) => radius,
-                        Err(e) => {
-                            error!("");
-                            error!("{}", e);
-                            panic!(
-                                "distribution for family {} has been unable to generate a fracture with radius within set parameters after 1000 consecutive tries.",
-                                self.id
-                            );
-                        }
-                    }
+                    self.sample_radius(generator)?
                 } else {
                     // Insert radius from list
                     let radius = self.radii_list[self.radii_idx];
@@ -119,7 +118,8 @@ impl FractureFamily {
         new_poly.origin = FractureOrigin::Family(fam_idx);
 
         let beta = self.beta.unwrap_or_else(|| {
-            let uniform_dist = Uniform::new(0., 2. * std::f64::consts::PI).unwrap();
+            let uniform_dist = Uniform::new(0., 2. * std::f64::consts::PI)
+                .expect("the limits are constants and are valid");
             generator.sample(uniform_dist)
         });
 
@@ -139,7 +139,7 @@ impl FractureFamily {
         let position = self.sample_position(generator);
         new_poly.translate(position);
 
-        new_poly
+        Ok(new_poly)
     }
 }
 
@@ -258,14 +258,8 @@ impl FractureFamilyCollection {
 
         for (frac_fam, probability) in self.families.iter_mut().zip(&self.probabilities) {
             for _ in 0..((probability * n_poly as f64).ceil() as usize) {
-                match frac_fam.radius.sample(generator) {
-                    Ok(radius) => frac_fam.radii_list.push(radius),
-                    Err(e) => {
-                        error!("Attempt to populate fracture radii: Family {}", frac_fam.id);
-                        error!("{}", e);
-                        return Err(e);
-                    }
-                }
+                let radius = frac_fam.sample_radius(generator)?;
+                frac_fam.radii_list.push(radius);
             }
         }
 

@@ -2,6 +2,7 @@ use rand::{distr::Uniform, Rng};
 use rand_mt::Mt64;
 use tracing::info;
 
+use crate::error::DfngenError;
 use crate::fracture::fracture_family::{FractureFamilyCollection, RadiusOption};
 use crate::fracture::insert_shape::re_translate_poly;
 use crate::io::input::Input;
@@ -20,13 +21,17 @@ use crate::math_functions::{cumsum, index_from_prob_and_p32_status, remove_famil
 /// * `input` - Input structure
 /// * `frac_families` - Array of stochastic fracture families
 /// * `generator` - Random number generator
-pub fn dry_run(input: &Input, frac_families: &mut FractureFamilyCollection, generator: &mut Mt64) {
+pub fn dry_run(
+    input: &Input,
+    frac_families: &mut FractureFamilyCollection,
+    generator: &mut Mt64,
+) -> Result<(), DfngenError> {
     info!("Estimating number of fractures per family for defined fracture intensities (P32)...");
     let dom_vol = input.domain_volume;
     // Probabilities of the families which have not met their P32 target.
     // This is a copy: the family probabilities must stay in their original state.
     let mut probabilities = frac_families.probabilities.clone();
-    let uniform_dist = Uniform::new(0., 1.).unwrap();
+    let uniform_dist = Uniform::new(0., 1.)?;
     let mut cdf = cumsum(&probabilities);
     let mut family_index; // Holds index to shape family of fracture being generated
     let mut force_large_fract_count = 0;
@@ -52,7 +57,7 @@ pub fn dry_run(input: &Input, frac_families: &mut FractureFamilyCollection, gene
                 family_index,
                 RadiusOption::MaxRadius,
                 generator,
-            )
+            )?
         } else {
             // Choose a family based on probabiliyis AND their target p32 completion status
             // if a family has already met is fracture intinisty reqirement (p32) dont choose that family anymore
@@ -64,7 +69,7 @@ pub fn dry_run(input: &Input, frac_families: &mut FractureFamilyCollection, gene
                 family_index,
                 RadiusOption::FromRng,
                 generator,
-            )
+            )?
         };
 
         let mut reject = false;
@@ -131,4 +136,6 @@ pub fn dry_run(input: &Input, frac_families: &mut FractureFamilyCollection, gene
     for shape in frac_families.families.iter_mut() {
         shape.current_p32 = 0.;
     }
+
+    Ok(())
 }

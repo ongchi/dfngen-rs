@@ -1,3 +1,4 @@
+use std::process::ExitCode;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use clap::Parser;
@@ -19,14 +20,28 @@ struct Cli {
     output_folder: String,
 }
 
-fn main() -> Result<(), DfngenError> {
+fn main() -> ExitCode {
     let cli = Cli::parse();
 
     init_tracing();
 
     info!("Starting dfngen-rs");
 
-    let (mut input, frac_fam_col) = read_input(&cli.input_file).inspect_err(|e| error!("{}", e))?;
+    match run(&cli) {
+        Ok(()) => {
+            info!("dfngen-rs - Complete");
+            ExitCode::SUCCESS
+        }
+        Err(e) => {
+            error!("{}", e);
+            ExitCode::FAILURE
+        }
+    }
+}
+
+/// Reads the input, generates the network and writes the output files.
+fn run(cli: &Cli) -> Result<(), DfngenError> {
+    let (mut input, frac_fam_col) = read_input(&cli.input_file)?;
 
     if input.seed == 0 {
         input.seed = SystemTime::now()
@@ -44,8 +59,6 @@ fn main() -> Result<(), DfngenError> {
     })?;
 
     write_output_to_folder(&network, &cli.output_folder)?;
-
-    info!("dfngen-rs - Complete");
 
     Ok(())
 }

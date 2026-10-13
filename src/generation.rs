@@ -1,7 +1,7 @@
 use rand::distr::Uniform;
 use rand::Rng;
 use rand_mt::Mt64;
-use tracing::{error, info, warn};
+use tracing::{info, warn};
 
 use crate::cg::intersection_checking;
 use crate::error::DfngenError;
@@ -162,8 +162,6 @@ pub fn generate(
     final_fractures.sort();
 
     if final_fractures.is_empty() {
-        error!("DFN Generation has finished, however there are no intersecting fractures. Please adjust input parameters.");
-        error!("Try increasing the fracture density, or shrinking the domain.",);
         return Err(DfngenError::NoIntersectingFractures);
     }
 
@@ -212,7 +210,7 @@ fn prepare_radii_lists(
         // P32 Option
         // ESTIMATE # FRACTURES NEEDED
         info!("Estimating number of fractures needed...");
-        dry_run(input, frac_fam_col, generator);
+        dry_run(input, frac_fam_col, generator)?;
     }
 
     // Add a percentage more radii to each radii
@@ -305,7 +303,7 @@ fn insert_stochastic_fractures(
             family_index,
             RadiusOption::FromCacheOrRng,
             generator,
-        );
+        )?;
 
         let mut reject_counter = 0;
 
