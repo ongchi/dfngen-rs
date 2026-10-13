@@ -37,7 +37,7 @@ pub fn read_domain_mesh(path: &Path) -> Result<DomainMesh, DfngenError> {
     parse_domain_mesh(&text).map_err(invalid_mesh)
 }
 
-fn parse_domain_mesh(text: &str) -> Result<DomainMesh, String> {
+pub(super) fn parse_domain_mesh(text: &str) -> Result<DomainMesh, String> {
     let document = Document::parse(text).map_err(|e| e.to_string())?;
     let root = document.root_element();
 

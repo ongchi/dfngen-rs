@@ -53,7 +53,7 @@ pub fn read_user_fractures(path: &Path) -> Result<Vec<FracturePolygon>, DfngenEr
     parse_user_fractures(&text).map_err(invalid_file)
 }
 
-fn parse_user_fractures(text: &str) -> Result<Vec<FracturePolygon>, String> {
+pub(super) fn parse_user_fractures(text: &str) -> Result<Vec<FracturePolygon>, String> {
     let document = Document::parse(text).map_err(|e| e.to_string())?;
     let root = document.root_element();
 

@@ -12,8 +12,8 @@ use crate::fracture::fracture_family::{
     FractureFamily, FractureFamilyBuilder, FractureFamilyCollection,
 };
 use crate::fracture::user_defined_fractures::UserFracture;
-use crate::io::vtp::{read_user_fractures, FracturePolygon};
-use crate::io::vtu::read_domain_mesh;
+use crate::io::vtp::{parse_user_fractures, read_user_fractures, FracturePolygon};
+use crate::io::vtu::{parse_domain_mesh, read_domain_mesh};
 use crate::structures::RadiusDistribution;
 
 #[derive(Deserialize, Default, Debug, Clone, Copy, PartialEq, Eq)]
@@ -249,6 +249,64 @@ pub fn read_input(input_file: &str) -> Result<(Input, FractureFamilyCollection),
     let domain_mesh = read_domain_mesh(&input_folder.join(&file.domain))?;
     let user_fractures = match &file.user_fractures {
         Some(fracture_file) => read_user_fractures(&input_folder.join(fracture_file))?,
+        None => Vec::new(),
+    };
+
+    build_input(file, domain_mesh, user_fractures)
+}
+
+/// Names of the files which a TOML input file names
+pub struct InputFileNames {
+    /// Value of the `domain` key: the domain mesh (`.vtu`)
+    pub domain: String,
+    /// Value of the `user_fractures` key: the user-defined fractures (`.vtp`)
+    pub user_fractures: Option<String>,
+}
+
+/// Reads the names of the files which a TOML input file names. It reads no file.
+///
+/// # Arguments
+///
+/// * `toml_text` - Text of the TOML input file
+pub fn read_input_file_names(toml_text: &str) -> Result<InputFileNames, DfngenError> {
+    let file = parse_input_file(toml_text)?;
+
+    Ok(InputFileNames {
+        domain: file.domain,
+        user_fractures: file.user_fractures,
+    })
+}
+
+/// Builds the input from the text of the input files. It reads no file.
+///
+/// Returns the input options and the stochastic fracture families, as `read_input` does.
+///
+/// # Arguments
+///
+/// * `toml_text` - Text of the TOML input file
+/// * `domain_mesh_text` - Text of the file which the `domain` key names
+/// * `user_fractures_text` - Text of the file which the `user_fractures` key
+///   names. It is ignored if the input file does not have the key.
+pub fn build_input_from_text(
+    toml_text: &str,
+    domain_mesh_text: &str,
+    user_fractures_text: Option<&str>,
+) -> Result<(Input, FractureFamilyCollection), DfngenError> {
+    let file = parse_input_file(toml_text)?;
+    let domain_mesh = parse_domain_mesh(domain_mesh_text)
+        .map_err(|message| invalid_input(format!("{}: {}", file.domain, message)))?;
+    let user_fractures = match &file.user_fractures {
+        Some(fracture_file) => {
+            let text = user_fractures_text.ok_or_else(|| {
+                invalid_input(format!(
+                    "the text of the user-defined fracture file {} is necessary",
+                    fracture_file
+                ))
+            })?;
+
+            parse_user_fractures(text)
+                .map_err(|message| invalid_input(format!("{}: {}", fracture_file, message)))?
+        }
         None => Vec::new(),
     };
 
@@ -628,6 +686,65 @@ mod tests {
             .err()
             .expect("the input must be rejected")
             .to_string()
+    }
+
+    /// Path of a file of the test case `mesh_domain`
+    fn mesh_domain_case_path(file_name: &str) -> String {
+        format!(
+            "{}/tests/data/mesh_domain/{}",
+            env!("CARGO_MANIFEST_DIR"),
+            file_name
+        )
+    }
+
+    #[test]
+    fn test_input_from_text_is_the_input_from_the_files() {
+        let read_text =
+            |file_name| std::fs::read_to_string(mesh_domain_case_path(file_name)).unwrap();
+        let toml_text = read_text("mesh_domain.toml");
+        let names = read_input_file_names(&toml_text).unwrap();
+        let fracture_file = names.user_fractures.unwrap();
+
+        let (from_text, families_from_text) = build_input_from_text(
+            &toml_text,
+            &read_text(&names.domain),
+            Some(&read_text(&fracture_file)),
+        )
+        .unwrap();
+        let (from_files, families_from_files) =
+            read_input(&mesh_domain_case_path("mesh_domain.toml")).unwrap();
+
+        let summary = |input: &Input, families: &FractureFamilyCollection| {
+            (
+                input.seed,
+                input.domain_size,
+                input.domain_volume,
+                input.region_volumes.clone(),
+                input.user_fractures.len(),
+                families.families.len(),
+            )
+        };
+        assert_eq!(
+            summary(&from_text, &families_from_text),
+            summary(&from_files, &families_from_files)
+        );
+    }
+
+    #[test]
+    fn test_input_from_text_without_the_fracture_text_is_rejected() {
+        let read_text =
+            |file_name| std::fs::read_to_string(mesh_domain_case_path(file_name)).unwrap();
+
+        let message = error_message(build_input_from_text(
+            &read_text("mesh_domain.toml"),
+            &read_text("mesh_domain.vtu"),
+            None,
+        ));
+
+        assert!(
+            message.contains("mesh_domain_user_fractures.vtp is necessary"),
+            "{message}"
+        );
     }
 
     #[test]
