@@ -328,15 +328,7 @@ fn insert_stochastic_fractures(
 
             new_poly.assign_bounding_box();
             // Find line of intersection and FRAM check
-            let fram_result = intersection_checking(
-                poly_opts,
-                &mut new_poly,
-                &mut dfngen.accepted_poly,
-                &mut dfngen.intpts,
-                &mut dfngen.pstats,
-                &mut dfngen.clusters,
-                &mut dfngen.triple_points,
-            );
+            let fram_result = intersection_checking(poly_opts, &mut new_poly, dfngen);
 
             let Err(reject_reason) = fram_result else {
                 dfngen.pstats.accepted_poly_count += 1;

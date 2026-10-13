@@ -402,15 +402,7 @@ impl DFNGen {
 
         new_poly.assign_bounding_box();
         // Line of intersection and FRAM
-        let fram_result = intersection_checking(
-            opts,
-            &mut new_poly,
-            &mut self.accepted_poly,
-            &mut self.intpts,
-            &mut self.pstats,
-            &mut self.clusters,
-            &mut self.triple_points,
-        );
+        let fram_result = intersection_checking(opts, &mut new_poly, self);
 
         if let Err(reject_reason) = fram_result {
             self.pstats.rejects_per_attempt[self.pstats.accepted_poly_count] += 1;
@@ -469,35 +461,25 @@ impl DFNGen {
     /// Rebuilds the DFN (intersections, triple points, cluster groups) from
     /// the accepted fractures for which `is_kept` is true.
     fn rebuild_with(&mut self, opts: &PolyOptions, is_kept: impl Fn(&Poly) -> bool) {
-        let mut final_poly_list: Vec<Poly> = Vec::new();
+        let previous_polys = std::mem::take(&mut self.accepted_poly);
         self.reset_state();
 
-        for poly in self.accepted_poly.iter().filter(|poly| is_kept(poly)) {
-            let mut new_poly = poly.clone();
+        for mut new_poly in previous_polys.into_iter().filter(|poly| is_kept(poly)) {
             new_poly.group = None; // Reset cluster group number
             new_poly.intersection_index.clear(); // Remove ref to old intersections
 
             // Find line of intersection and FRAM check
-            let fram_result = intersection_checking(
-                opts,
-                &mut new_poly,
-                &mut final_poly_list,
-                &mut self.intpts,
-                &mut self.pstats,
-                &mut self.clusters,
-                &mut self.triple_points,
-            );
+            let fram_result = intersection_checking(opts, &mut new_poly, self);
 
             if fram_result.is_ok() {
                 // Intersections and triple points are saved within intersection_checking()
-                final_poly_list.push(new_poly);
+                self.accepted_poly.push(new_poly);
             } else {
                 error!("Error rebuilding dfn, previously accepted fracture was rejected during DFN rebuild.");
             }
         }
 
         info!("Rebuilding DFN complete.");
-        self.accepted_poly = final_poly_list;
     }
 }
 
