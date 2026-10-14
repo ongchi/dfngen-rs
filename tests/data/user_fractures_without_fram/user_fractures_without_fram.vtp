@@ -1,0 +1,34 @@
+<?xml version="1.0"?>
+<!-- Fracture 1: square normal to z, x and y -2 to 2. Fracture 2: square normal to
+     x at x = 1.95, 0.05 from the edge x = 2 of fracture 1. Fracture 3: square
+     normal to x at x = -1. -->
+<VTKFile type="PolyData" version="1.0" byte_order="LittleEndian">
+<PolyData>
+<Piece NumberOfPoints="12" NumberOfVerts="0" NumberOfLines="0" NumberOfStrips="0" NumberOfPolys="3">
+<Points>
+<DataArray type="Float64" Name="points" NumberOfComponents="3" format="ascii">
+-2.0 -2.0 0.0
+2.0 -2.0 0.0
+2.0 2.0 0.0
+-2.0 2.0 0.0
+1.95 -1.0 -1.0
+1.95 1.0 -1.0
+1.95 1.0 1.0
+1.95 -1.0 1.0
+-1.0 -1.0 -1.0
+-1.0 1.0 -1.0
+-1.0 1.0 1.0
+-1.0 -1.0 1.0
+</DataArray>
+</Points>
+<Polys>
+<DataArray type="Int64" Name="connectivity" format="ascii">
+0 1 2 3 4 5 6 7 8 9 10 11
+</DataArray>
+<DataArray type="Int64" Name="offsets" format="ascii">
+4 8 12
+</DataArray>
+</Polys>
+</Piece>
+</PolyData>
+</VTKFile>

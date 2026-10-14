@@ -1,0 +1,48 @@
+# FRAM with a dense network of 3 families, normal to x, y and z. Each rejected
+# fracture goes to fractures_rejected.vtp, and the log has each reject reason.
+
+seed = 12345
+min_feature_size = 0.1
+domain = "../box.vtu"
+
+[generation]
+stop_condition = "n_poly"
+n_poly = 150
+radii_list_increase = 0.1
+rejects_per_fracture = 10
+force_large_fractures = false
+remove_fractures_less_than = 0.0
+
+[fram]
+enable = true
+relaxed = false
+triple_intersections = true
+
+[clusters]
+keep_only_largest = false
+keep_isolated_fractures = false
+
+[output]
+print_reject_reasons = true
+rejected_fractures = true
+
+[[family]]
+number_of_points = 8
+probability = 0.4
+aspect_ratio = 1.0
+radius = { distribution = "truncated_power_law", alpha = 2.5, min = 1.0, max = 3.0 }
+orientation = { theta = 0.0, phi = 0.0, kappa = 20.0 }
+
+[[family]]
+number_of_points = 8
+probability = 0.3
+aspect_ratio = 1.0
+radius = { distribution = "truncated_power_law", alpha = 2.5, min = 1.0, max = 3.0 }
+orientation = { theta = 90.0, phi = 0.0, kappa = 20.0 }
+
+[[family]]
+number_of_points = 8
+probability = 0.3
+aspect_ratio = 1.0
+radius = { distribution = "truncated_power_law", alpha = 2.5, min = 1.0, max = 3.0 }
+orientation = { theta = 90.0, phi = 90.0, kappa = 20.0 }

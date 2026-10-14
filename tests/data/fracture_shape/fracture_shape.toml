@@ -1,0 +1,48 @@
+# Shape of a family: number_of_points 3 (triangle), 4 (rectangle) and 12
+# (ellipse), with aspect_ratio 1, 0.5 and 2. FRAM is off.
+
+seed = 12345
+min_feature_size = 0.1
+domain = "../box.vtu"
+
+[generation]
+stop_condition = "n_poly"
+n_poly = 30
+radii_list_increase = 0.1
+rejects_per_fracture = 10
+force_large_fractures = false
+remove_fractures_less_than = 0.0
+
+[fram]
+enable = false
+relaxed = false
+triple_intersections = true
+
+[clusters]
+keep_only_largest = false
+keep_isolated_fractures = false
+
+[output]
+print_reject_reasons = false
+rejected_fractures = false
+
+[[family]]
+number_of_points = 3
+probability = 0.4
+aspect_ratio = 1.0
+radius = { distribution = "constant", value = 1.5 }
+orientation = { theta = 0.0, phi = 0.0, kappa = 10.0 }
+
+[[family]]
+number_of_points = 4
+probability = 0.3
+aspect_ratio = 0.5
+radius = { distribution = "constant", value = 2.0 }
+orientation = { theta = 0.0, phi = 0.0, kappa = 10.0 }
+
+[[family]]
+number_of_points = 12
+probability = 0.3
+aspect_ratio = 2.0
+radius = { distribution = "constant", value = 1.0 }
+orientation = { theta = 0.0, phi = 0.0, kappa = 10.0 }

@@ -1,0 +1,29 @@
+# Regions of user-defined fractures (region__<name> arrays of the fracture file).
+# A fracture which does not intersect a cell of its regions is rejected. The mesh
+# is ../regions.vtu. keep_isolated_fractures = true keeps the fractures, which do
+# not intersect, in the output.
+
+seed = 12345
+min_feature_size = 0.1
+domain = "../regions.vtu"
+user_fractures = "user_fracture_regions.vtp"
+
+[generation]
+stop_condition = "p32"
+radii_list_increase = 0.1
+rejects_per_fracture = 10
+force_large_fractures = false
+remove_fractures_less_than = 0.0
+
+[fram]
+enable = true
+relaxed = false
+triple_intersections = true
+
+[clusters]
+keep_only_largest = false
+keep_isolated_fractures = true
+
+[output]
+print_reject_reasons = false
+rejected_fractures = false

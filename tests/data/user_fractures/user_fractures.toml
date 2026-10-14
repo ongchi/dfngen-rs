@@ -1,0 +1,29 @@
+# User-defined fractures with 3, 4, 5, 8 and 12 vertices, in planes normal to
+# z, x and y, and one fracture outside the domain (rejected). No family, thus the
+# stop condition has no effect. The fractures do not intersect, thus
+# keep_isolated_fractures = true keeps them in the output.
+
+seed = 12345
+min_feature_size = 0.1
+domain = "../box.vtu"
+user_fractures = "user_fractures.vtp"
+
+[generation]
+stop_condition = "p32"
+radii_list_increase = 0.1
+rejects_per_fracture = 10
+force_large_fractures = false
+remove_fractures_less_than = 0.0
+
+[fram]
+enable = true
+relaxed = false
+triple_intersections = true
+
+[clusters]
+keep_only_largest = false
+keep_isolated_fractures = true
+
+[output]
+print_reject_reasons = false
+rejected_fractures = false

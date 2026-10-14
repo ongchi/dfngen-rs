@@ -1,0 +1,30 @@
+# Pieces of one user-defined fracture (fracture_id array of the fracture file).
+# The two pieces of fracture 7 share an edge; the second piece is outside the
+# domain, but it is accepted because the first piece is in the domain. They are
+# one cluster, thus they stay after the removal of isolated fractures. Fracture
+# 8 is isolated and is removed.
+
+seed = 12345
+min_feature_size = 0.1
+domain = "../box.vtu"
+user_fractures = "user_fracture_pieces.vtp"
+
+[generation]
+stop_condition = "p32"
+radii_list_increase = 0.1
+rejects_per_fracture = 10
+force_large_fractures = false
+remove_fractures_less_than = 0.0
+
+[fram]
+enable = true
+relaxed = false
+triple_intersections = true
+
+[clusters]
+keep_only_largest = false
+keep_isolated_fractures = false
+
+[output]
+print_reject_reasons = false
+rejected_fractures = false

@@ -1,0 +1,52 @@
+# region of a family: the fracture centers of family 2 are in the region
+# "center" (the center cell), those of family 3 in the region "center_and_east"
+# (the center cell and the cell at +x of it). The two regions overlap. Family 1
+# uses the whole mesh. The mesh is ../regions.vtu.
+
+seed = 12345
+min_feature_size = 0.1
+domain = "../regions.vtu"
+
+[generation]
+stop_condition = "n_poly"
+n_poly = 60
+radii_list_increase = 0.1
+rejects_per_fracture = 10
+force_large_fractures = false
+remove_fractures_less_than = 0.0
+
+[fram]
+enable = true
+relaxed = false
+triple_intersections = true
+
+[clusters]
+keep_only_largest = false
+keep_isolated_fractures = false
+
+[output]
+print_reject_reasons = false
+rejected_fractures = false
+
+[[family]]
+number_of_points = 8
+probability = 0.4
+aspect_ratio = 1.0
+radius = { distribution = "truncated_power_law", alpha = 2.5, min = 1.0, max = 4.0 }
+orientation = { theta = 0.0, phi = 0.0, kappa = 10.0 }
+
+[[family]]
+number_of_points = 8
+probability = 0.3
+aspect_ratio = 1.0
+region = "center"
+radius = { distribution = "truncated_power_law", alpha = 2.5, min = 1.0, max = 4.0 }
+orientation = { theta = 90.0, phi = 0.0, kappa = 10.0 }
+
+[[family]]
+number_of_points = 8
+probability = 0.3
+aspect_ratio = 1.0
+region = "center_and_east"
+radius = { distribution = "truncated_power_law", alpha = 2.5, min = 1.0, max = 4.0 }
+orientation = { theta = 90.0, phi = 90.0, kappa = 10.0 }

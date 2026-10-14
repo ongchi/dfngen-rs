@@ -1,0 +1,51 @@
+# The 3 forms of the orientation give the same pole: theta = 30, phi = 0;
+# trend = 270, plunge = 60; dip = 30, strike = 0. The normal is
+# (0.5, 0, 0.866). Family 3 has beta = 30 (fixed rotation in the plane of the
+# fracture); families 1 and 2 have a random rotation. FRAM is off.
+
+seed = 12345
+min_feature_size = 0.1
+domain = "../box.vtu"
+
+[generation]
+stop_condition = "n_poly"
+n_poly = 90
+radii_list_increase = 0.1
+rejects_per_fracture = 10
+force_large_fractures = false
+remove_fractures_less_than = 0.0
+
+[fram]
+enable = false
+relaxed = false
+triple_intersections = true
+
+[clusters]
+keep_only_largest = false
+keep_isolated_fractures = false
+
+[output]
+print_reject_reasons = false
+rejected_fractures = false
+
+[[family]]
+number_of_points = 8
+probability = 0.4
+aspect_ratio = 1.0
+radius = { distribution = "constant", value = 1.0 }
+orientation = { theta = 30.0, phi = 0.0, kappa = 50.0 }
+
+[[family]]
+number_of_points = 8
+probability = 0.3
+aspect_ratio = 1.0
+radius = { distribution = "constant", value = 1.0 }
+orientation = { trend = 270.0, plunge = 60.0, kappa = 50.0 }
+
+[[family]]
+number_of_points = 8
+probability = 0.3
+aspect_ratio = 1.0
+beta = 30.0
+radius = { distribution = "constant", value = 1.0 }
+orientation = { dip = 30.0, strike = 0.0, kappa = 50.0 }

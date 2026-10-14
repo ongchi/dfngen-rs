@@ -1,0 +1,63 @@
+# Each radius distribution, one for each family: log_normal (rejection sampling),
+# log_normal (inverse CDF sampling), truncated_power_law, exponential, constant.
+# FRAM is off, thus each family keeps the radii of its distribution.
+
+seed = 12345
+min_feature_size = 0.1
+domain = "../box.vtu"
+
+[generation]
+stop_condition = "n_poly"
+n_poly = 200
+radii_list_increase = 0.1
+rejects_per_fracture = 10
+force_large_fractures = false
+remove_fractures_less_than = 0.0
+
+[fram]
+enable = false
+relaxed = false
+triple_intersections = true
+
+[clusters]
+keep_only_largest = false
+keep_isolated_fractures = false
+
+[output]
+print_reject_reasons = false
+rejected_fractures = false
+
+[[family]]
+number_of_points = 8
+probability = 0.2
+aspect_ratio = 1.0
+radius = { distribution = "log_normal", log_mean = 0.5, sd = 0.4, min = 1.0, max = 3.0 }
+orientation = { theta = 0.0, phi = 0.0, kappa = 10.0 }
+
+[[family]]
+number_of_points = 8
+probability = 0.2
+aspect_ratio = 1.0
+radius = { distribution = "log_normal", log_mean = 0.5, sd = 0.4, min = 1.0, max = 3.0, sampling = "inverse_cdf" }
+orientation = { theta = 0.0, phi = 0.0, kappa = 10.0 }
+
+[[family]]
+number_of_points = 8
+probability = 0.2
+aspect_ratio = 1.0
+radius = { distribution = "truncated_power_law", alpha = 2.5, min = 1.0, max = 3.0 }
+orientation = { theta = 0.0, phi = 0.0, kappa = 10.0 }
+
+[[family]]
+number_of_points = 8
+probability = 0.2
+aspect_ratio = 1.0
+radius = { distribution = "exponential", mean = 1.5, min = 1.0, max = 3.0 }
+orientation = { theta = 0.0, phi = 0.0, kappa = 10.0 }
+
+[[family]]
+number_of_points = 8
+probability = 0.2
+aspect_ratio = 1.0
+radius = { distribution = "constant", value = 2.0 }
+orientation = { theta = 0.0, phi = 0.0, kappa = 10.0 }

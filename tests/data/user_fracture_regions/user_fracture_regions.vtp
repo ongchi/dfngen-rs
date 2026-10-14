@@ -1,0 +1,46 @@
+<?xml version="1.0"?>
+<!-- Fracture 1: region center, in the center cell (accepted). 2: region center, in
+     a corner cell (rejected). 3: no region, in a corner cell (accepted).
+     4: region center_and_east, in the cell at +x of the center cell (accepted). -->
+<VTKFile type="PolyData" version="1.0" byte_order="LittleEndian">
+<PolyData>
+<Piece NumberOfPoints="16" NumberOfVerts="0" NumberOfLines="0" NumberOfStrips="0" NumberOfPolys="4">
+<Points>
+<DataArray type="Float64" Name="points" NumberOfComponents="3" format="ascii">
+-1.0 -1.0 0.0
+1.0 -1.0 0.0
+1.0 1.0 0.0
+-1.0 1.0 0.0
+3.5 3.5 0.0
+4.5 3.5 0.0
+4.5 4.5 0.0
+3.5 4.5 0.0
+3.5 3.5 4.0
+4.5 3.5 4.0
+4.5 4.5 4.0
+3.5 4.5 4.0
+3.5 -1.0 0.0
+4.5 -1.0 0.0
+4.5 1.0 0.0
+3.5 1.0 0.0
+</DataArray>
+</Points>
+<Polys>
+<DataArray type="Int64" Name="connectivity" format="ascii">
+0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15
+</DataArray>
+<DataArray type="Int64" Name="offsets" format="ascii">
+4 8 12 16
+</DataArray>
+</Polys>
+<CellData>
+<DataArray type="Int32" Name="region__center" format="ascii">
+1 1 0 0
+</DataArray>
+<DataArray type="Int32" Name="region__center_and_east" format="ascii">
+0 0 0 1
+</DataArray>
+</CellData>
+</Piece>
+</PolyData>
+</VTKFile>

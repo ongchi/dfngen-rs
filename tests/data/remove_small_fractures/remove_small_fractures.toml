@@ -1,0 +1,41 @@
+# remove_fractures_less_than = 1.5: the fractures with a smaller radius are
+# removed after the generation. Else as base.
+
+seed = 12345
+min_feature_size = 0.1
+domain = "../box.vtu"
+
+[generation]
+stop_condition = "n_poly"
+n_poly = 100
+radii_list_increase = 0.1
+rejects_per_fracture = 10
+force_large_fractures = false
+remove_fractures_less_than = 1.5
+
+[fram]
+enable = true
+relaxed = false
+triple_intersections = true
+
+[clusters]
+keep_only_largest = false
+keep_isolated_fractures = false
+
+[output]
+print_reject_reasons = false
+rejected_fractures = false
+
+[[family]]
+number_of_points = 8
+probability = 0.5
+aspect_ratio = 1.0
+radius = { distribution = "truncated_power_law", alpha = 2.5, min = 1.0, max = 4.0 }
+orientation = { theta = 0.0, phi = 0.0, kappa = 10.0 }
+
+[[family]]
+number_of_points = 8
+probability = 0.5
+aspect_ratio = 1.0
+radius = { distribution = "truncated_power_law", alpha = 2.5, min = 1.0, max = 4.0 }
+orientation = { theta = 90.0, phi = 0.0, kappa = 10.0 }

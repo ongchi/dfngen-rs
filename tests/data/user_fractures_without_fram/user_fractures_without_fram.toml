@@ -1,0 +1,31 @@
+# check_user_fractures = false: FRAM does not check two user-defined fractures.
+# Fracture 2 intersects fracture 1 at 0.05 from its edge (less than
+# min_feature_size), thus FRAM rejects it with check_user_fractures = true.
+# Fracture 3 crosses fracture 1 with no FRAM problem, thus fracture 1 is not
+# isolated when fracture 2 is rejected.
+
+seed = 12345
+min_feature_size = 0.1
+domain = "../box.vtu"
+user_fractures = "user_fractures_without_fram.vtp"
+
+[generation]
+stop_condition = "p32"
+radii_list_increase = 0.1
+rejects_per_fracture = 10
+force_large_fractures = false
+remove_fractures_less_than = 0.0
+
+[fram]
+enable = true
+relaxed = false
+triple_intersections = true
+check_user_fractures = false
+
+[clusters]
+keep_only_largest = false
+keep_isolated_fractures = false
+
+[output]
+print_reject_reasons = false
+rejected_fractures = false
