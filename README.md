@@ -12,7 +12,8 @@ cargo run --release -- <input_file.toml> <output_folder>
 
 The input is one TOML file, one mesh file for the domain, and an optional file
 with the user-defined fractures. Each subfolder of
-`tests/data` is an example. All keys are necessary, except those marked as
+`tests/data` is an example of one feature; the comment at the top of its input
+file tells which. All keys are necessary, except those marked as
 optional below. An unknown key is an error.
 
 ```toml
@@ -104,7 +105,7 @@ Each fracture is whole: the domain does not cut it. Thus:
 A relative path starts at the folder of the input file. The key must be
 before the first table (`[generation]`) of the input file. The mesh is the only
 definition of the domain. `tests/data/mesh_domain` is an example, and
-`tests/data/stochastic_npoly` has a box domain (a mesh of one hexahedron).
+`tests/data/box.vtu` is a box domain (a mesh of one hexahedron).
 
 - The file must be an ASCII `.vtu` file. In ParaView, select the data mode
   "Ascii" in the save dialog. In PyVista, use `mesh.save("domain.vtu", binary=False)`.
@@ -137,7 +138,7 @@ A cell can be in more than one region, and in none. The volume of a region is
 the sum of the volumes of all its cells, thus the sum of the region volumes can
 be larger than the volume of the mesh. In this example, the first cell is in
 the regions `marble` and `north`, the second cell is in the region `north`, and
-the third cell has no region (`tests/data/all_input_options` is an example):
+the third cell has no region (`tests/data/regions.vtu` is an example):
 
 ```xml
 <CellData>
@@ -173,7 +174,7 @@ order of their file. The number of a family is its position in the input file.
 `user_fractures = "fractures.vtp"` gives the user-defined fractures as a VTK
 PolyData file. A relative path starts at the folder of the input file. The key
 must be before the first table (`[generation]`) of the input file.
-`tests/data/user_rectangles` is an example.
+`tests/data/user_fractures` is an example.
 
 - The file must be an ASCII `.vtp` file. In ParaView, select the data mode
   "Ascii" in the save dialog. In PyVista, use `mesh.save("fractures.vtp", binary=False)`.
