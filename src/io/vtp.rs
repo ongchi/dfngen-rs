@@ -267,6 +267,21 @@ mod tests {
     }
 
     #[test]
+    fn test_string_cell_data_of_fractures_rejected_is_ignored() {
+        // "SamePlane" and "CloseToEdge", as in the reject_reason array
+        let cell_data = r#"<CellData>
+            <DataArray type="String" Name="reject_reason" format="ascii">
+            83 97 109 101 80 108 97 110 101 0
+            67 108 111 115 101 84 111 69 100 103 101 0
+            </DataArray>
+            </CellData>"#;
+
+        let fractures = parse_user_fractures(&square_and_triangle_file(cell_data)).unwrap();
+
+        assert_eq!(fractures.len(), 2);
+    }
+
+    #[test]
     fn test_file_without_polygons_gives_no_fractures() {
         let fractures = parse_user_fractures(&vtp_file("PolyData", "", "", "")).unwrap();
 

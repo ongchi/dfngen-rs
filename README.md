@@ -340,22 +340,24 @@ then has no valid polygon.
 |---|---|
 | `family` | Same numbers as in `fractures.vtp`. |
 | `user_fracture_id` | Same values as in `fractures.vtp`. |
-| `reject_code` | Reason for the rejection of the last attempt. See the table below. |
+| `reject_reason` | Reason for the rejection of the last attempt, as text (VTK `String` array; ParaView can color by it). See the table below. |
 | `x_radius`, `y_radius`, `aspect_ratio` | Size. |
 | `normal` | Unit normal vector. |
 | `translation` | Translation of the fracture center from the origin. |
 
-| `reject_code` | Reason |
-|---|---|
-| -2 | Intersection shorter than `min_feature_size`. |
-| -5 | Intersection too near to another intersection. |
-| -6 | Fracture too near to an edge of another fracture. |
-| -7 | Intersecting fractures are in the same plane. |
-| -10 | Triple intersection, and `triple_intersections = false`. |
-| -11 | Intersection too near to a previous intersection. |
-| -12 | Triple intersection with an angle that is too small. |
-| -13 | Triple intersection point too near to an end point of an intersection. |
-| -14 | Triple intersection point too near to another triple intersection point. |
+The log with `print_reject_reasons = true` gives the code of the reason.
+
+| `reject_reason` | Code in the log | Reason |
+|---|---|---|
+| `ShortIntersection` | -2 | Intersection shorter than `min_feature_size`. |
+| `CloseToIntersection` | -5 | Intersection too near to another intersection. |
+| `CloseToEdge` | -6 | Fracture too near to an edge of another fracture. |
+| `SamePlane` | -7 | Intersecting fractures are in the same plane. |
+| `TripleIntersectionNotAllowed` | -10 | Triple intersection, and `triple_intersections = false`. |
+| `CloseToPreviousIntersection` | -11 | Intersection too near to a previous intersection. |
+| `TripleAngleTooSmall` | -12 | Triple intersection with an angle that is too small. |
+| `TriplePointCloseToEndpoint` | -13 | Triple intersection point too near to an end point of an intersection. |
+| `TriplePointCloseToTriplePoint` | -14 | Triple intersection point too near to another triple intersection point. |
 
 `fractures.vtp`, `fractures_removed.vtp` and `fractures_rejected.vtp` together
 do not have all generated fractures. An accepted fracture which is removed later because it

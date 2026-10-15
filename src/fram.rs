@@ -58,7 +58,22 @@ pub enum RejectReason {
 }
 
 impl RejectReason {
-    /// Number of the reason in `fractures_rejected.vtp` and in the log
+    /// Name of the reason in `fractures_rejected.vtp`: the name of the item
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::ShortIntersection => "ShortIntersection",
+            Self::CloseToIntersection => "CloseToIntersection",
+            Self::CloseToEdge => "CloseToEdge",
+            Self::SamePlane => "SamePlane",
+            Self::TripleIntersectionNotAllowed => "TripleIntersectionNotAllowed",
+            Self::CloseToPreviousIntersection => "CloseToPreviousIntersection",
+            Self::TripleAngleTooSmall => "TripleAngleTooSmall",
+            Self::TriplePointCloseToEndpoint => "TriplePointCloseToEndpoint",
+            Self::TriplePointCloseToTriplePoint => "TriplePointCloseToTriplePoint",
+        }
+    }
+
+    /// Number of the reason in the log
     pub fn code(self) -> i32 {
         match self {
             Self::ShortIntersection => -2,
@@ -1052,21 +1067,29 @@ fn check_for_triple_intersections(
 mod tests {
     use super::*;
 
+    const ALL_REJECT_REASONS: [RejectReason; 9] = [
+        RejectReason::ShortIntersection,
+        RejectReason::CloseToIntersection,
+        RejectReason::CloseToEdge,
+        RejectReason::SamePlane,
+        RejectReason::TripleIntersectionNotAllowed,
+        RejectReason::CloseToPreviousIntersection,
+        RejectReason::TripleAngleTooSmall,
+        RejectReason::TriplePointCloseToEndpoint,
+        RejectReason::TriplePointCloseToTriplePoint,
+    ];
+
     #[test]
     fn test_reject_reasons_have_the_numbers_of_the_readme_table() {
-        let codes = [
-            RejectReason::ShortIntersection,
-            RejectReason::CloseToIntersection,
-            RejectReason::CloseToEdge,
-            RejectReason::SamePlane,
-            RejectReason::TripleIntersectionNotAllowed,
-            RejectReason::CloseToPreviousIntersection,
-            RejectReason::TripleAngleTooSmall,
-            RejectReason::TriplePointCloseToEndpoint,
-            RejectReason::TriplePointCloseToTriplePoint,
-        ]
-        .map(RejectReason::code);
+        let codes = ALL_REJECT_REASONS.map(RejectReason::code);
 
         assert_eq!(codes, [-2, -5, -6, -7, -10, -11, -12, -13, -14]);
+    }
+
+    #[test]
+    fn test_reject_reason_name_is_the_name_of_the_item() {
+        for reason in ALL_REJECT_REASONS {
+            assert_eq!(reason.name(), format!("{reason:?}"));
+        }
     }
 }

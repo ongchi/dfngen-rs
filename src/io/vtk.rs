@@ -143,7 +143,7 @@ fn write_accepted_cell_data(
 /// last attempt, with the cell data:
 /// * `family` - Family number: 0 user-defined fracture, > 0 stochastic family
 /// * `user_fracture_id` - Value of the `fracture_id` array of the user-defined fracture file, -1 if none
-/// * `reject_code` - Number of the FRAM reject reason of the last attempt (`RejectReason::code`)
+/// * `reject_reason` - Name of the FRAM reject reason of the last attempt (`RejectReason::name`), a `String` array
 /// * `x_radius`, `y_radius`, `aspect_ratio` - Size
 /// * `normal` - Unit normal vector
 /// * `translation` - Translation of the fracture center from the origin
@@ -173,12 +173,10 @@ pub fn write_rejected_fractures_vtk(
         polys.iter().map(|poly| poly.origin.output_number()),
     )?;
     write_user_fracture_id_array(output, &polys)?;
-    write_data_array(
+    write_string_array(
         output,
-        "reject_code",
-        "Int32",
-        1,
-        rejected_polys.iter().map(|rejected| rejected.reason.code()),
+        "reject_reason",
+        rejected_polys.iter().map(|rejected| rejected.reason.name()),
     )?;
     write_real_array(output, "x_radius", &polys, |poly| poly.x_radius)?;
     write_real_array(output, "y_radius", &polys, |poly| poly.y_radius)?;
@@ -310,6 +308,28 @@ fn write_data_array<T: Display>(
 
     for tuple in tuples {
         writeln!(output, "{tuple}")?;
+    }
+
+    writeln!(output, "</DataArray>")
+}
+
+/// Writes a data array of the VTK type `String`. In the ASCII format, VTK has
+/// the character codes of each string, and 0 after each string.
+fn write_string_array<'a>(
+    output: &mut impl Write,
+    name: &str,
+    strings: impl Iterator<Item = &'a str>,
+) -> io::Result<()> {
+    writeln!(
+        output,
+        r#"<DataArray type="String" Name="{name}" format="ascii">"#
+    )?;
+
+    for string in strings {
+        for byte in string.bytes() {
+            write!(output, "{byte} ")?;
+        }
+        writeln!(output, "0")?;
     }
 
     writeln!(output, "</DataArray>")
@@ -525,10 +545,15 @@ mod tests {
     }
 
     #[test]
-    fn test_rejected_fracture_has_its_reject_code_and_family() {
+    fn test_rejected_fracture_has_its_reject_reason_and_family() {
         let file = write_rejected_rectangle();
+        let expected: String = "CloseToEdge"
+            .bytes()
+            .map(|byte| format!("{byte} "))
+            .chain(["0".to_string()])
+            .collect();
 
-        assert_eq!(data_array(&file, "reject_code"), ["-6"]);
+        assert_eq!(data_array(&file, "reject_reason"), [expected.as_str()]);
         assert_eq!(data_array(&file, "family"), ["1"]);
     }
 
