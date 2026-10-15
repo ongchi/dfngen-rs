@@ -7,7 +7,6 @@ domain = "../box.vtu"
 
 [generation]
 n_poly = 150
-rejects_per_fracture = 10
 force_large_fractures = false
 remove_fractures_less_than = 0.0
 
@@ -15,14 +14,13 @@ remove_fractures_less_than = 0.0
 enable = true
 relaxed = false
 triple_intersections = true
+print_reject_reasons = true
+write_rejected_fractures = true
+rejects_per_fracture = 10
 
 [clusters]
 keep_only_largest = false
 keep_isolated_fractures = false
-
-[output]
-print_reject_reasons = true
-rejected_fractures = true
 
 [[family]]
 number_of_points = 8

@@ -204,21 +204,20 @@ def convert_general_options(
     if stop_condition == 0:
         lines.append(f"n_poly = {int(dat.word('nPoly'))}")
     lines += [
-        f"rejects_per_fracture = {int(dat.word('rejectsPerFracture'))}",
         f"force_large_fractures = {boolean(dat.flag('forceLargeFractures'))}",
         f"remove_fractures_less_than = {number(dat.word('removeFracturesLessThan'))}",
         "",
         "[fram]",
         f"enable = {boolean(not dat.flag('disableFram'))}",
         f"relaxed = {boolean(dat.flag('rFram'))}",
-        f"triple_intersections = {boolean(dat.flag('tripleIntersections'))}",        "",
+        f"triple_intersections = {boolean(dat.flag('tripleIntersections'))}",
+        f"print_reject_reasons = {boolean(dat.flag('printRejectReasons'))}",
+        f"write_rejected_fractures = {boolean(dat.flag('outputAllRadii'))}",
+        f"rejects_per_fracture = {int(dat.word('rejectsPerFracture'))}",
+        "",
         "[clusters]",
         f"keep_only_largest = {boolean(dat.flag('keepOnlyLargestCluster'))}",
         f"keep_isolated_fractures = {boolean(dat.flag('keepIsolatedFractures'))}",
-        "",
-        "[output]",
-        f"print_reject_reasons = {boolean(dat.flag('printRejectReasons'))}",
-        f"rejected_fractures = {boolean(dat.flag('outputAllRadii'))}",
     ]
     return lines
 

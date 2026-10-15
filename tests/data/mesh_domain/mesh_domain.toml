@@ -5,7 +5,6 @@ user_fractures = "mesh_domain_user_fractures.vtp"
 
 [generation]
 n_poly = 100
-rejects_per_fracture = 10
 force_large_fractures = false
 remove_fractures_less_than = 0.0
 
@@ -13,14 +12,13 @@ remove_fractures_less_than = 0.0
 enable = true
 relaxed = false
 triple_intersections = true
+print_reject_reasons = false
+write_rejected_fractures = false
+rejects_per_fracture = 10
 
 [clusters]
 keep_only_largest = false
 keep_isolated_fractures = false
-
-[output]
-print_reject_reasons = false
-rejected_fractures = false
 
 # Whole mesh
 [[family]]

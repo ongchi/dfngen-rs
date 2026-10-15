@@ -24,7 +24,6 @@ user_fractures = "fractures.vtp"   # optional; the file with the user-defined fr
 
 [generation]
 n_poly = 60                        # optional; stop at 60 fractures. Without it: each family stops at its p32_target
-rejects_per_fracture = 10          # FRAM rejects of a stochastic fracture before it is rejected; it moves after each reject
 force_large_fractures = false      # true = each family first gets one fracture with its maximum radius
 remove_fractures_less_than = 0.0   # after the generation, remove the accepted fractures with x_radius below it; 0 = none
 
@@ -33,14 +32,13 @@ enable = true                      # false = no FRAM check; fractures can inters
 relaxed = false                    # true = FRAM rejects only short intersections and fractures in the same plane
 triple_intersections = true        # false = reject a fracture which makes a triple intersection; no effect with relaxed = true
 check_user_fractures = true        # optional, default true; false = no FRAM for two user-defined fractures (see below)
+print_reject_reasons = false       # true = log the reason of each FRAM reject
+write_rejected_fractures = false   # true = also write the fractures which FRAM rejected to fractures_rejected.vtp (see "Output files")
+rejects_per_fracture = 10          # FRAM rejects of a stochastic fracture before it is rejected; it moves after each reject
 
 [clusters]
 keep_only_largest = false          # true = keep only the largest cluster; no effect with keep_isolated_fractures = true
 keep_isolated_fractures = false    # true = keep all accepted fractures; false = remove the fractures with no intersection
-
-[output]
-print_reject_reasons = false       # true = log the reason of each FRAM reject
-rejected_fractures = false         # true = also write fractures_rejected.vtp (see "Output files")
 
 # One table for each stochastic fracture family (optional)
 [[family]]
@@ -301,7 +299,7 @@ of such a run is approximate.
 | `rejections.dat` | Number of rejected fractures for each rejection reason. |
 | `rejectsPerAttempt.dat` | Line N: number of rejected attempts before accepted fracture N. |
 | `userFractureRejections.dat` | Number of each rejected user-defined fracture (the position of its polygon in the `.vtp` file, from 1). Written only if a user-defined fracture was rejected. |
-| `fractures_rejected.vtp` | The rejected fractures as polygons with their properties (VTK PolyData). Written only if `rejected_fractures = true`. See below. |
+| `fractures_rejected.vtp` | The rejected fractures as polygons with their properties (VTK PolyData). Written only if `fram.write_rejected_fractures = true`. See below. |
 
 ### Cell data of `fractures.vtp`
 
@@ -331,7 +329,7 @@ acceptance. The arrays are those of `fractures.vtp` without `fracture_id`.
 
 The file has one polygon cell for each rejected fracture, at the position of
 its last attempt. A stochastic fracture is rejected when FRAM rejects it and
-it has no re-translation left (`rejects_per_fracture`). A user-defined
+it has no re-translation left (`fram.rejects_per_fracture`). A user-defined
 fracture has only one attempt. The file can be very large.
 
 A fracture has no cell if its last attempt was outside the domain, because it

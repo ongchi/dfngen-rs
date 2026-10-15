@@ -130,7 +130,6 @@ struct InputFile {
     generation: GenerationSection,
     fram: FramSection,
     clusters: ClustersSection,
-    output: OutputSection,
     #[serde(default, rename = "family")]
     families: Vec<FamilySection>,
 }
@@ -139,7 +138,6 @@ struct InputFile {
 #[serde(deny_unknown_fields)]
 struct GenerationSection {
     n_poly: Option<usize>,
-    rejects_per_fracture: usize,
     force_large_fractures: bool,
     remove_fractures_less_than: f64,
 }
@@ -151,6 +149,9 @@ struct FramSection {
     relaxed: bool,
     triple_intersections: bool,
     check_user_fractures: Option<bool>,
+    print_reject_reasons: bool,
+    write_rejected_fractures: bool,
+    rejects_per_fracture: usize,
 }
 
 #[derive(Deserialize)]
@@ -158,13 +159,6 @@ struct FramSection {
 struct ClustersSection {
     keep_only_largest: bool,
     keep_isolated_fractures: bool,
-}
-
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct OutputSection {
-    print_reject_reasons: bool,
-    rejected_fractures: bool,
 }
 
 #[derive(Deserialize)]
@@ -417,12 +411,12 @@ fn build_input(
         check_user_fractures: file.fram.check_user_fractures.unwrap_or(true),
         keep_only_largest_cluster: file.clusters.keep_only_largest,
         keep_isolated_fractures: file.clusters.keep_isolated_fractures,
-        print_reject_reasons: file.output.print_reject_reasons,
+        print_reject_reasons: file.fram.print_reject_reasons,
         force_large_fractures: file.generation.force_large_fractures,
         seed: file.seed,
         remove_fractures_less_than: file.generation.remove_fractures_less_than,
-        output_rejected_fractures: file.output.rejected_fractures,
-        rejects_per_fracture: file.generation.rejects_per_fracture,
+        output_rejected_fractures: file.fram.write_rejected_fractures,
+        rejects_per_fracture: file.fram.rejects_per_fracture,
         region_volumes,
         user_fractures,
     };
@@ -623,7 +617,6 @@ pub mod test_inputs {
 
         [generation]
         n_poly = 60
-        rejects_per_fracture = 10
         force_large_fractures = false
         remove_fractures_less_than = 0.0
 
@@ -631,14 +624,13 @@ pub mod test_inputs {
         enable = true
         relaxed = false
         triple_intersections = true
+        print_reject_reasons = false
+        write_rejected_fractures = false
+        rejects_per_fracture = 10
 
         [clusters]
         keep_only_largest = false
         keep_isolated_fractures = false
-
-        [output]
-        print_reject_reasons = false
-        rejected_fractures = false
     "#;
 
     /// Reads the sections with the L-shaped mesh as the domain. The mesh has
@@ -1110,6 +1102,28 @@ mod tests {
             message.contains("unknown field `stop_condition`"),
             "{}",
             message
+        );
+    }
+
+    #[test]
+    fn test_output_section_is_rejected() {
+        let options = format!("{GENERAL_OPTIONS}\n[output]\nprint_reject_reasons = false\n");
+
+        let message = error_message(parse(&[&options]));
+
+        assert!(message.contains("unknown field `output`"), "{message}");
+    }
+
+    #[test]
+    fn test_rejects_per_fracture_in_generation_section_is_rejected() {
+        let options =
+            GENERAL_OPTIONS.replace("n_poly = 60", "n_poly = 60\nrejects_per_fracture = 10");
+
+        let message = error_message(parse(&[&options]));
+
+        assert!(
+            message.contains("unknown field `rejects_per_fracture`"),
+            "{message}"
         );
     }
 
