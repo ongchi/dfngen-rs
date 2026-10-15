@@ -7,7 +7,6 @@ domain = "../box.vtu"
 
 [generation]
 n_poly = 100
-radii_list_increase = 0.1
 rejects_per_fracture = 10
 force_large_fractures = true
 remove_fractures_less_than = 0.0

@@ -17,7 +17,7 @@ an error if the `.dat` file uses them. `domainSizeIncrease` is dropped: the
 fracture centers of dfngen-rs are always in the domain.
 
 Keys which dfngen-rs does not use are dropped (`domainCenter`, `framOn`,
-`ecpmOutput`, `nFracFam`, `minimum_fracture_size`).
+`ecpmOutput`, `nFracFam`, `minimum_fracture_size`, `radiiListIncrease`).
 
 A rectangle becomes a polygon with 4 points. Its radius in dfnGen is half the
 side; in dfngen-rs it is the distance from the center to a corner of the
@@ -204,7 +204,6 @@ def convert_general_options(
     if stop_condition == 0:
         lines.append(f"n_poly = {int(dat.word('nPoly'))}")
     lines += [
-        f"radii_list_increase = {number(dat.word('radiiListIncrease'))}",
         f"rejects_per_fracture = {int(dat.word('rejectsPerFracture'))}",
         f"force_large_fractures = {boolean(dat.flag('forceLargeFractures'))}",
         f"remove_fractures_less_than = {number(dat.word('removeFracturesLessThan'))}",

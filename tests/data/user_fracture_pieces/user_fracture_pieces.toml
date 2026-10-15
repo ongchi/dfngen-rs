@@ -10,7 +10,6 @@ domain = "../box.vtu"
 user_fractures = "user_fracture_pieces.vtp"
 
 [generation]
-radii_list_increase = 0.1
 rejects_per_fracture = 10
 force_large_fractures = false
 remove_fractures_less_than = 0.0

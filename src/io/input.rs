@@ -46,11 +46,6 @@ pub struct Input {
     /// epsilon
     pub eps: f64,
 
-    /// Percent to increase the size of the pre-generated radii lists, per family.
-    /// Example: 0.2 will increase the size of the list by %20. See example input files
-    /// for more details.
-    pub radii_list_increase: f64,
-
     /// With `false`, the FRAM algorithm is off. There will be no
     /// fracture rejections.
     pub is_fram_enabled: bool,
@@ -144,7 +139,6 @@ struct InputFile {
 #[serde(deny_unknown_fields)]
 struct GenerationSection {
     n_poly: Option<usize>,
-    radii_list_increase: f64,
     rejects_per_fracture: usize,
     force_large_fractures: bool,
     remove_fractures_less_than: f64,
@@ -417,7 +411,6 @@ fn build_input(
         domain_mesh,
         min_feature_size: file.min_feature_size,
         eps,
-        radii_list_increase: file.generation.radii_list_increase,
         is_fram_enabled: file.fram.enable,
         is_fram_relaxed: file.fram.relaxed,
         triple_intersections: file.fram.triple_intersections,
@@ -630,7 +623,6 @@ pub mod test_inputs {
 
         [generation]
         n_poly = 60
-        radii_list_increase = 0.1
         rejects_per_fracture = 10
         force_large_fractures = false
         remove_fractures_less_than = 0.0
@@ -1118,6 +1110,19 @@ mod tests {
             message.contains("unknown field `stop_condition`"),
             "{}",
             message
+        );
+    }
+
+    #[test]
+    fn test_radii_list_increase_key_is_rejected() {
+        let options =
+            GENERAL_OPTIONS.replace("n_poly = 60", "n_poly = 60\nradii_list_increase = 0.1");
+
+        let message = error_message(parse(&[&options]));
+
+        assert!(
+            message.contains("unknown field `radii_list_increase`"),
+            "{message}"
         );
     }
 

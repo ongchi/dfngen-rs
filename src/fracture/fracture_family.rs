@@ -332,23 +332,6 @@ impl FractureFamilyCollection {
         Ok(())
     }
 
-    /// Adds `ceil(list length × fraction)` sampled radii to the list of each family.
-    pub fn add_radii_fraction(
-        &mut self,
-        fraction: f64,
-        generator: &mut Mt64,
-    ) -> Result<(), DfngenError> {
-        for family in &mut self.families {
-            let count = (family.radii_list.len() as f64 * fraction).ceil() as usize;
-            for _ in 0..count {
-                let radius = family.sample_radius(generator)?;
-                family.radii_list.push(radius);
-            }
-        }
-
-        Ok(())
-    }
-
     /// Sort each family's radii list from largest to smallest.
     /// This will allow the DFN gereration to start from largest to smallest
     /// fractures.
@@ -475,16 +458,5 @@ mod tests {
             .unwrap();
 
         assert_eq!(families.families[0].radii_list[0], 5.0);
-    }
-
-    #[test]
-    fn test_radii_fraction_adds_the_rounded_up_part_of_the_list_length() {
-        let (_, mut families) =
-            parse_p32_family(r#"{ distribution = "constant", value = 2.0 }"#, 0.5);
-        families.families[0].radii_list = vec![2.0; 41];
-
-        families.add_radii_fraction(0.1, &mut Mt64::new(1)).unwrap();
-
-        assert_eq!(families.families[0].radii_list.len(), 46);
     }
 }

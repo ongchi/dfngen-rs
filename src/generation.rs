@@ -216,11 +216,7 @@ fn prepare_radii_lists(
         }
     }
 
-    // FRAM rejects some fractures. Add a percentage more radii to each radii
-    // list using families' distribution, eg: 0.1 will add 10% more fractures.
     if input.is_fram_enabled {
-        family_collection.add_radii_fraction(input.radii_list_increase, generator)?;
-
         for fracture_family in &family_collection.families {
             info!(
                 "Estimated {} fractures for family {}",
@@ -624,8 +620,6 @@ fn report_rejection_statistics(stats: &Stats) {
 fn report_estimation_statistics(family_collection: &FractureFamilyCollection, stats: &Stats) {
     info!("Fracture Estimation statistics:");
     info!("NOTE: If estimation and actual are very different, expected family distributions might not be accurate.");
-    info!("If this is the case, try increasing or decreasing the 'generation.radii_list_increase' option in the input file.");
-
     for (i, family) in family_collection.families.iter().enumerate() {
         match family.radius.function {
             RadiusFunction::Constant(_) => {
