@@ -24,7 +24,7 @@ user_fractures = "fractures.vtp"   # optional; the file with the user-defined fr
 
 [generation]
 n_poly = 60                        # optional; stop at 60 fractures. Without it: each family stops at its p32_target
-radii_list_increase = 0.1          # with n_poly and FRAM on: extra radii, as a fraction of n_poly; no effect without n_poly (see below)
+radii_list_increase = 0.1          # with FRAM on: extra radii, as a fraction of the radii list of each family (see below)
 rejects_per_fracture = 10          # FRAM rejects of a stochastic fracture before it is rejected; it moves after each reject
 force_large_fractures = false      # true = each family first gets one fracture with its maximum radius
 remove_fractures_less_than = 0.0   # after the generation, remove the accepted fractures with x_radius below it; 0 = none
@@ -79,14 +79,15 @@ the distribution.
 
 - With `n_poly`, the list has `ceil(probability × n_poly)` radii. With
   `force_large_fractures = true`, it has `max` and
-  `ceil(probability × (n_poly − number of families))` radii. With FRAM on,
-  `radii_list_increase` adds `ceil(probability × ceil(n_poly × radii_list_increase))`
-  radii, because FRAM rejects some fractures.
-- Without `n_poly` and with FRAM on, a dry run gives the list: it inserts
-  fractures with no FRAM check until each family has its `p32_target`, and
-  keeps their radii. `radii_list_increase` adds no radii. (dfnWorks adds
-  `ceil(list size × radiiListIncrease)` radii with both stop conditions.)
-- With FRAM off and without `n_poly`, the list is empty.
+  `ceil(probability × (n_poly − number of families))` radii.
+- Without `n_poly`, the family samples radii until their area gives its
+  `p32_target`: `sum(area) × 2 / volume ≥ p32_target`, with the volume of the
+  family's region. The area of a fracture with `n` points and radius `r` is
+  `(n / 2) × sin(2π / n) × aspect_ratio × r²`. With
+  `force_large_fractures = true`, the list starts with `max`. (dfnWorks makes
+  this list with a dry run of the generation, with no FRAM check.)
+- With FRAM on, `radii_list_increase` adds `ceil(list size × radii_list_increase)`
+  radii to each list, because FRAM rejects some fractures.
 
 Family probability: for each new fracture, the generator selects a family at
 random, in proportion to its `probability`. The effect is different for each

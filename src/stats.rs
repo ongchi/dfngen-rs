@@ -26,7 +26,7 @@ pub struct Stats {
     /// Number of rejected fractures of each stochastic family, in the order of the families
     pub rejected_per_family: Vec<usize>,
 
-    /// Number of fractures estimated for each stochastic family (see `dry_run`),
+    /// Number of fractures estimated for each stochastic family (the length of its radii list),
     /// in the order of the families
     pub expected_per_family: Vec<usize>,
 

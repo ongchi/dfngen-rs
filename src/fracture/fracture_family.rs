@@ -49,24 +49,55 @@ pub struct FractureFamily {
     pub domain_mesh: Rc<DomainMesh>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum RadiusOption {
-    FromCacheOrRng,
-    FromRng,
-    MaxRadius,
-}
-
 impl FractureFamily {
-    /// Adds the area of an accepted polygon to the family's current P32.
-    /// The volume is that of the family's region, or of the whole domain.
-    pub fn add_area_to_p32(&mut self, area: f64, domain_volume: f64, region_volumes: &[f64]) {
-        let volume = if self.region_id > 0 {
+    /// Volume of the family's region, or of the whole domain.
+    pub fn region_volume(&self, domain_volume: f64, region_volumes: &[f64]) -> f64 {
+        if self.region_id > 0 {
             region_volumes[self.region_id - 1]
         } else {
             domain_volume
-        };
+        }
+    }
 
-        self.current_p32 += area * 2. / volume;
+    /// Adds the area of an accepted polygon to the family's current P32.
+    /// The volume is that of the family's region, or of the whole domain.
+    pub fn add_area_to_p32(&mut self, area: f64, domain_volume: f64, region_volumes: &[f64]) {
+        self.current_p32 += area * 2. / self.region_volume(domain_volume, region_volumes);
+    }
+
+    /// Area of a fracture of the family with this radius: the polygon of
+    /// `Poly::new` is a regular polygon, stretched in y by the aspect ratio.
+    pub fn fracture_area(&self, radius: f64) -> f64 {
+        let number_of_points = self.number_of_points as f64;
+        let angle_step = 2. * std::f64::consts::PI / number_of_points;
+
+        number_of_points / 2. * angle_step.sin() * self.aspect_ratio * radius * radius
+    }
+
+    /// Fills the radii list until the radii have the P32 target of the family.
+    ///
+    /// P32 counts both sides of a fracture. With `force_large_fractures`,
+    /// the list starts with the maximum radius.
+    fn generate_p32_radii(
+        &mut self,
+        force_large_fractures: bool,
+        volume: f64,
+        generator: &mut Mt64,
+    ) -> Result<(), DfngenError> {
+        let mut p32 = 0.;
+
+        if force_large_fractures {
+            self.radii_list.push(self.radius.max);
+            p32 += self.fracture_area(self.radius.max) * 2. / volume;
+        }
+
+        while p32 < self.p32_target {
+            let radius = self.sample_radius(generator)?;
+            self.radii_list.push(radius);
+            p32 += self.fracture_area(radius) * 2. / volume;
+        }
+
+        Ok(())
     }
 
     /// Uniform random position in the cells of the family's region
@@ -112,23 +143,16 @@ impl FractureFamily {
         &mut self,
         eps: f64,
         family_index: usize,
-        radius_opt: RadiusOption,
         generator: &mut Mt64,
     ) -> Result<Poly, DfngenError> {
-        let radius = match radius_opt {
-            RadiusOption::FromCacheOrRng | RadiusOption::FromRng => {
-                if self.radii_index >= self.radii_list.len() || radius_opt == RadiusOption::FromRng
-                {
-                    // If out of radii from list, insert random radius
-                    self.sample_radius(generator)?
-                } else {
-                    // Insert radius from list
-                    let radius = self.radii_list[self.radii_index];
-                    self.radii_index += 1;
-                    radius
-                }
-            }
-            RadiusOption::MaxRadius => self.radius.max,
+        let radius = if self.radii_index >= self.radii_list.len() {
+            // If out of radii from list, insert random radius
+            self.sample_radius(generator)?
+        } else {
+            // Insert radius from list
+            let radius = self.radii_list[self.radii_index];
+            self.radii_index += 1;
+            radius
         };
 
         // New polygon to build
@@ -284,6 +308,47 @@ impl FractureFamilyCollection {
         Ok(())
     }
 
+    /// Generates the radii list of each family for the P32 stop condition:
+    /// sampled radii until their area gives the P32 target of the family.
+    ///
+    /// # Arguments
+    ///
+    /// * `force_large_fractures` - If true, each list starts with the maximum radius
+    /// * `domain_volume` - Volume of the domain mesh
+    /// * `region_volumes` - Volume of each region of the domain mesh
+    /// * `generator` - Random number generator
+    pub fn generate_p32_radii(
+        &mut self,
+        force_large_fractures: bool,
+        domain_volume: f64,
+        region_volumes: &[f64],
+        generator: &mut Mt64,
+    ) -> Result<(), DfngenError> {
+        for family in &mut self.families {
+            let volume = family.region_volume(domain_volume, region_volumes);
+            family.generate_p32_radii(force_large_fractures, volume, generator)?;
+        }
+
+        Ok(())
+    }
+
+    /// Adds `ceil(list length × fraction)` sampled radii to the list of each family.
+    pub fn add_radii_fraction(
+        &mut self,
+        fraction: f64,
+        generator: &mut Mt64,
+    ) -> Result<(), DfngenError> {
+        for family in &mut self.families {
+            let count = (family.radii_list.len() as f64 * fraction).ceil() as usize;
+            for _ in 0..count {
+                let radius = family.sample_radius(generator)?;
+                family.radii_list.push(radius);
+            }
+        }
+
+        Ok(())
+    }
+
     /// Sort each family's radii list from largest to smallest.
     /// This will allow the DFN gereration to start from largest to smallest
     /// fractures.
@@ -291,5 +356,135 @@ impl FractureFamilyCollection {
         for family in &mut self.families {
             family.radii_list.sort_by(|a, b| b.total_cmp(a));
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::io::input::test_inputs::{parse, GENERAL_OPTIONS};
+    use crate::io::input::Input;
+
+    /// Input without n_poly and with one family of this radius and P32 target
+    fn parse_p32_family(radius: &str, p32_target: f64) -> (Input, FractureFamilyCollection) {
+        let family = format!(
+            r#"
+            [[family]]
+            number_of_points = 8
+            probability = 1.0
+            aspect_ratio = 1.5
+            p32_target = {p32_target}
+            radius = {radius}
+            orientation = {{ theta = 0.0, phi = 0.0, kappa = 8.0 }}
+            "#
+        );
+        let options = GENERAL_OPTIONS.replace("n_poly = 60", "");
+
+        parse(&[&options, &family]).unwrap()
+    }
+
+    fn list_p32(family: &FractureFamily, radii: &[f64], volume: f64) -> f64 {
+        radii
+            .iter()
+            .map(|&radius| family.fracture_area(radius) * 2. / volume)
+            .sum()
+    }
+
+    #[test]
+    fn test_fracture_area_is_the_area_of_the_polygon() {
+        let (_, mut families) =
+            parse_p32_family(r#"{ distribution = "constant", value = 2.0 }"#, 0.1);
+        let family = &mut families.families[0];
+
+        for number_of_points in [3, 4, 8] {
+            for aspect_ratio in [1.0, 2.0] {
+                family.number_of_points = number_of_points;
+                family.aspect_ratio = aspect_ratio;
+                let mut poly = Poly::new(number_of_points, 2.0, aspect_ratio);
+                poly.assign_area();
+
+                let area = family.fracture_area(2.0);
+
+                assert!(
+                    (area - poly.area).abs() < 1e-12 * poly.area,
+                    "{number_of_points} points, aspect ratio {aspect_ratio}: {area} != {}",
+                    poly.area
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_p32_radii_list_of_constant_radius_has_the_target_count() {
+        let (input, mut families) =
+            parse_p32_family(r#"{ distribution = "constant", value = 2.0 }"#, 0.5);
+        let family_area = families.families[0].fracture_area(2.0);
+        let expected = (0.5 * input.domain_volume / (2. * family_area)).ceil() as usize;
+
+        families
+            .generate_p32_radii(
+                false,
+                input.domain_volume,
+                &input.region_volumes,
+                &mut Mt64::new(1),
+            )
+            .unwrap();
+
+        assert_eq!(families.families[0].radii_list.len(), expected);
+    }
+
+    #[test]
+    fn test_p32_radii_list_stops_at_the_first_radius_which_reaches_the_target() {
+        let (input, mut families) = parse_p32_family(
+            r#"{ distribution = "truncated_power_law", alpha = 1.5, min = 1.0, max = 5.0 }"#,
+            0.5,
+        );
+
+        families
+            .generate_p32_radii(
+                false,
+                input.domain_volume,
+                &input.region_volumes,
+                &mut Mt64::new(1),
+            )
+            .unwrap();
+
+        let family = &families.families[0];
+        let radii = &family.radii_list;
+        let all_but_last = &radii[..radii.len() - 1];
+        assert!(
+            list_p32(family, radii, input.domain_volume) >= 0.5
+                && list_p32(family, all_but_last, input.domain_volume) < 0.5
+        );
+    }
+
+    #[test]
+    fn test_p32_radii_list_starts_with_the_maximum_radius_for_large_fractures() {
+        let (input, mut families) = parse_p32_family(
+            r#"{ distribution = "truncated_power_law", alpha = 1.5, min = 1.0, max = 5.0 }"#,
+            0.5,
+        );
+
+        families
+            .generate_p32_radii(
+                true,
+                input.domain_volume,
+                &input.region_volumes,
+                &mut Mt64::new(1),
+            )
+            .unwrap();
+
+        assert_eq!(families.families[0].radii_list[0], 5.0);
+    }
+
+    #[test]
+    fn test_radii_fraction_adds_the_rounded_up_part_of_the_list_length() {
+        let (_, mut families) =
+            parse_p32_family(r#"{ distribution = "constant", value = 2.0 }"#, 0.5);
+        families.families[0].radii_list = vec![2.0; 41];
+
+        families.add_radii_fraction(0.1, &mut Mt64::new(1)).unwrap();
+
+        assert_eq!(families.families[0].radii_list.len(), 46);
     }
 }

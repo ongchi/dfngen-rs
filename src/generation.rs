@@ -10,8 +10,7 @@ use crate::fracture::family_probability::{
     cumulative_sum, index_from_probability, index_from_probability_and_p32_status,
     p32_progress_fraction, remove_family_probability,
 };
-use crate::fracture::fracture_estimating::dry_run;
-use crate::fracture::fracture_family::{FractureFamily, FractureFamilyCollection, RadiusOption};
+use crate::fracture::fracture_family::{FractureFamily, FractureFamilyCollection};
 use crate::fracture::insert_user_defined_fractures;
 use crate::fracture::poly::Poly;
 use crate::fram::{check_intersections, log_reject_reason};
@@ -198,31 +197,29 @@ fn prepare_radii_lists(
 ) -> Result<(), DfngenError> {
     let total_families = family_collection.families.len();
 
-    // Number of extra radii: a percentage of n_poly, eg: 0.1 will add 10% more
-    // fractures. The P32 option adds none.
-    let extra_radii_count = match input.stop_condition {
+    match input.stop_condition {
         StopCondition::NPoly(n_poly) => {
             // Npoly Option
             // Estimate fractures, generate radii lists for n_poly option
             info!("Building radii lists for nPoly option...");
             family_collection.generate_radii(input.force_large_fractures, n_poly, generator)?;
             info!("Building radii lists for nPoly option Complete");
-            (n_poly as f64 * input.radii_list_increase).ceil() as usize
         }
         StopCondition::P32 => {
-            if input.is_fram_enabled {
-                // P32 Option
-                // ESTIMATE # FRACTURES NEEDED
-                info!("Estimating number of fractures needed...");
-                dry_run(input, family_collection, generator)?;
-            }
-            0
+            info!("Building radii lists for the P32 target of each family...");
+            family_collection.generate_p32_radii(
+                input.force_large_fractures,
+                input.domain_volume,
+                &input.region_volumes,
+                generator,
+            )?;
         }
-    };
+    }
 
-    // Add the extra radii to each radii list using families' distribution.
+    // FRAM rejects some fractures. Add a percentage more radii to each radii
+    // list using families' distribution, eg: 0.1 will add 10% more fractures.
     if input.is_fram_enabled {
-        family_collection.generate_radii(false, extra_radii_count, generator)?;
+        family_collection.add_radii_fraction(input.radii_list_increase, generator)?;
 
         for fracture_family in &family_collection.families {
             info!(
@@ -303,7 +300,6 @@ fn insert_stochastic_fractures(
         let mut new_poly = family_collection.families[family_index].create_poly(
             input.eps,
             family_index,
-            RadiusOption::FromCacheOrRng,
             generator,
         )?;
 

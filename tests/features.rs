@@ -192,18 +192,15 @@ mod stop_p32 {
     }
 
     #[test]
-    fn test_family_with_the_smaller_target_stops_first() {
+    fn test_each_family_stops_at_the_fracture_which_reaches_its_target() {
         let network = run("stop_p32");
-        let last_fracture_of_family = |family| {
-            network
-                .dfn
-                .accepted_polys
-                .iter()
-                .rposition(|poly| poly.origin == FractureOrigin::Family(family))
-                .unwrap()
-        };
 
-        assert!(last_fracture_of_family(0) < last_fracture_of_family(1));
+        for (index, family) in network.families.families.iter().enumerate() {
+            let last_fracture = family_fractures(&network, index).pop().unwrap();
+            let p32_without_last =
+                family.current_p32 - 2. * last_fracture.area / network.input.domain_volume;
+            assert!(p32_without_last < family.p32_target);
+        }
     }
 }
 
