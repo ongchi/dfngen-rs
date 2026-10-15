@@ -1,12 +1,11 @@
-# stop_condition = "p32": each family stops at its p32_target. Family 1 has the
-# smaller target.
+# No n_poly, thus the stop condition is P32: each family stops at its
+# p32_target. Family 1 has the smaller target.
 
 seed = 12345
 min_feature_size = 0.1
 domain = "../box.vtu"
 
 [generation]
-stop_condition = "p32"
 radii_list_increase = 0.1
 rejects_per_fracture = 10
 force_large_fractures = false

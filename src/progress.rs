@@ -41,10 +41,9 @@ impl GenerationProgress {
     /// # Arguments
     ///
     /// * `stop_condition` - Stop condition of the generation
-    /// * `n_poly` - Number of fractures to accept with the `NPoly` stop condition
-    pub fn new(stop_condition: StopCondition, n_poly: usize) -> Self {
+    pub fn new(stop_condition: StopCondition) -> Self {
         let (length, template) = match stop_condition {
-            StopCondition::NPoly => (
+            StopCondition::NPoly(n_poly) => (
                 n_poly as u64,
                 "[{elapsed_precise}] [{bar:40}] {percent:>3} %  {pos}/{len} fractures  ETA {eta_precise}",
             ),
@@ -72,7 +71,7 @@ impl GenerationProgress {
     /// The bar is removed from the terminal when the stop condition is complete.
     pub fn update(&self, update: &ProgressUpdate) {
         match self.stop_condition {
-            StopCondition::NPoly => self.bar.set_position(update.accepted_count as u64),
+            StopCondition::NPoly(_) => self.bar.set_position(update.accepted_count as u64),
             StopCondition::P32 => {
                 self.bar.set_message(update.accepted_count.to_string());
                 self.bar

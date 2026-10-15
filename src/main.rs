@@ -50,11 +50,11 @@ fn run(cli: &Cli) -> Result<(), DfngenError> {
     }
 
     // The bar starts with the first accepted stochastic fracture
-    let (stop_condition, n_poly) = (input.stop_condition, input.n_poly);
+    let stop_condition = input.stop_condition;
     let mut progress = None;
     let network = generate(input, family_collection, &mut |update| {
         progress
-            .get_or_insert_with(|| GenerationProgress::new(stop_condition, n_poly))
+            .get_or_insert_with(|| GenerationProgress::new(stop_condition))
             .update(update);
     })?;
 

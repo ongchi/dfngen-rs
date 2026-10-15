@@ -23,8 +23,7 @@ domain = "domain.vtu"              # the mesh file which gives the domain (see b
 user_fractures = "fractures.vtp"   # optional; the file with the user-defined fractures (see below)
 
 [generation]
-stop_condition = "n_poly"          # or "p32"
-n_poly = 60                        # necessary only for "n_poly"
+n_poly = 60                        # optional; stop at 60 fractures. Without it: each family stops at its p32_target
 radii_list_increase = 0.1
 rejects_per_fracture = 10
 force_large_fractures = false
@@ -51,7 +50,7 @@ probability = 0.4
 aspect_ratio = 1.0
 region = "marble"                  # optional; a region of the mesh (see below). Without it: the whole mesh
 beta = 30.0                        # optional; without it the rotation is uniform
-p32_target = 0.5                   # necessary only for stop_condition "p32"
+p32_target = 0.5                   # necessary without n_poly; not allowed with n_poly
 radius = { distribution = "truncated_power_law", alpha = 2.5, min = 1.0, max = 5.0 }
 orientation = { theta = 0.0, phi = 0.0, kappa = 8.0 }
 ```
@@ -76,7 +75,7 @@ Family probability: for each new fracture, the generator selects a family at
 random, in proportion to its `probability`. The effect is different for each
 stop condition:
 
-| | `stop_condition = "n_poly"` | `stop_condition = "p32"` |
+| | With `n_poly` | Without `n_poly` (P32) |
 |---|---|---|
 | Family selection | By `probability` only. | By `probability`, but only among the families which are below their `p32_target`. |
 | Final quantity of each family | `probability` controls it. | `p32_target` controls it. `probability` does not. |
@@ -85,7 +84,7 @@ stop condition:
 - With `n_poly`, `probability` is the fraction of the insertion attempts, not
   of the accepted fractures. FRAM rejects more fractures of some families, thus
   the final fractions can be different.
-- With `p32`, a family which reaches its `p32_target` is removed from the
+- Without `n_poly`, a family which reaches its `p32_target` is removed from the
   selection. Its probability is added in equal parts to the other families.
 - The sum of the probabilities must be 1. A sum outside 0.999 to 1.001 gives a
   warning, not an error, and the selection is then not in proportion to the
@@ -96,8 +95,8 @@ Each fracture is whole: the domain does not cut it. Thus:
 - A fracture can have vertices outside the domain. A fracture with no part in
   the domain is rejected.
 - FRAM also checks the intersections outside the domain, and they are written.
-- The area and the P32 values include the part outside the domain. Thus a `p32`
-  run stops with a lower intensity in the domain than `p32_target`.
+- The area and the P32 values include the part outside the domain. Thus a run
+  without `n_poly` stops with a lower intensity in the domain than `p32_target`.
 
 ### Domain mesh
 
@@ -269,7 +268,7 @@ stderr, if stderr is a terminal:
 [00:00:12] [################>-----------------------]  42 %  25/60 fractures  ETA 00:00:17
 ```
 
-With `stop_condition = "p32"`, the percent is the part of the total target P32
+Without `n_poly`, the percent is the part of the total target P32
 which the families have, and the bar shows the number of accepted fractures
 without a total. The large fractures are inserted first, thus the remaining time
 of such a run is approximate.

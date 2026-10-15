@@ -200,10 +200,9 @@ def convert_general_options(
         lines.append(f'user_fractures = "{user_fractures_file_name}"')
 
     lines += ["", "[generation]"]
+    # Without n_poly, the stop condition is P32
     if stop_condition == 0:
-        lines += ['stop_condition = "n_poly"', f"n_poly = {int(dat.word('nPoly'))}"]
-    else:
-        lines.append('stop_condition = "p32"')
+        lines.append(f"n_poly = {int(dat.word('nPoly'))}")
     lines += [
         f"radii_list_increase = {number(dat.word('radiiListIncrease'))}",
         f"rejects_per_fracture = {int(dat.word('rejectsPerFracture'))}",

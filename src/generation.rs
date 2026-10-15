@@ -20,7 +20,7 @@ use crate::stats::Stats;
 
 /// Result of a generation
 pub struct Network {
-    /// Input options. `stop_condition` and `n_poly` are those which the generation used.
+    /// Input options. `stop_condition` is the one which the generation used.
     pub input: Input,
     /// Stochastic fracture families, with their final P32
     pub families: FractureFamilyCollection,
@@ -81,18 +81,16 @@ pub fn generate(
     let num_user_defined_fractures =
         insert_user_defined_fractures(&input.user_fractures, &options, &mut dfn);
 
-    if total_families == 0 && input.stop_condition != StopCondition::NPoly {
+    if total_families == 0 && input.stop_condition == StopCondition::P32 {
         // If no stochastic families, use n_poly option with n_poly = number of user polygons
-        warn!("You have defined stop_condition = \"p32\" but have no stochastic fracture families defined.");
-        warn!("Automatically setting stop_condition to \"n_poly\" for use with user defined fractures.");
-        input.stop_condition = StopCondition::NPoly;
+        warn!("You have not set generation.n_poly (stop condition P32) but have no stochastic fracture families defined.");
+        warn!("Automatically setting n_poly to the number of user defined fractures.");
 
         if num_user_defined_fractures == 0 {
             return Err(DfngenError::NoFractureDefined);
         }
 
-        // Set n_poly to the amount of user defined polygons
-        input.n_poly = num_user_defined_fractures;
+        input.stop_condition = StopCondition::NPoly(num_user_defined_fractures);
     }
 
     if total_families > 0 {
@@ -200,29 +198,31 @@ fn prepare_radii_lists(
 ) -> Result<(), DfngenError> {
     let total_families = family_collection.families.len();
 
-    if input.stop_condition == StopCondition::NPoly {
-        // Npoly Option
-        // Estimate fractures, generate radii lists for n_poly option
-        info!("Building radii lists for nPoly option...");
-        family_collection.generate_radii(input.force_large_fractures, input.n_poly, generator)?;
-        info!("Building radii lists for nPoly option Complete");
-    } else if input.is_fram_enabled {
-        // P32 Option
-        // ESTIMATE # FRACTURES NEEDED
-        info!("Estimating number of fractures needed...");
-        dry_run(input, family_collection, generator)?;
-    }
+    // Number of extra radii: a percentage of n_poly, eg: 0.1 will add 10% more
+    // fractures. The P32 option adds none.
+    let extra_radii_count = match input.stop_condition {
+        StopCondition::NPoly(n_poly) => {
+            // Npoly Option
+            // Estimate fractures, generate radii lists for n_poly option
+            info!("Building radii lists for nPoly option...");
+            family_collection.generate_radii(input.force_large_fractures, n_poly, generator)?;
+            info!("Building radii lists for nPoly option Complete");
+            (n_poly as f64 * input.radii_list_increase).ceil() as usize
+        }
+        StopCondition::P32 => {
+            if input.is_fram_enabled {
+                // P32 Option
+                // ESTIMATE # FRACTURES NEEDED
+                info!("Estimating number of fractures needed...");
+                dry_run(input, family_collection, generator)?;
+            }
+            0
+        }
+    };
 
-    // Add a percentage more radii to each radii
-    // list using families' distribution.
-    // First arg is percentage, eg: 0.1 will add 10% more fractures
-    // to the radii list for each family
+    // Add the extra radii to each radii list using families' distribution.
     if input.is_fram_enabled {
-        family_collection.generate_radii(
-            false,
-            (input.n_poly as f64 * input.radii_list_increase).ceil() as usize,
-            generator,
-        )?;
+        family_collection.generate_radii(false, extra_radii_count, generator)?;
 
         for fracture_family in &family_collection.families {
             info!(
@@ -278,22 +278,26 @@ fn insert_stochastic_fractures(
     // P32 requirement
     let mut p32_status = vec![false; total_families];
 
-    while (input.stop_condition == StopCondition::NPoly && dfn.stats.accepted_count < input.n_poly)
-        || (input.stop_condition == StopCondition::P32 && p32_status.iter().any(|p| !p))
-    {
+    while match input.stop_condition {
+        StopCondition::NPoly(n_poly) => dfn.stats.accepted_count < n_poly,
+        StopCondition::P32 => p32_status.iter().any(|p| !p),
+    } {
         let roll = generator.sample(uniform_dist);
 
         // cdf_index is the index to the CDF array of the family being inserted
-        let (family_index, cdf_index) = if input.stop_condition == StopCondition::NPoly {
-            // n_poly Option
-            // Choose a family based purely on the family probabilities
-            let family_index = index_from_probability(&cdf, roll);
-            (family_index, family_index)
-        } else {
-            // P32 Option
-            // Choose a family based on probabiliyis AND their target p32 completion status.
-            // If a family has already met is fracture intinisty req. (p32) don't choose that family anymore
-            index_from_probability_and_p32_status(&p32_status, &cdf, roll)
+        let (family_index, cdf_index) = match input.stop_condition {
+            StopCondition::NPoly(_) => {
+                // n_poly Option
+                // Choose a family based purely on the family probabilities
+                let family_index = index_from_probability(&cdf, roll);
+                (family_index, family_index)
+            }
+            StopCondition::P32 => {
+                // P32 Option
+                // Choose a family based on probabiliyis AND their target p32 completion status.
+                // If a family has already met is fracture intinisty req. (p32) don't choose that family anymore
+                index_from_probability_and_p32_status(&p32_status, &cdf, roll)
+            }
         };
 
         let mut new_poly = family_collection.families[family_index].create_poly(
@@ -405,7 +409,7 @@ fn insert_stochastic_fractures(
 /// Part of the stop condition which is complete, from 0 to 1
 fn progress_fraction(input: &Input, accepted_count: usize, families: &[FractureFamily]) -> f64 {
     match input.stop_condition {
-        StopCondition::NPoly => accepted_count as f64 / input.n_poly as f64,
+        StopCondition::NPoly(n_poly) => accepted_count as f64 / n_poly as f64,
         StopCondition::P32 => {
             let current_and_target_p32: Vec<(f64, f64)> = families
                 .iter()

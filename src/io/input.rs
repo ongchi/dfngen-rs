@@ -15,12 +15,11 @@ use crate::fracture::user_defined_fractures::UserFracture;
 use crate::io::vtp::{parse_user_fractures, read_user_fractures, FracturePolygon};
 use crate::io::vtu::{parse_domain_mesh, read_domain_mesh};
 
-#[derive(Deserialize, Default, Debug, Clone, Copy, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
+/// The input has `generation.n_poly` for `NPoly`, and no `n_poly` for `P32`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StopCondition {
-    /// Stop at a fixed number of accepted fractures.
-    #[default]
-    NPoly,
+    /// Stop at this number of accepted fractures.
+    NPoly(usize),
 
     /// Stop when each family has its target fracture intensity.
     P32,
@@ -30,9 +29,6 @@ pub enum StopCondition {
 pub struct Input {
     /// DFN generation stop condition.
     pub stop_condition: StopCondition,
-
-    /// Number of polygons to place in the DFN with the `NPoly` stop condition.
-    pub n_poly: usize,
 
     /// Size of the bounding box of the domain mesh. The generation has the
     /// center of this box at the origin.
@@ -147,7 +143,6 @@ struct InputFile {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct GenerationSection {
-    stop_condition: StopCondition,
     n_poly: Option<usize>,
     radii_list_increase: f64,
     rejects_per_fracture: usize,
@@ -377,15 +372,10 @@ fn build_input(
         file.min_feature_size, region_volumes
     );
 
-    let stop_condition = file.generation.stop_condition;
-    let n_poly = match (stop_condition, file.generation.n_poly) {
-        (StopCondition::NPoly, None) if !file.families.is_empty() => {
-            return Err(invalid_input(
-                "generation.n_poly is necessary for stop_condition \"n_poly\"".to_string(),
-            ));
-        }
-        (_, n_poly) => n_poly.unwrap_or(0),
-    };
+    let stop_condition = file
+        .generation
+        .n_poly
+        .map_or(StopCondition::P32, StopCondition::NPoly);
 
     let user_fractures = fracture_polygons
         .iter()
@@ -415,7 +405,6 @@ fn build_input(
 
     let input = Input {
         stop_condition,
-        n_poly,
         domain_size: domain_mesh.size(),
         domain_volume: domain_mesh.volume(),
         domain_mesh,
@@ -504,11 +493,17 @@ fn build_family(
         builder.beta(beta.to_radians());
     }
 
-    if context.stop_condition == StopCondition::P32 {
-        let p32_target = section
-            .p32_target
-            .ok_or("p32_target is necessary for stop_condition \"p32\"")?;
-        builder.p32_target(p32_target);
+    match (context.stop_condition, section.p32_target) {
+        (StopCondition::P32, Some(p32_target)) => {
+            builder.p32_target(p32_target);
+        }
+        (StopCondition::P32, None) => {
+            return Err("p32_target is necessary when generation.n_poly is not set".into());
+        }
+        (StopCondition::NPoly(_), Some(_)) => {
+            return Err("p32_target is not allowed when generation.n_poly is set".into());
+        }
+        (StopCondition::NPoly(_), None) => {}
     }
 
     builder.build()
@@ -619,7 +614,6 @@ pub mod test_inputs {
         domain = "domain.vtu"
 
         [generation]
-        stop_condition = "n_poly"
         n_poly = 60
         radii_list_increase = 0.1
         rejects_per_fracture = 10
@@ -744,8 +738,8 @@ mod tests {
         let (input, _) = parse(&[GENERAL_OPTIONS]).unwrap();
 
         assert_eq!(
-            (input.seed, input.n_poly, input.domain_size),
-            (12345, 60, Vector3::new(10., 10., 10.))
+            (input.seed, input.stop_condition, input.domain_size),
+            (12345, StopCondition::NPoly(60), Vector3::new(10., 10., 10.))
         );
     }
 
@@ -1071,12 +1065,45 @@ mod tests {
     }
 
     #[test]
+    fn test_input_without_n_poly_has_p32_stop_condition() {
+        let options = GENERAL_OPTIONS.replace("n_poly = 60", "");
+        let family = ELLIPSE_FAMILY.replace("beta = 90.0", "beta = 90.0\np32_target = 0.5");
+
+        let (input, _) = parse(&[&options, &family]).unwrap();
+
+        assert_eq!(input.stop_condition, StopCondition::P32);
+    }
+
+    #[test]
     fn test_p32_stop_condition_needs_family_target() {
-        let options = GENERAL_OPTIONS.replace("\"n_poly\"", "\"p32\"");
+        let options = GENERAL_OPTIONS.replace("n_poly = 60", "");
 
         let message = error_message(parse(&[&options, ELLIPSE_FAMILY]));
 
         assert!(message.contains("p32_target is necessary"), "{}", message);
+    }
+
+    #[test]
+    fn test_family_target_with_n_poly_is_rejected() {
+        let family = ELLIPSE_FAMILY.replace("beta = 90.0", "beta = 90.0\np32_target = 0.5");
+
+        let message = error_message(parse(&[GENERAL_OPTIONS, &family]));
+
+        assert!(message.contains("p32_target is not allowed"), "{}", message);
+    }
+
+    #[test]
+    fn test_stop_condition_key_is_rejected() {
+        let options =
+            GENERAL_OPTIONS.replace("n_poly = 60", "n_poly = 60\nstop_condition = \"n_poly\"");
+
+        let message = error_message(parse(&[&options]));
+
+        assert!(
+            message.contains("unknown field `stop_condition`"),
+            "{}",
+            message
+        );
     }
 
     #[test]

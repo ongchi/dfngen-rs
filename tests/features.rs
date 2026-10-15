@@ -6,6 +6,7 @@ use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 
 use dfngen::fracture::poly::{FractureOrigin, Poly};
+use dfngen::io::input::StopCondition;
 use dfngen::stats::RejectionReasons;
 use dfngen::{
     build_input_from_text, generate, read_input, read_input_file_names, write_output, Network,
@@ -138,7 +139,10 @@ mod base {
     fn test_n_poly_stop_condition_accepts_n_poly_fractures() {
         let network = run("base");
 
-        assert_eq!(network.dfn.accepted_polys.len(), network.input.n_poly);
+        assert_eq!(
+            network.input.stop_condition,
+            StopCondition::NPoly(network.dfn.accepted_polys.len())
+        );
     }
 
     #[test]
@@ -596,13 +600,16 @@ mod generation_options {
     #[test]
     fn test_small_fractures_are_removed() {
         let network = run("remove_small_fractures");
+        let StopCondition::NPoly(n_poly) = network.input.stop_condition else {
+            panic!("the case must set generation.n_poly");
+        };
 
         assert!(network
             .dfn
             .accepted_polys
             .iter()
             .all(|poly| poly.x_radius >= 1.5));
-        assert!(network.dfn.accepted_polys.len() < network.input.n_poly);
+        assert!(network.dfn.accepted_polys.len() < n_poly);
     }
 
     #[test]

@@ -6,7 +6,6 @@ min_feature_size = 0.1
 domain = "../box.vtu"
 
 [generation]
-stop_condition = "n_poly"
 n_poly = 30
 radii_list_increase = 0.1
 rejects_per_fracture = 10

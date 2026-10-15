@@ -10,7 +10,6 @@ domain = "../box.vtu"
 user_fractures = "user_fractures_without_fram.vtp"
 
 [generation]
-stop_condition = "p32"
 radii_list_increase = 0.1
 rejects_per_fracture = 10
 force_large_fractures = false

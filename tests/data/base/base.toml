@@ -1,5 +1,5 @@
 # Base input of the feature cases: box mesh of 10 x 10 x 10, 2 families,
-# stop_condition = "n_poly", FRAM on, default cluster options (isolated
+# stop at n_poly = 100 fractures, FRAM on, default cluster options (isolated
 # fractures are removed). The other cases change only the keys of their feature.
 
 seed = 12345
@@ -7,7 +7,6 @@ min_feature_size = 0.1
 domain = "../box.vtu"
 
 [generation]
-stop_condition = "n_poly"
 n_poly = 100
 radii_list_increase = 0.1
 rejects_per_fracture = 10
