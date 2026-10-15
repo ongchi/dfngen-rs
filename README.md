@@ -417,7 +417,7 @@ Without the default feature `cli`, the library has no dependency on `clap`,
 `indicatif` and `tracing-subscriber`, and it compiles for WebAssembly:
 
 ```toml
-dfngen-rs = { version = "0.10", default-features = false }
+dfngen-rs = { version = "0.11", default-features = false }
 ```
 
 ```bash
