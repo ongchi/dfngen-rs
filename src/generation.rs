@@ -1,7 +1,7 @@
 use rand::distr::Uniform;
 use rand::Rng;
 use rand_mt::Mt64;
-use tracing::{info, warn};
+use tracing::{debug, info, warn};
 
 use crate::dfn::{Dfn, PolyOptions, RejectedFracture};
 use crate::distribution::RadiusFunction;
@@ -360,9 +360,7 @@ fn insert_stochastic_fractures(
             // (number of rejects until next fracture accepted)
             dfn.stats.rejects_per_attempt[dfn.stats.accepted_count] += 1;
 
-            if fram_options.print_reject_reasons {
-                log_reject_reason(reject_reason, &new_poly);
-            }
+            log_reject_reason(reject_reason, family_index);
 
             if reject_counter >= fram_options.rejects_per_fracture {
                 dfn.stats.rejected_count += 1;
@@ -379,9 +377,7 @@ fn insert_stochastic_fractures(
                 break;
             }
 
-            if fram_options.print_reject_reasons {
-                info!("Translating rejected fracture to new position");
-            }
+            debug!("Translating rejected fracture to new position");
 
             dfn.stats.retranslated_count += 1;
             family_collection.families[family_index].retranslate(&mut new_poly, generator);

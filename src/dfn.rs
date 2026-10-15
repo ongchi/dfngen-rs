@@ -7,7 +7,7 @@ use crate::domain_mesh::DomainMesh;
 use crate::fracture::cluster_groups::ClusterGroups;
 use crate::fracture::poly::Poly;
 use crate::fracture::user_defined_fractures::DomainCheck;
-use crate::fram::{check_intersections, log_reject_reason, FramOptions, RejectReason};
+use crate::fram::{check_intersections, FramOptions, RejectReason};
 use crate::stats::Stats;
 
 /// A fracture which was not accepted, with the FRAM reject reason of its last attempt.
@@ -121,7 +121,12 @@ impl Dfn {
             self.stats.rejected_count += 1;
             self.stats.rejected_user_fractures.push(poly_id);
 
-            log_reject_reason(reject_reason, &new_poly);
+            warn!(
+                "User-defined fracture {}: rejected by FRAM: {} ({})",
+                poly_id,
+                reject_reason.name(),
+                reject_reason.description()
+            );
 
             if options.keeps_rejected_fractures() {
                 self.rejected_polys.push(RejectedFracture {
@@ -230,7 +235,6 @@ mod tests {
             relaxed: false,
             triple_intersections: false,
             check_user_fractures: true,
-            print_reject_reasons: false,
             write_rejected_fractures: false,
             rejects_per_fracture: 10,
         }

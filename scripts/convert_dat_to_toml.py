@@ -17,7 +17,8 @@ an error if the `.dat` file uses them. `domainSizeIncrease` is dropped: the
 fracture centers of dfngen-rs are always in the domain.
 
 Keys which dfngen-rs does not use are dropped (`domainCenter`, `framOn`,
-`ecpmOutput`, `nFracFam`, `minimum_fracture_size`, `radiiListIncrease`).
+`ecpmOutput`, `nFracFam`, `minimum_fracture_size`, `radiiListIncrease`,
+`printRejectReasons`).
 
 A rectangle becomes a polygon with 4 points. Its radius in dfnGen is half the
 side; in dfngen-rs it is the distance from the center to a corner of the
@@ -213,7 +214,6 @@ def convert_general_options(
         f"triple_intersections = {boolean(dat.flag('tripleIntersections'))}",
         # dfnWorks always checks two user-defined fractures
         "check_user_fractures = true",
-        f"print_reject_reasons = {boolean(dat.flag('printRejectReasons'))}",
         f"write_rejected_fractures = {boolean(dat.flag('outputAllRadii'))}",
         f"rejects_per_fracture = {int(dat.word('rejectsPerFracture'))}",
         "",

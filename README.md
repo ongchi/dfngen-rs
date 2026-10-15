@@ -33,7 +33,6 @@ enable = true                      # default false; false = no FRAM check, fract
 relaxed = false                    # default false; true = FRAM rejects only short intersections and fractures in the same plane
 triple_intersections = true        # default false; false = reject a fracture which makes a triple intersection; no effect with relaxed = true
 check_user_fractures = true        # default false; false = no FRAM for two user-defined fractures (see below)
-print_reject_reasons = false       # default false; true = log the reason of each FRAM reject
 write_rejected_fractures = false   # default false; true = also write the fractures which FRAM rejected to fractures_rejected.vtp (see "Output files")
 rejects_per_fracture = 10          # default 10; FRAM rejects of a stochastic fracture before it is rejected; it moves after each reject
 
@@ -345,19 +344,23 @@ then has no valid polygon.
 | `normal` | Unit normal vector. |
 | `translation` | Translation of the fracture center from the origin. |
 
-The log with `print_reject_reasons = true` gives the code of the reason.
+| `reject_reason` | Reason |
+|---|---|
+| `ShortIntersection` | Intersection shorter than `min_feature_size`. |
+| `CloseToIntersection` | Intersection too near to another intersection. |
+| `CloseToEdge` | Fracture too near to an edge of another fracture. |
+| `SamePlane` | Intersecting fractures are in the same plane. |
+| `TripleIntersectionNotAllowed` | Triple intersection, and `triple_intersections = false`. |
+| `CloseToPreviousIntersection` | Intersection too near to a previous intersection. |
+| `TripleAngleTooSmall` | Triple intersection with an angle that is too small. |
+| `TriplePointCloseToEndpoint` | Triple intersection point too near to an end point of an intersection. |
+| `TriplePointCloseToTriplePoint` | Triple intersection point too near to another triple intersection point. |
 
-| `reject_reason` | Code in the log | Reason |
-|---|---|---|
-| `ShortIntersection` | -2 | Intersection shorter than `min_feature_size`. |
-| `CloseToIntersection` | -5 | Intersection too near to another intersection. |
-| `CloseToEdge` | -6 | Fracture too near to an edge of another fracture. |
-| `SamePlane` | -7 | Intersecting fractures are in the same plane. |
-| `TripleIntersectionNotAllowed` | -10 | Triple intersection, and `triple_intersections = false`. |
-| `CloseToPreviousIntersection` | -11 | Intersection too near to a previous intersection. |
-| `TripleAngleTooSmall` | -12 | Triple intersection with an angle that is too small. |
-| `TriplePointCloseToEndpoint` | -13 | Triple intersection point too near to an end point of an intersection. |
-| `TriplePointCloseToTriplePoint` | -14 | Triple intersection point too near to another triple intersection point. |
+The log gives the same name for each FRAM reject. The reject of a
+user-defined fracture is a warning with the number of the fracture. The
+reject of each attempt of a stochastic fracture is at the level `debug`; to
+see it, run with `RUST_LOG=debug` (or `RUST_LOG=dfngen::fram=debug` for only
+these lines).
 
 `fractures.vtp`, `fractures_removed.vtp` and `fractures_rejected.vtp` together
 do not have all generated fractures. An accepted fracture which is removed later because it

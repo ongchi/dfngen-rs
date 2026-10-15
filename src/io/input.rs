@@ -120,7 +120,6 @@ struct FramSection {
     relaxed: bool,
     triple_intersections: bool,
     check_user_fractures: bool,
-    print_reject_reasons: bool,
     write_rejected_fractures: bool,
     rejects_per_fracture: usize,
 }
@@ -134,7 +133,6 @@ impl Default for FramSection {
             relaxed: false,
             triple_intersections: false,
             check_user_fractures: false,
-            print_reject_reasons: false,
             write_rejected_fractures: false,
             rejects_per_fracture: 10,
         }
@@ -148,7 +146,6 @@ impl FramSection {
             relaxed: self.relaxed,
             triple_intersections: self.triple_intersections,
             check_user_fractures: self.check_user_fractures,
-            print_reject_reasons: self.print_reject_reasons,
             write_rejected_fractures: self.write_rejected_fractures,
             rejects_per_fracture: self.rejects_per_fracture,
         })
@@ -624,7 +621,6 @@ pub mod test_inputs {
         enable = true
         relaxed = false
         triple_intersections = true
-        print_reject_reasons = false
         write_rejected_fractures = false
         rejects_per_fracture = 10
 
@@ -957,6 +953,18 @@ mod tests {
     }
 
     #[test]
+    fn test_print_reject_reasons_key_is_rejected() {
+        let options = replace_fram_section("[fram]\nenable = true\nprint_reject_reasons = true\n");
+
+        let message = error_message(parse(&[&options]));
+
+        assert!(
+            message.contains("unknown field `print_reject_reasons`"),
+            "{message}"
+        );
+    }
+
+    #[test]
     fn test_fram_is_off_without_its_section() {
         let (input, _) = parse(&[&replace_fram_section("")]).unwrap();
 
@@ -975,7 +983,6 @@ mod tests {
                 relaxed: false,
                 triple_intersections: false,
                 check_user_fractures: false,
-                print_reject_reasons: false,
                 write_rejected_fractures: false,
                 rejects_per_fracture: 10,
             })

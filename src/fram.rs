@@ -1,6 +1,6 @@
 use parry3d_f64::bounding_volume::BoundingVolume;
 use parry3d_f64::na::{distance, Point3};
-use tracing::warn;
+use tracing::debug;
 
 use crate::{
     dfn::{Dfn, Intersection, PolyOptions},
@@ -21,9 +21,6 @@ pub struct FramOptions {
 
     /// False: FRAM does not check an intersection of two user-defined fractures
     pub check_user_fractures: bool,
-
-    /// Log the reason of each FRAM reject
-    pub print_reject_reasons: bool,
 
     /// Keep the rejected fractures and write them to `fractures_rejected.vtp`.
     /// Caution: the file can be very large.
@@ -73,21 +70,6 @@ impl RejectReason {
         }
     }
 
-    /// Number of the reason in the log
-    pub fn code(self) -> i32 {
-        match self {
-            Self::ShortIntersection => -2,
-            Self::CloseToIntersection => -5,
-            Self::CloseToEdge => -6,
-            Self::SamePlane => -7,
-            Self::TripleIntersectionNotAllowed => -10,
-            Self::CloseToPreviousIntersection => -11,
-            Self::TripleAngleTooSmall => -12,
-            Self::TriplePointCloseToEndpoint => -13,
-            Self::TriplePointCloseToTriplePoint => -14,
-        }
-    }
-
     /// Text of the reason for the log
     pub fn description(self) -> &'static str {
         match self {
@@ -116,23 +98,18 @@ pub struct CandidateTriplePoint {
     pub intersection_indices: Vec<usize>,
 }
 
-/// Writes the reject reason of a fracture to the log.
+/// Writes the reject reason of an attempt of a stochastic fracture to the log,
+/// at the level `debug`.
 ///
 /// # Arguments
 ///
 /// * `reject_reason` - Reason why FRAM rejected the fracture
-/// * `new_poly` - Fracture which was rejected
-pub fn log_reject_reason(reject_reason: RejectReason, new_poly: &Poly) {
-    if let Some(family_index) = new_poly.origin.family_index() {
-        warn!(
-            "Attempted fracture from family {} was rejected:",
-            family_index
-        );
-    }
-
-    warn!(
-        "\trejectCode = {}: {}",
-        reject_reason.code(),
+/// * `family_index` - Index of the family of the fracture
+pub fn log_reject_reason(reject_reason: RejectReason, family_index: usize) {
+    debug!(
+        "Fracture of family {} rejected: {} ({})",
+        family_index + 1,
+        reject_reason.name(),
         reject_reason.description()
     );
 }
@@ -1078,13 +1055,6 @@ mod tests {
         RejectReason::TriplePointCloseToEndpoint,
         RejectReason::TriplePointCloseToTriplePoint,
     ];
-
-    #[test]
-    fn test_reject_reasons_have_the_numbers_of_the_readme_table() {
-        let codes = ALL_REJECT_REASONS.map(RejectReason::code);
-
-        assert_eq!(codes, [-2, -5, -6, -7, -10, -11, -12, -13, -14]);
-    }
 
     #[test]
     fn test_reject_reason_name_is_the_name_of_the_item() {

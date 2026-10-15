@@ -15,7 +15,6 @@ remove_fractures_less_than = 0.0
 enable = false
 relaxed = false
 triple_intersections = true
-print_reject_reasons = false
 write_rejected_fractures = false
 rejects_per_fracture = 10
 
