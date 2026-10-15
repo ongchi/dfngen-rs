@@ -58,11 +58,7 @@ pub fn generate(
         eps: input.eps,
         domain_size: input.domain_size,
         domain_mesh: input.domain_mesh.clone(),
-        is_fram_relaxed: input.is_fram_relaxed,
-        is_fram_enabled: input.is_fram_enabled,
-        triple_intersections: input.triple_intersections,
-        check_user_fractures: input.check_user_fractures,
-        keep_rejected_fractures: input.output_rejected_fractures,
+        fram: input.fram.clone(),
     };
 
     let mut generator = Mt64::new(input.seed);
@@ -216,7 +212,7 @@ fn prepare_radii_lists(
         }
     }
 
-    if input.is_fram_enabled {
+    if input.fram.is_some() {
         for fracture_family in &family_collection.families {
             info!(
                 "Estimated {} fractures for family {}",
@@ -305,13 +301,9 @@ fn insert_stochastic_fractures(
         loop {
             if new_poly.is_outside_box_domain(input.min_feature_size, input.eps, &input.domain_size)
             {
-                // Poly was completely outside domain
+                // Poly was completely outside domain. The center of a fracture
+                // is in the mesh, thus this does not occur.
                 dfn.stats.rejection_reasons.outside += 1;
-
-                if reject_counter >= input.rejects_per_fracture {
-                    // Reject poly, generate new polygon
-                    break;
-                }
 
                 // Retranslate poly and try again, preserving normal, size, and family
                 family_collection.families[family_index].retranslate(&mut new_poly, generator);
@@ -322,7 +314,8 @@ fn insert_stochastic_fractures(
             // Find line of intersection and FRAM check
             let fram_result = check_intersections(options, &mut new_poly, dfn);
 
-            let Err(reject_reason) = fram_result else {
+            // A reject comes only from FRAM, thus FRAM has its options
+            let (Err(reject_reason), Some(fram_options)) = (fram_result, &input.fram) else {
                 dfn.stats.accepted_count += 1;
                 dfn.stats.accepted_per_family[family_index] += 1;
                 // Make new rejection counter for next fracture attempt
@@ -367,15 +360,15 @@ fn insert_stochastic_fractures(
             // (number of rejects until next fracture accepted)
             dfn.stats.rejects_per_attempt[dfn.stats.accepted_count] += 1;
 
-            if input.print_reject_reasons {
+            if fram_options.print_reject_reasons {
                 log_reject_reason(reject_reason, &new_poly);
             }
 
-            if reject_counter >= input.rejects_per_fracture {
+            if reject_counter >= fram_options.rejects_per_fracture {
                 dfn.stats.rejected_count += 1;
                 dfn.stats.rejected_per_family[family_index] += 1;
 
-                if options.keep_rejected_fractures {
+                if fram_options.write_rejected_fractures {
                     dfn.rejected_polys.push(RejectedFracture {
                         poly: new_poly,
                         reason: reject_reason,
@@ -386,7 +379,7 @@ fn insert_stochastic_fractures(
                 break;
             }
 
-            if input.print_reject_reasons {
+            if fram_options.print_reject_reasons {
                 info!("Translating rejected fracture to new position");
             }
 

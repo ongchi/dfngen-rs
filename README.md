@@ -27,14 +27,15 @@ n_poly = 60                        # optional; stop at 60 fractures. Without it:
 force_large_fractures = false      # true = each family first gets one fracture with its maximum radius
 remove_fractures_less_than = 0.0   # after the generation, remove the accepted fractures with x_radius below it; 0 = none
 
+# Optional section; each key is optional. Without it: FRAM is off.
 [fram]
-enable = true                      # false = no FRAM check; fractures can intersect with no limit
-relaxed = false                    # true = FRAM rejects only short intersections and fractures in the same plane
-triple_intersections = true        # false = reject a fracture which makes a triple intersection; no effect with relaxed = true
-check_user_fractures = true        # optional, default true; false = no FRAM for two user-defined fractures (see below)
-print_reject_reasons = false       # true = log the reason of each FRAM reject
-write_rejected_fractures = false   # true = also write the fractures which FRAM rejected to fractures_rejected.vtp (see "Output files")
-rejects_per_fracture = 10          # FRAM rejects of a stochastic fracture before it is rejected; it moves after each reject
+enable = true                      # default false; false = no FRAM check, fractures can intersect with no limit, and the other keys have no effect
+relaxed = false                    # default false; true = FRAM rejects only short intersections and fractures in the same plane
+triple_intersections = true        # default false; false = reject a fracture which makes a triple intersection; no effect with relaxed = true
+check_user_fractures = true        # default false; false = no FRAM for two user-defined fractures (see below)
+print_reject_reasons = false       # default false; true = log the reason of each FRAM reject
+write_rejected_fractures = false   # default false; true = also write the fractures which FRAM rejected to fractures_rejected.vtp (see "Output files")
+rejects_per_fracture = 10          # default 10; FRAM rejects of a stochastic fracture before it is rejected; it moves after each reject
 
 [clusters]
 keep_only_largest = false          # true = keep only the largest cluster; no effect with keep_isolated_fractures = true
@@ -231,7 +232,7 @@ must be before the first table (`[generation]`) of the input file.
   accepts or rejects each piece alone: with `check_user_fractures = true`, it
   can reject one piece of a fracture and accept another. Each piece has its
   own line in the output files.
-- `fram.check_user_fractures = false` turns off FRAM for an intersection of
+- `fram.check_user_fractures = false` (the default) turns off FRAM for an intersection of
   two user-defined fractures. Then each user-defined fracture in the domain
   (and in its region) is accepted. The intersection is recorded as FRAM finds
   it: it is not shortened, and such a pair gives no triple intersection point.
@@ -295,7 +296,7 @@ of such a run is approximate.
 | `fractures_removed.vtp` | The accepted fractures which are not final fractures, as polygons with their properties (VTK PolyData). Written only if a fracture was removed. See below. |
 | `connectivity.dat` | Line N: numbers of the final fractures which intersect final fracture N. |
 | `intersection_list.dat` | One line for each intersection: the two fracture numbers, mid point and length. |
-| `triple_points.dat` | Coordinates of the triple intersection points. Written only if `triple_intersections = true`. |
+| `triple_points.dat` | Coordinates of the triple intersection points. Written only if FRAM is on and `fram.triple_intersections = true`. |
 | `rejections.dat` | Number of rejected fractures for each rejection reason. |
 | `rejectsPerAttempt.dat` | Line N: number of rejected attempts before accepted fracture N. |
 | `userFractureRejections.dat` | Number of each rejected user-defined fracture (the position of its polygon in the `.vtp` file, from 1). Written only if a user-defined fracture was rejected. |

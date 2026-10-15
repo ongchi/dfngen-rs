@@ -211,6 +211,8 @@ def convert_general_options(
         f"enable = {boolean(not dat.flag('disableFram'))}",
         f"relaxed = {boolean(dat.flag('rFram'))}",
         f"triple_intersections = {boolean(dat.flag('tripleIntersections'))}",
+        # dfnWorks always checks two user-defined fractures
+        "check_user_fractures = true",
         f"print_reject_reasons = {boolean(dat.flag('printRejectReasons'))}",
         f"write_rejected_fractures = {boolean(dat.flag('outputAllRadii'))}",
         f"rejects_per_fracture = {int(dat.word('rejectsPerFracture'))}",

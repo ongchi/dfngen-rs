@@ -87,7 +87,11 @@ pub fn write_output(network: &Network, create_file: &mut CreateFile) -> io::Resu
         removed_file.flush()?;
     }
 
-    if input.output_rejected_fractures {
+    if input
+        .fram
+        .as_ref()
+        .is_some_and(|fram| fram.write_rejected_fractures)
+    {
         let mut rejected_file = create_file("fractures_rejected.vtp")?;
         write_rejected_fractures_vtk(&network.dfn.rejected_polys, mesh_center, &mut rejected_file)?;
         rejected_file.flush()?;
@@ -122,7 +126,11 @@ pub fn write_output(network: &Network, create_file: &mut CreateFile) -> io::Resu
     )?;
     write_rejects_per_attempt(stats, &mut create_file("rejectsPerAttempt.dat")?)?;
 
-    if input.triple_intersections {
+    if input
+        .fram
+        .as_ref()
+        .is_some_and(|fram| fram.triple_intersections)
+    {
         info!("Writing Triple Intersection Points File");
         write_triple_pts(
             &network.dfn.triple_points,

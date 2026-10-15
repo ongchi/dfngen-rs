@@ -12,6 +12,7 @@ use crate::fracture::fracture_family::{
     FractureFamily, FractureFamilyBuilder, FractureFamilyCollection,
 };
 use crate::fracture::user_defined_fractures::UserFracture;
+use crate::fram::FramOptions;
 use crate::io::vtp::{parse_user_fractures, read_user_fractures, FracturePolygon};
 use crate::io::vtu::{parse_domain_mesh, read_domain_mesh};
 
@@ -46,23 +47,8 @@ pub struct Input {
     /// epsilon
     pub eps: f64,
 
-    /// With `false`, the FRAM algorithm is off. There will be no
-    /// fracture rejections.
-    pub is_fram_enabled: bool,
-
-    /// This option uses a relaxed version of the FRAM algorithm. The mesh may not
-    /// be perfectly conforming
-    pub is_fram_relaxed: bool,
-
-    /// Accept or reject triple intersections
-    ///     False - Off (Reject)
-    ///     True  - On  (Accept)
-    pub triple_intersections: bool,
-
-    /// FRAM for an intersection of two user-defined fractures
-    ///     False - Off, FRAM rejects no user-defined fracture because of another one
-    ///     True  - On (default)
-    pub check_user_fractures: bool,
+    /// Options of FRAM. `None`: FRAM is off, there will be no fracture rejections.
+    pub fram: Option<FramOptions>,
 
     /// 0 - Keep each cluster of 2 or more fractures
     /// 1 - Keep only the largest cluster
@@ -71,12 +57,6 @@ pub struct Input {
     /// 0 - remove isolated fractures and clusters
     /// 1 - Keep isolated fractures and clusters
     pub keep_isolated_fractures: bool,
-
-    /// Useful for debugging,
-    /// This option will print all fracture rejection reasons as they occur.
-    ///     0 - Disable
-    ///     1 - Print all rejection reasons to screen
-    pub print_reject_reasons: bool,
 
     /// Inserts the largest possible fracture for each defined fracture family,
     /// defined by the user-defined maxium radius
@@ -95,17 +75,6 @@ pub struct Input {
     /// Minimum and maximum size options under fracture family
     /// distributions will still be used while generating the DFN.
     pub remove_fractures_less_than: f64,
-
-    /// Caution: Can create a very large file.
-    /// True: Write the rejected fractures to fractures_rejected.vtp.
-    pub output_rejected_fractures: bool,
-
-    /// If a fracture is rejected, it will be re-translated
-    /// to a new position this number of times.
-    ///
-    /// This helps hit distribution targets for stochastic families
-    /// families (Set to 1 to ignore this feature)
-    pub rejects_per_fracture: usize,
 
     /// Volume of each region of the domain mesh, in the order of
     /// `DomainMesh::regions`.
@@ -128,6 +97,7 @@ struct InputFile {
     /// A relative path starts at the folder of the input file.
     domain: String,
     generation: GenerationSection,
+    #[serde(default)]
     fram: FramSection,
     clusters: ClustersSection,
     #[serde(default, rename = "family")]
@@ -144,14 +114,45 @@ struct GenerationSection {
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
+#[serde(default)]
 struct FramSection {
     enable: bool,
     relaxed: bool,
     triple_intersections: bool,
-    check_user_fractures: Option<bool>,
+    check_user_fractures: bool,
     print_reject_reasons: bool,
     write_rejected_fractures: bool,
     rejects_per_fracture: usize,
+}
+
+/// Without the section or a key: FRAM is off, each option is false, and
+/// `rejects_per_fracture` is 10, as in dfnWorks.
+impl Default for FramSection {
+    fn default() -> Self {
+        Self {
+            enable: false,
+            relaxed: false,
+            triple_intersections: false,
+            check_user_fractures: false,
+            print_reject_reasons: false,
+            write_rejected_fractures: false,
+            rejects_per_fracture: 10,
+        }
+    }
+}
+
+impl FramSection {
+    /// The FRAM options, or `None` if FRAM is off. The other keys then have no effect.
+    fn options(&self) -> Option<FramOptions> {
+        self.enable.then_some(FramOptions {
+            relaxed: self.relaxed,
+            triple_intersections: self.triple_intersections,
+            check_user_fractures: self.check_user_fractures,
+            print_reject_reasons: self.print_reject_reasons,
+            write_rejected_fractures: self.write_rejected_fractures,
+            rejects_per_fracture: self.rejects_per_fracture,
+        })
+    }
 }
 
 #[derive(Deserialize)]
@@ -344,15 +345,20 @@ fn build_input(
     let eps = file.min_feature_size * 1e-8;
     let domain_mesh = Rc::new(domain_mesh);
 
-    if !file.fram.enable {
-        info!("FRAM IS DISABLED");
+    let fram = file.fram.options();
+    match &fram {
+        None => info!("FRAM IS DISABLED"),
+        Some(fram_options) if fram_options.relaxed => {
+            info!("Running with relaxed FRAM. Mesh may not be fully conforming");
+        }
+        Some(_) => {}
     }
 
-    if file.fram.relaxed {
-        info!("Running with relaxed FRAM. Mesh may not be fully conforming");
-    }
-
-    if file.fram.check_user_fractures == Some(false) {
+    if fram
+        .as_ref()
+        .is_some_and(|fram_options| !fram_options.check_user_fractures)
+        && !fracture_polygons.is_empty()
+    {
         info!("FRAM does not check two user-defined fractures which intersect");
     }
 
@@ -405,18 +411,12 @@ fn build_input(
         domain_mesh,
         min_feature_size: file.min_feature_size,
         eps,
-        is_fram_enabled: file.fram.enable,
-        is_fram_relaxed: file.fram.relaxed,
-        triple_intersections: file.fram.triple_intersections,
-        check_user_fractures: file.fram.check_user_fractures.unwrap_or(true),
+        fram,
         keep_only_largest_cluster: file.clusters.keep_only_largest,
         keep_isolated_fractures: file.clusters.keep_isolated_fractures,
-        print_reject_reasons: file.fram.print_reject_reasons,
         force_large_fractures: file.generation.force_large_fractures,
         seed: file.seed,
         remove_fractures_less_than: file.generation.remove_fractures_less_than,
-        output_rejected_fractures: file.fram.write_rejected_fractures,
-        rejects_per_fracture: file.fram.rejects_per_fracture,
         region_volumes,
         user_fractures,
     };
@@ -945,22 +945,59 @@ mod tests {
         assert!(message.contains("missing field `seed`"), "{}", message);
     }
 
-    #[test]
-    fn test_user_fracture_check_is_on_without_its_key() {
-        let (input, _) = parse(&[GENERAL_OPTIONS]).unwrap();
-
-        assert!(input.check_user_fractures);
+    /// `GENERAL_OPTIONS` with this text in place of its `[fram]` section
+    fn replace_fram_section(fram_section: &str) -> String {
+        let start = GENERAL_OPTIONS.find("[fram]").unwrap();
+        let end = GENERAL_OPTIONS.find("[clusters]").unwrap();
+        format!(
+            "{}{fram_section}\n{}",
+            &GENERAL_OPTIONS[..start],
+            &GENERAL_OPTIONS[end..]
+        )
     }
 
     #[test]
-    fn test_user_fracture_check_is_off_with_its_key_false() {
-        let options = GENERAL_OPTIONS.replace(
-            "triple_intersections = true",
-            "triple_intersections = true\ncheck_user_fractures = false",
-        );
+    fn test_fram_is_off_without_its_section() {
+        let (input, _) = parse(&[&replace_fram_section("")]).unwrap();
+
+        assert_eq!(input.fram, None);
+    }
+
+    #[test]
+    fn test_fram_section_with_only_enable_has_the_defaults() {
+        let options = replace_fram_section("[fram]\nenable = true\n");
+
         let (input, _) = parse(&[&options]).unwrap();
 
-        assert!(!input.check_user_fractures);
+        assert_eq!(
+            input.fram,
+            Some(FramOptions {
+                relaxed: false,
+                triple_intersections: false,
+                check_user_fractures: false,
+                print_reject_reasons: false,
+                write_rejected_fractures: false,
+                rejects_per_fracture: 10,
+            })
+        );
+    }
+
+    #[test]
+    fn test_fram_is_off_with_enable_false_and_other_keys() {
+        let options = GENERAL_OPTIONS.replace("enable = true", "enable = false");
+
+        let (input, _) = parse(&[&options]).unwrap();
+
+        assert_eq!(input.fram, None);
+    }
+
+    #[test]
+    fn test_user_fracture_check_is_on_with_its_key_true() {
+        let options = replace_fram_section("[fram]\nenable = true\ncheck_user_fractures = true\n");
+
+        let (input, _) = parse(&[&options]).unwrap();
+
+        assert!(input.fram.unwrap().check_user_fractures);
     }
 
     #[test]

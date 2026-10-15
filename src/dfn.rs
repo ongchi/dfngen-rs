@@ -7,7 +7,7 @@ use crate::domain_mesh::DomainMesh;
 use crate::fracture::cluster_groups::ClusterGroups;
 use crate::fracture::poly::Poly;
 use crate::fracture::user_defined_fractures::DomainCheck;
-use crate::fram::{check_intersections, log_reject_reason, RejectReason};
+use crate::fram::{check_intersections, log_reject_reason, FramOptions, RejectReason};
 use crate::stats::Stats;
 
 /// A fracture which was not accepted, with the FRAM reject reason of its last attempt.
@@ -49,7 +49,7 @@ pub struct Dfn {
     /// Accepted fractures, in the order in which they were accepted
     pub accepted_polys: Vec<Poly>,
 
-    /// Rejected fractures. Stays empty unless `PolyOptions::keep_rejected_fractures` is set.
+    /// Rejected fractures. Stays empty unless FRAM is on with `write_rejected_fractures`.
     pub rejected_polys: Vec<RejectedFracture>,
 
     /// Intersections between the accepted fractures
@@ -123,7 +123,7 @@ impl Dfn {
 
             log_reject_reason(reject_reason, &new_poly);
 
-            if options.keep_rejected_fractures {
+            if options.keeps_rejected_fractures() {
                 self.rejected_polys.push(RejectedFracture {
                     poly: new_poly,
                     reason: reject_reason,
@@ -190,12 +190,17 @@ pub struct PolyOptions {
     pub domain_size: Vector3<f64>,
     /// The cells which make the domain.
     pub domain_mesh: Rc<DomainMesh>,
-    pub is_fram_relaxed: bool,
-    pub is_fram_enabled: bool,
-    pub triple_intersections: bool,
-    /// False - FRAM does not check an intersection of two user-defined fractures.
-    pub check_user_fractures: bool,
-    pub keep_rejected_fractures: bool,
+    /// Options of FRAM. `None`: FRAM is off.
+    pub fram: Option<FramOptions>,
+}
+
+impl PolyOptions {
+    /// True if FRAM is on and the rejected fractures are kept for the output
+    pub fn keeps_rejected_fractures(&self) -> bool {
+        self.fram
+            .as_ref()
+            .is_some_and(|fram_options| fram_options.write_rejected_fractures)
+    }
 }
 
 #[cfg(test)]
@@ -212,11 +217,22 @@ mod tests {
             eps: 1e-9,
             domain_size: Vector3::new(10., 10., 10.),
             domain_mesh: Rc::new(l_shaped_mesh()),
-            is_fram_relaxed: false,
-            is_fram_enabled: true,
+            fram: Some(FramOptions {
+                write_rejected_fractures: keep_rejected_fractures,
+                ..fram_options()
+            }),
+        }
+    }
+
+    /// FRAM on, with the check of two user-defined fractures
+    fn fram_options() -> FramOptions {
+        FramOptions {
+            relaxed: false,
             triple_intersections: false,
             check_user_fractures: true,
-            keep_rejected_fractures,
+            print_reject_reasons: false,
+            write_rejected_fractures: false,
+            rejects_per_fracture: 10,
         }
     }
 
@@ -400,7 +416,10 @@ mod tests {
     /// Inserts `LEFT_PIECE` and `SQUARE_NEAR_EDGE` as two user-defined fractures.
     fn insert_user_fracture_near_edge(check_user_fractures: bool) -> Dfn {
         let options = PolyOptions {
-            check_user_fractures,
+            fram: Some(FramOptions {
+                check_user_fractures,
+                ..fram_options()
+            }),
             ..poly_options(false)
         };
 
@@ -410,7 +429,10 @@ mod tests {
     #[test]
     fn test_neighbor_polygon_of_another_fracture_is_accepted_without_the_user_fracture_check() {
         let options = PolyOptions {
-            check_user_fractures: false,
+            fram: Some(FramOptions {
+                check_user_fractures: false,
+                ..fram_options()
+            }),
             ..poly_options(false)
         };
 

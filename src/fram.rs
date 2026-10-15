@@ -9,6 +9,31 @@ use crate::{
     stats::Stats,
 };
 
+/// Options of FRAM. The input has them only when FRAM is on.
+#[derive(Debug, Clone, PartialEq)]
+pub struct FramOptions {
+    /// Relaxed FRAM: only short intersections and fractures in the same plane
+    /// are rejected. The mesh may not be perfectly conforming.
+    pub relaxed: bool,
+
+    /// Accept (true) or reject (false) triple intersections
+    pub triple_intersections: bool,
+
+    /// False: FRAM does not check an intersection of two user-defined fractures
+    pub check_user_fractures: bool,
+
+    /// Log the reason of each FRAM reject
+    pub print_reject_reasons: bool,
+
+    /// Keep the rejected fractures and write them to `fractures_rejected.vtp`.
+    /// Caution: the file can be very large.
+    pub write_rejected_fractures: bool,
+
+    /// Number of FRAM rejects of a stochastic fracture before it is rejected.
+    /// After each reject, the fracture moves to a new position.
+    pub rejects_per_fracture: usize,
+}
+
 /// Reason why FRAM rejected a fracture
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RejectReason {
@@ -261,6 +286,10 @@ fn fram(
     other_poly: &Poly,
     stats: &mut Stats,
 ) -> Result<(), RejectReason> {
+    let Some(fram_options) = &options.fram else {
+        // FRAM is off
+        return Ok(());
+    };
     let min_feature_size = options.min_feature_size;
     let eps = options.eps;
 
@@ -270,7 +299,7 @@ fn fram(
         return Err(RejectReason::ShortIntersection);
     }
 
-    if !options.is_fram_relaxed {
+    if !fram_options.relaxed {
         // distance to edges
         // Reject if intersection shirnks < `shrink_limit`
         let shrink_limit = 0.9 * (intersection.p1 - intersection.p2).magnitude();
@@ -333,10 +362,16 @@ fn fram(
 
     // Triple Intersection Checks
     // NOTE: for debugging, there are several reject reasons for triple intersections
-    let triple_result =
-        check_for_triple_intersections(options, accepted, candidate, intersection, other_poly);
+    let triple_result = check_for_triple_intersections(
+        options,
+        fram_options,
+        accepted,
+        candidate,
+        intersection,
+        other_poly,
+    );
 
-    if triple_result.is_err() && !options.is_fram_relaxed {
+    if triple_result.is_err() && !fram_options.relaxed {
         stats.rejection_reasons.triple += 1;
         return triple_result;
     }
@@ -604,9 +639,11 @@ pub fn check_intersections(
                     && poly.origin == FractureOrigin::UserDefined;
 
                 // The option can turn off FRAM for two user-defined fractures
-                let fram_result = if !options.is_fram_enabled
-                    || (is_user_fracture_pair && !options.check_user_fractures)
-                {
+                let checks_user_fractures = options
+                    .fram
+                    .as_ref()
+                    .is_some_and(|fram_options| fram_options.check_user_fractures);
+                let fram_result = if is_user_fracture_pair && !checks_user_fractures {
                     Ok(())
                 } else {
                     let accepted = AcceptedDfn {
@@ -694,7 +731,11 @@ pub fn check_intersections(
     // triple intersection points will be found 3 times (3 fractures make up one triple int point)
     // We need only to save the point to the permanent triple points of the DFN once, and then give each intersection a
     // reference to it.
-    if options.triple_intersections {
+    if options
+        .fram
+        .as_ref()
+        .is_some_and(|fram_options| fram_options.triple_intersections)
+    {
         let first_triple_point_index = triple_points.len();
 
         for (j, candidate_triple_point) in candidate.triple_points.iter().enumerate() {
@@ -893,6 +934,7 @@ fn check_close_edge(
 /// * `TriplePointCloseToTriplePoint` - The triple point is too near to another triple point
 fn check_for_triple_intersections(
     options: &PolyOptions,
+    fram_options: &FramOptions,
     accepted: &AcceptedDfn,
     candidate: &mut CandidateIntersections,
     intersection: &Intersection,
@@ -925,7 +967,7 @@ fn check_for_triple_intersections(
             continue;
         }
 
-        if !options.triple_intersections && dist1 < min_feature_size {
+        if !fram_options.triple_intersections && dist1 < min_feature_size {
             return Err(RejectReason::TripleIntersectionNotAllowed); // Triple intersections not allowed (user input option)
         }
 
