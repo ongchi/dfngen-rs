@@ -18,7 +18,7 @@ optional below. An unknown key is an error.
 
 ```toml
 seed = 12345                       # 0 = use the system time
-min_feature_size = 0.1             # FRAM length limit; minimum radius = 3 times it; eps = 1e-8 times it
+min_feature_size = 0.1             # > 0; FRAM length limit; minimum radius = 3 times it; eps = 1e-8 times it
 domain = "domain.vtu"              # the mesh file which gives the domain (see below)
 user_fractures = "fractures.vtp"   # optional; the file with the user-defined fractures (see below)
 
@@ -47,7 +47,7 @@ rejected_fractures = false         # true = also write fractures_rejected.vtp (s
 [[family]]
 number_of_points = 8               # 3 or more; 4 gives a rectangle
 probability = 0.4                  # chance to select this family; the sum of all families must be 1 (see below)
-aspect_ratio = 1.0                 # y radius / x radius
+aspect_ratio = 1.0                 # > 0; y radius / x radius
 region = "marble"                  # optional; a region of the mesh (see below). Without it: the whole mesh
 beta = 30.0                        # optional; without it the rotation is uniform
 p32_target = 0.5                   # necessary without n_poly; not allowed with n_poly

@@ -346,6 +346,13 @@ fn build_input(
     domain_mesh: DomainMesh,
     fracture_polygons: &[FracturePolygon],
 ) -> Result<(Input, FractureFamilyCollection), DfngenError> {
+    // Each radius is at least 3 times min_feature_size, thus never 0
+    if file.min_feature_size.is_nan() || file.min_feature_size <= 0. {
+        return Err(invalid_input(
+            "min_feature_size must be greater than 0".to_string(),
+        ));
+    }
+
     let eps = file.min_feature_size * 1e-8;
     let domain_mesh = Rc::new(domain_mesh);
 
@@ -484,7 +491,7 @@ fn build_family(
             &section.radius,
             3.0 * context.min_feature_size,
         ))
-        .aspect_ratio(section.aspect_ratio)
+        .aspect_ratio(valid_aspect_ratio(section.aspect_ratio)?)
         .orientation(build_orientation(&section.orientation, context.eps)?)
         .region_id(region_id)
         .domain_mesh(context.domain_mesh.clone());
@@ -601,6 +608,14 @@ fn valid_number_of_points(number_of_points: usize) -> Result<usize, String> {
         return Err("number_of_points must be 3 or more".to_string());
     }
     Ok(number_of_points)
+}
+
+/// The fracture area must be greater than 0. A NaN aspect ratio is rejected too.
+fn valid_aspect_ratio(aspect_ratio: f64) -> Result<f64, String> {
+    if aspect_ratio.is_nan() || aspect_ratio <= 0. {
+        return Err("aspect_ratio must be greater than 0".to_string());
+    }
+    Ok(aspect_ratio)
 }
 
 #[cfg(test)]
@@ -1132,6 +1147,30 @@ mod tests {
             message.contains("family 1: number_of_points must be 3 or more"),
             "{}",
             message
+        );
+    }
+
+    #[test]
+    fn test_family_with_zero_aspect_ratio_is_rejected() {
+        let family = ELLIPSE_FAMILY.replace("aspect_ratio = 1.0", "aspect_ratio = 0.0");
+
+        let message = error_message(parse(&[GENERAL_OPTIONS, &family]));
+
+        assert!(
+            message.contains("family 1: aspect_ratio must be greater than 0"),
+            "{message}"
+        );
+    }
+
+    #[test]
+    fn test_zero_min_feature_size_is_rejected() {
+        let options = GENERAL_OPTIONS.replace("min_feature_size = 0.1", "min_feature_size = 0.0");
+
+        let message = error_message(parse(&[&options]));
+
+        assert!(
+            message.contains("min_feature_size must be greater than 0"),
+            "{message}"
         );
     }
 }
