@@ -3,11 +3,12 @@ use std::collections::HashSet;
 use parry3d_f64::na::{center, distance, Point3};
 
 use crate::dfn::{Dfn, PolyOptions};
+use crate::stats::FractureCount;
 
 use super::poly::{FractureOrigin, Poly};
 
-/// Inserts the user-defined fractures in the order of their file.
-/// Returns the number of them.
+/// Inserts the user-defined fractures in the order of their file, and sets
+/// `stats.rejected_user_fracture_count`.
 ///
 /// A fracture of more than one polygon (`fracture_id`) is in the domain if one
 /// of its pieces is in the domain. Then no piece of it is rejected as outside.
@@ -15,7 +16,7 @@ pub fn insert_user_defined_fractures(
     fractures: &[UserFracture],
     options: &PolyOptions,
     dfn: &mut Dfn,
-) -> usize {
+) {
     let fracture_ids_in_domain: HashSet<u64> = fractures
         .iter()
         .filter(|fracture| is_piece_in_domain(fracture, options))
@@ -30,7 +31,16 @@ pub fn insert_user_defined_fractures(
         dfn.insert_poly(fracture.to_poly(), i + 1, domain_check, options);
     }
 
-    fractures.len()
+    // A fracture with an accepted piece is accepted
+    let file_count =
+        FractureCount::from_fracture_ids(fractures.iter().map(|fracture| fracture.fracture_id));
+    let accepted_count = FractureCount::from_fracture_ids(
+        dfn.accepted_polys
+            .iter()
+            .filter(|poly| poly.origin == FractureOrigin::UserDefined)
+            .map(|poly| poly.user_fracture_id),
+    );
+    dfn.stats.rejected_user_fracture_count = file_count - accepted_count;
 }
 
 /// True if the polygon has a part in the box domain and intersects a cell of

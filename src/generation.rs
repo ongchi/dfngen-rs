@@ -1,7 +1,7 @@
 use rand::distr::Uniform;
 use rand::Rng;
 use rand_mt::Mt64;
-use tracing::{debug, info, warn};
+use tracing::{debug, info};
 
 use crate::dfn::{Dfn, PolyOptions, RejectedFracture};
 use crate::distribution::RadiusFunction;
@@ -12,14 +12,14 @@ use crate::fracture::family_probability::{
 };
 use crate::fracture::fracture_family::{FractureFamily, FractureFamilyCollection};
 use crate::fracture::insert_user_defined_fractures;
-use crate::fracture::poly::Poly;
+use crate::fracture::poly::{FractureOrigin, Poly};
 use crate::fram::{check_intersections, log_reject_reason};
 use crate::io::input::{Input, StopCondition};
-use crate::stats::Stats;
+use crate::stats::{FractureCount, Stats};
 
 /// Result of a generation
 pub struct Network {
-    /// Input options. `stop_condition` is the one which the generation used.
+    /// Input options
     pub input: Input,
     /// Stochastic fracture families, with their final P32
     pub families: FractureFamilyCollection,
@@ -32,7 +32,7 @@ pub struct Network {
 
 /// Progress of the insertion of the stochastic fractures
 pub struct ProgressUpdate {
-    /// Number of accepted fractures
+    /// Number of accepted stochastic fractures
     pub accepted_count: usize,
     /// Part of the stop condition which is complete, from 0 to 1
     pub fraction: f64,
@@ -46,7 +46,7 @@ pub struct ProgressUpdate {
 /// * `family_collection` - Stochastic fracture families
 /// * `on_progress` - Called after each accepted stochastic fracture
 pub fn generate(
-    mut input: Input,
+    input: Input,
     mut family_collection: FractureFamilyCollection,
     on_progress: &mut dyn FnMut(&ProgressUpdate),
 ) -> Result<Network, DfngenError> {
@@ -73,20 +73,11 @@ pub fn generate(
         )?;
     }
 
-    let num_user_defined_fractures =
-        insert_user_defined_fractures(&input.user_fractures, &options, &mut dfn);
-
-    if total_families == 0 && input.stop_condition == StopCondition::P32 {
-        // If no stochastic families, use n_poly option with n_poly = number of user polygons
-        warn!("You have not set generation.n_poly (stop condition P32) but have no stochastic fracture families defined.");
-        warn!("Automatically setting n_poly to the number of user defined fractures.");
-
-        if num_user_defined_fractures == 0 {
-            return Err(DfngenError::NoFractureDefined);
-        }
-
-        input.stop_condition = StopCondition::NPoly(num_user_defined_fractures);
+    if total_families == 0 && input.user_fractures.is_empty() {
+        return Err(DfngenError::NoFractureDefined);
     }
+
+    insert_user_defined_fractures(&input.user_fractures, &options, &mut dfn);
 
     if total_families > 0 {
         insert_stochastic_fractures(
@@ -113,7 +104,7 @@ pub fn generate(
     info!("Network Generation Complete");
     info!("Version of dfngen-rs: {}", env!("CARGO_PKG_VERSION"));
 
-    if input.stop_condition == StopCondition::P32 {
+    if input.stop_condition == StopCondition::P32 && total_families > 0 {
         info!("Final p32 values per family:");
 
         for (i, family) in family_collection.families.iter().enumerate() {
@@ -267,8 +258,11 @@ fn insert_stochastic_fractures(
     // P32 requirement
     let mut p32_status = vec![false; total_families];
 
+    // `n_poly` does not include the user-defined fractures
+    let mut stochastic_accepted_count = 0;
+
     while match input.stop_condition {
-        StopCondition::NPoly(n_poly) => dfn.stats.accepted_count < n_poly,
+        StopCondition::NPoly(n_poly) => stochastic_accepted_count < n_poly,
         StopCondition::P32 => p32_status.iter().any(|p| !p),
     } {
         let roll = generator.sample(uniform_dist);
@@ -317,6 +311,7 @@ fn insert_stochastic_fractures(
             // A reject comes only from FRAM, thus FRAM has its options
             let (Err(reject_reason), Some(fram_options)) = (fram_result, &input.fram) else {
                 dfn.stats.accepted_count += 1;
+                stochastic_accepted_count += 1;
                 dfn.stats.accepted_per_family[family_index] += 1;
                 // Make new rejection counter for next fracture attempt
                 dfn.stats.rejects_per_attempt.push(0);
@@ -342,10 +337,10 @@ fn insert_stochastic_fractures(
                 }
 
                 on_progress(&ProgressUpdate {
-                    accepted_count: dfn.stats.accepted_count,
+                    accepted_count: stochastic_accepted_count,
                     fraction: progress_fraction(
                         input,
-                        dfn.stats.accepted_count,
+                        stochastic_accepted_count,
                         &family_collection.families,
                     ),
                 });
@@ -429,6 +424,20 @@ fn sum_areas<'a>(polys: impl Iterator<Item = &'a Poly>, total_families: usize) -
     summary
 }
 
+/// Number of fractures and polygons. The pieces of a user-defined fracture
+/// (same `fracture_id`) are one fracture.
+fn count_fractures<'a>(polys: impl IntoIterator<Item = &'a Poly>) -> FractureCount {
+    FractureCount::from_fracture_ids(polys.into_iter().map(|poly| poly.user_fracture_id))
+}
+
+fn count_user_defined_fractures<'a>(polys: impl IntoIterator<Item = &'a Poly>) -> FractureCount {
+    count_fractures(
+        polys
+            .into_iter()
+            .filter(|poly| poly.origin == FractureOrigin::UserDefined),
+    )
+}
+
 fn log_total_area_statistics(total_area: f64, fracture_count: usize, domain_volume: f64) {
     info!("Total Surface Area: {} m^2", total_area * 2.);
     info!(
@@ -458,13 +467,14 @@ fn report_statistics_before_removal(
     dfn: &mut Dfn,
     domain_volume: f64,
 ) {
+    let accepted_count = count_fractures(&dfn.accepted_polys);
     info!("Statistics Before Isolated Fractures Removed:",);
-    info!("Fractures: {}", dfn.accepted_polys.len());
+    info!("Fractures: {}", accepted_count);
 
     let areas = sum_areas(dfn.accepted_polys.iter(), family_collection.families.len());
     dfn.stats.area_before_removal = areas.total;
 
-    log_total_area_statistics(areas.total, dfn.accepted_polys.len(), domain_volume);
+    log_total_area_statistics(areas.total, accepted_count.fractures, domain_volume);
 
     for (i, family) in family_collection.families.iter().enumerate() {
         info!("Family: {}", i + 1);
@@ -475,8 +485,13 @@ fn report_statistics_before_removal(
         info!("Fracture Intensity (P32): {}", family.current_p32);
     }
 
-    if areas.user_defined > 0. {
+    if !input.user_fractures.is_empty() {
         info!("User Defined:");
+        info!(
+            "Accepted: {}",
+            count_user_defined_fractures(&dfn.accepted_polys)
+        );
+        info!("Rejected: {}", dfn.stats.rejected_user_fracture_count);
         info!("Surface Area: {} m^2", areas.user_defined * 2.);
         info!(
             "Fracture Intensity (P32): {}",
@@ -494,32 +509,37 @@ fn report_statistics_after_removal(
 ) {
     let total_families = family_collection.families.len();
 
-    info!("Statistics After Isolated Fractures Removed:");
-    info!("Final Number of Fractures: {}", final_fractures.len());
-    info!(
-        "Isolated Fractures Removed: {}",
-        dfn.accepted_polys.len() - final_fractures.len()
-    );
-    info!(
-        "Fractures before isolated fractures removed: {}",
-        dfn.accepted_polys.len()
-    );
-
-    let areas = sum_areas(
-        final_fractures.iter().map(|&i| &dfn.accepted_polys[i]),
-        total_families,
-    );
-    dfn.stats.area_after_removal = areas.total;
+    let final_polys: Vec<&Poly> = final_fractures
+        .iter()
+        .map(|&i| &dfn.accepted_polys[i])
+        .collect();
+    let accepted_count = count_fractures(&dfn.accepted_polys);
+    let final_count = count_fractures(final_polys.iter().copied());
+    let final_user_defined_count = count_user_defined_fractures(final_polys.iter().copied());
+    let areas = sum_areas(final_polys.iter().copied(), total_families);
 
     // Re-count number of accepted fracture per family after isloated fractures were removed
     let mut final_count_per_family = vec![0; total_families];
-    for &i in final_fractures {
-        if let Some(family_index) = dfn.accepted_polys[i].origin.family_index() {
+    for poly in &final_polys {
+        if let Some(family_index) = poly.origin.family_index() {
             final_count_per_family[family_index] += 1;
         }
     }
 
-    log_total_area_statistics(areas.total, final_fractures.len(), domain_volume);
+    dfn.stats.area_after_removal = areas.total;
+
+    info!("Statistics After Isolated Fractures Removed:");
+    info!("Final Number of Fractures: {}", final_count);
+    info!(
+        "Isolated Fractures Removed: {}",
+        accepted_count - final_count
+    );
+    info!(
+        "Fractures before isolated fractures removed: {}",
+        accepted_count
+    );
+
+    log_total_area_statistics(areas.total, final_count.fractures, domain_volume);
 
     for (i, family) in family_collection.families.iter().enumerate() {
         info!("Family: {}", i + 1);
@@ -541,8 +561,9 @@ fn report_statistics_after_removal(
         );
     }
 
-    if areas.user_defined > 0. {
+    if !input.user_fractures.is_empty() {
         info!("User Defined Shapes:");
+        info!("Final: {}", final_user_defined_count);
         info!("Surface Area: {} m^2", areas.user_defined * 2.);
         info!(
             "Fracture Intensity (P32): {}",
@@ -550,15 +571,19 @@ fn report_statistics_after_removal(
         );
     }
 
+    let stochastic_rejected_count: usize = dfn.stats.rejected_per_family.iter().sum();
+    let rejected_count = FractureCount::of_single_polygons(stochastic_rejected_count)
+        + dfn.stats.rejected_user_fracture_count;
+
     info!(
-        "{} Fractures Accepted (Before Isolated Fracture Removal)",
-        dfn.accepted_polys.len()
+        "Fractures Accepted (Before Isolated Fracture Removal): {}",
+        accepted_count
     );
     info!(
-        "{} Final Fractures (After Isolated Fracture Removal)",
-        final_fractures.len()
+        "Final Fractures (After Isolated Fracture Removal): {}",
+        final_count
     );
-    info!("Total Fractures Rejected: {}", dfn.stats.rejected_count);
+    info!("Total Fractures Rejected: {}", rejected_count);
     info!(
         "Total Fractures Re-translated: {}",
         dfn.stats.retranslated_count

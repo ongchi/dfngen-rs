@@ -23,7 +23,7 @@ domain = "domain.vtu"              # the mesh file which gives the domain (see b
 user_fractures = "fractures.vtp"   # optional; the file with the user-defined fractures (see below)
 
 [generation]
-n_poly = 60                        # optional; stop at 60 fractures. Without it: each family stops at its p32_target
+n_poly = 60                        # optional; stop at 60 stochastic fractures (user-defined fractures are not included). Without it: each family stops at its p32_target
 force_large_fractures = false      # true = each family first gets one fracture with its maximum radius
 remove_fractures_less_than = 0.0   # after the generation, remove the accepted fractures with x_radius below it; 0 = none
 
@@ -276,6 +276,15 @@ order of acceptance. All files are text files.
 The log of the run goes to the console (stdout), not to a file. The level is
 `info`. Set the environment variable `RUST_LOG` to change it, for example
 `RUST_LOG=warn`.
+
+The numbers of fractures in the statistics of the log count the pieces of a
+user-defined fracture (polygons with the same `fracture_id`) as one fracture.
+Each number also gives the number of polygons, for example
+`Final Number of Fractures: 1357 (5003 polygons)`. P30 uses the number of
+fractures. The section of the user-defined fractures gives the accepted, the
+rejected (no polygon accepted) and the final user-defined fractures. The
+warning for a rejected user-defined fracture and `userFractureRejections.dat`
+give the number of the polygon in its file.
 
 During the insertion of the stochastic fractures, a progress bar is shown on
 stderr, if stderr is a terminal:

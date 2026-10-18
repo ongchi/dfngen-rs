@@ -1,3 +1,70 @@
+use std::collections::HashSet;
+use std::fmt;
+use std::ops::{Add, Sub};
+
+/// Number of fractures and of their polygons. Polygons with the same
+/// `fracture_id` are pieces of one user-defined fracture.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct FractureCount {
+    pub fractures: usize,
+    pub polygons: usize,
+}
+
+impl FractureCount {
+    /// Counts the polygons with these `fracture_id` values. A polygon with no
+    /// `fracture_id` (a stochastic fracture, or a file with no such array) is
+    /// one fracture.
+    pub fn from_fracture_ids(fracture_ids: impl IntoIterator<Item = Option<u64>>) -> Self {
+        let mut ids = HashSet::new();
+        let mut count = Self::default();
+
+        for fracture_id in fracture_ids {
+            count.polygons += 1;
+            if fracture_id.is_none_or(|id| ids.insert(id)) {
+                count.fractures += 1;
+            }
+        }
+
+        count
+    }
+
+    /// Count of fractures which have one polygon each
+    pub fn of_single_polygons(polygons: usize) -> Self {
+        Self {
+            fractures: polygons,
+            polygons,
+        }
+    }
+}
+
+impl Add for FractureCount {
+    type Output = Self;
+
+    fn add(self, other: Self) -> Self {
+        Self {
+            fractures: self.fractures + other.fractures,
+            polygons: self.polygons + other.polygons,
+        }
+    }
+}
+
+impl Sub for FractureCount {
+    type Output = Self;
+
+    fn sub(self, other: Self) -> Self {
+        Self {
+            fractures: self.fractures - other.fractures,
+            polygons: self.polygons - other.polygons,
+        }
+    }
+}
+
+impl fmt::Display for FractureCount {
+    fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+        write!(formatter, "{} ({} polygons)", self.fractures, self.polygons)
+    }
+}
+
 /// Number of rejects for each reason
 #[derive(Default)]
 pub struct RejectionReasons {
@@ -65,6 +132,10 @@ pub struct Stats {
 
     /// Numbers of the rejected user-defined fractures in their file, from 1
     pub rejected_user_fractures: Vec<usize>,
+
+    /// Number of rejected user-defined fractures: a fracture with no accepted
+    /// polygon
+    pub rejected_user_fracture_count: FractureCount,
 }
 
 impl Default for Stats {
@@ -86,6 +157,32 @@ impl Default for Stats {
             // Counter of the rejects before the first accepted fracture
             rejects_per_attempt: vec![0],
             rejected_user_fractures: Vec::new(),
+            rejected_user_fracture_count: FractureCount::default(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_pieces_with_one_fracture_id_are_one_fracture() {
+        let count = FractureCount::from_fracture_ids([Some(7), Some(7), Some(3)]);
+
+        assert_eq!(
+            count,
+            FractureCount {
+                fractures: 2,
+                polygons: 3
+            }
+        );
+    }
+
+    #[test]
+    fn test_each_polygon_without_fracture_id_is_one_fracture() {
+        let count = FractureCount::from_fracture_ids([None, None, Some(7)]);
+
+        assert_eq!(count, FractureCount::of_single_polygons(3));
     }
 }

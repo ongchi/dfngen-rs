@@ -335,6 +335,22 @@ mod mesh_domain {
 
         assert_eq!(network.dfn.stats.rejected_user_fractures, [2]);
     }
+
+    #[test]
+    fn test_n_poly_does_not_include_the_user_fractures() {
+        let network = run("mesh_domain");
+        let StopCondition::NPoly(n_poly) = network.input.stop_condition else {
+            panic!("the case must set generation.n_poly");
+        };
+        let stochastic_count = network
+            .dfn
+            .accepted_polys
+            .iter()
+            .filter(|poly| poly.origin != FractureOrigin::UserDefined)
+            .count();
+
+        assert_eq!(stochastic_count, n_poly);
+    }
 }
 
 mod mesh_cell_types {
