@@ -141,6 +141,38 @@ pub(crate) fn line_seg_to_line_seg(
     (distance(&point1, &point2), point1)
 }
 
+/// Coordinates in the plane of a fracture
+pub struct PlaneFrame {
+    origin: Point3<f64>,
+    u: Vector3<f64>,
+    v: Vector3<f64>,
+}
+
+impl PlaneFrame {
+    /// Axes in the plane with `u × v = normal`, thus a counter-clockwise order
+    /// in the plane is counter-clockwise around the normal.
+    pub fn new(vertices: &[Point3<f64>], normal: &Vector3<f64>) -> Self {
+        let origin = vertices[0];
+        let first_edge = vertices[1] - origin;
+        let u = (first_edge - normal * first_edge.dot(normal)).normalize();
+
+        Self {
+            origin,
+            u,
+            v: normal.cross(&u),
+        }
+    }
+
+    pub fn to_plane(&self, point: &Point3<f64>) -> [f64; 2] {
+        let offset = point - self.origin;
+        [offset.dot(&self.u), offset.dot(&self.v)]
+    }
+
+    pub fn to_space(&self, [x, y]: [f64; 2]) -> Point3<f64> {
+        self.origin + self.u * x + self.v * y
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::f64::consts::FRAC_PI_2;

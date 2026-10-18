@@ -20,7 +20,7 @@ use parry3d_f64::shape::Segment;
 
 use crate::domain_mesh::DomainMesh;
 use crate::fram::RejectReason;
-use crate::geometry::{are_segments_farther_than, line_seg_to_line_seg};
+use crate::geometry::{are_segments_farther_than, line_seg_to_line_seg, PlaneFrame};
 
 /// Distance below which a vertex of the union is on the outline of the
 /// fracture, as a part of the size of the fracture. The union rounds its
@@ -522,38 +522,6 @@ pub fn is_intersection_near_boundary(
     })
 }
 
-/// Coordinates in the plane of a fracture
-struct PlaneFrame {
-    origin: Point3<f64>,
-    u: Vector3<f64>,
-    v: Vector3<f64>,
-}
-
-impl PlaneFrame {
-    /// Axes in the plane with `u × v = normal`, thus a counter-clockwise order
-    /// in the plane is counter-clockwise around the normal.
-    fn new(vertices: &[Point3<f64>], normal: &Vector3<f64>) -> Self {
-        let origin = vertices[0];
-        let first_edge = vertices[1] - origin;
-        let u = (first_edge - normal * first_edge.dot(normal)).normalize();
-
-        Self {
-            origin,
-            u,
-            v: normal.cross(&u),
-        }
-    }
-
-    fn to_plane(&self, point: &Point3<f64>) -> [f64; 2] {
-        let offset = point - self.origin;
-        [offset.dot(&self.u), offset.dot(&self.v)]
-    }
-
-    fn to_space(&self, [x, y]: [f64; 2]) -> Point3<f64> {
-        self.origin + self.u * x + self.v * y
-    }
-}
-
 /// A vertex of a piece in the plane, and its exact point in space, if any
 type ExactPoint = ([f64; 2], Option<Point3<f64>>);
 
@@ -667,12 +635,12 @@ fn clip_convex(polygon: &[[f64; 2]], clip: &[[f64; 2]]) -> Vec<[f64; 2]> {
     result
 }
 
-fn distance(a: [f64; 2], b: [f64; 2]) -> f64 {
+pub(crate) fn distance(a: [f64; 2], b: [f64; 2]) -> f64 {
     (a[0] - b[0]).hypot(a[1] - b[1])
 }
 
 /// Position of the nearest point of the segment, from 0 at its start to 1 at its end
-fn position_on_segment(point: [f64; 2], [start, end]: [[f64; 2]; 2]) -> f64 {
+pub(crate) fn position_on_segment(point: [f64; 2], [start, end]: [[f64; 2]; 2]) -> f64 {
     let direction = [end[0] - start[0], end[1] - start[1]];
     let length_squared = direction[0] * direction[0] + direction[1] * direction[1];
 
@@ -684,7 +652,7 @@ fn position_on_segment(point: [f64; 2], [start, end]: [[f64; 2]; 2]) -> f64 {
         .clamp(0., 1.)
 }
 
-fn distance_to_segment(point: [f64; 2], segment: [[f64; 2]; 2]) -> f64 {
+pub(crate) fn distance_to_segment(point: [f64; 2], segment: [[f64; 2]; 2]) -> f64 {
     let [start, end] = segment;
     let fraction = position_on_segment(point, segment);
     let nearest = [
