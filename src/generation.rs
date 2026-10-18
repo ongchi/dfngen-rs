@@ -15,6 +15,7 @@ use crate::fracture::insert_user_defined_fractures;
 use crate::fracture::poly::{FractureOrigin, Poly};
 use crate::fram::{check_intersections, log_reject_reason};
 use crate::io::input::{Input, StopCondition};
+use crate::mesh::{mesh_network, FractureMesh};
 use crate::region_boundaries::boundary_lines;
 use crate::stats::{FractureCount, Stats};
 
@@ -29,6 +30,8 @@ pub struct Network {
     /// Sorted indices into `dfn.accepted_polys` of the fractures which remain
     /// after the cluster analysis
     pub final_fractures: Vec<usize>,
+    /// Triangle mesh of the final fractures. `None` without `[mesh]`.
+    pub mesh: Option<FractureMesh>,
 }
 
 /// Progress of the insertion of the stochastic fractures
@@ -168,11 +171,18 @@ pub fn generate(
 
     info!("Seed: {}", input.seed);
 
+    let mesh = input
+        .mesh
+        .as_ref()
+        .map(|options| mesh_network(&input, options, &dfn, &final_fractures))
+        .transpose()?;
+
     Ok(Network {
         input,
         families: family_collection,
         dfn,
         final_fractures,
+        mesh,
     })
 }
 

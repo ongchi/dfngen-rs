@@ -41,6 +41,13 @@ rejects_per_fracture = 10          # default 10; FRAM rejects of a stochastic fr
 enable = true                      # default false; true = write the lines where the boundary of the region of each fracture crosses it (see "Boundary lines of the regions")
 use_family_region = true           # default true; false = the lines of each stochastic fracture are at the mesh surface, also if its family has a region
 
+# Optional section; each key is optional. Without it: no mesh.
+[mesh]
+enable = true                      # default false; true = write the triangle mesh of the final fractures for fehm-rs (see "Triangle mesh for fehm-rs"); needs region_boundaries.enable = true
+max_size_factor = 10.0             # default 10; >= 1; largest triangle size = max_size_factor × min_feature_size
+slope = 0.5                        # default 0.5; > 0; growth of the triangle size with the distance from an intersection or a boundary line
+user_fracture_aperture = { distribution = "constant", value = 1e-3 } # necessary with mesh and user-defined fractures; see "Apertures"
+
 [clusters]
 keep_only_largest = false          # true = keep only the largest cluster; no effect with keep_isolated_fractures = true
 keep_isolated_fractures = false    # true = keep all accepted fractures; false = remove the fractures with no intersection
@@ -53,6 +60,7 @@ aspect_ratio = 1.0                 # > 0; y radius / x radius
 region = "marble"                  # optional; a region of the mesh (see below). Without it: the whole mesh
 beta = 30.0                        # optional; without it the rotation is uniform
 p32_target = 0.5                   # necessary without n_poly; not allowed with n_poly
+aperture = { distribution = "constant", value = 1e-4 } # necessary with mesh.enable = true, else no effect; see "Apertures"
 radius = { distribution = "truncated_power_law", alpha = 2.5, min = 1.0, max = 5.0 } # see "Radius distributions" below
 orientation = { theta = 0.0, phi = 0.0, kappa = 8.0 } # see "Orientation of a family" below
 ```
@@ -173,6 +181,54 @@ and `tests/data/region_boundaries_user_fractures` are examples.
   `Boundary Lines of the Regions`.
 - The lines are calculated at each attempt of a fracture. On a mesh with many
   cells, this takes the most time of the run.
+
+### Triangle mesh for fehm-rs
+
+With `mesh.enable = true`, the run also writes `dfn_mesh.vtu`: one triangle
+mesh of the final fractures, the mesh file of [fehm-rs](../fehm-rs). The
+network is the same as without the option.
+
+- Fractures which intersect share the points of their intersection. Two
+  fractures which only touch at a point share that point. The pieces of a
+  user-defined fracture share the points of their common edges and corners.
+  Thus each cluster is one connected mesh.
+- The mesh of each fracture follows its outline, its intersections and its
+  boundary lines (constrained Delaunay triangulation of the crate `spade`,
+  then new points in the large triangles).
+- Triangle size: `min_feature_size` (h) along the intersections and the
+  boundary lines, and h + `slope` × distance from them, at most
+  `max_size_factor` × h. Without FRAM (a warning), and at user-defined
+  fractures which are thinner than h, the triangles near small features are
+  small and can have small angles.
+- An obtuse triangle at a line which the mesh must follow can give a negative
+  connection coefficient in fehm-rs (it writes a warning with the number). The
+  lines are never divided again after the first division, thus the fractures
+  on both sides keep the same points.
+- fehm-rs needs a boundary point in each cluster. A cluster with no point on
+  a boundary array (see `dfn_mesh.vtu` below; for example, fully in one
+  region and away from the mesh surface) is not in the mesh; the log gives
+  the number of these fractures. The other output files keep them.
+- A line with a cell of no region on the other side gives no array: its
+  points are not boundary points.
+- A point where a line of a region meets a line on the mesh surface is in
+  both arrays. fehm-rs accepts such a point only if the two boundaries have
+  the same pressure.
+
+Apertures: each family has an `aperture`, and the user-defined fractures
+have `mesh.user_fracture_aperture`. The distributions (as the transmissivity
+options of dfnWorks, with the aperture in place of the transmissivity; r is
+the x radius, for a user-defined fracture the estimate from its vertices):
+
+| `distribution` | Parameters | Aperture (m) |
+|---|---|---|
+| `constant` | `value` (> 0) | `value` |
+| `log_normal` | `log_mean`, `sd` (>= 0) | exp(`log_mean` + `sd` × N(0, 1)) |
+| `correlated` | `alpha` (> 0), `beta` | `alpha` × r^`beta` |
+| `semi_correlated` | `alpha` (> 0), `beta`, `sd` (>= 0) | `alpha` × r^`beta` × exp(`sd` × N(0, 1)) |
+
+The pieces of a user-defined fracture have one aperture. The permeability is
+aperture² / 12 (cubic law). The random numbers of the apertures come from a
+separate generator with the seed, thus they do not change the network.
 
 ### Domain mesh
 
@@ -369,6 +425,7 @@ of such a run is approximate.
 | `rejectsPerAttempt.dat` | Line N: number of rejected attempts before accepted fracture N. |
 | `userFractureRejections.dat` | Number of each rejected user-defined fracture (the position of its polygon in the `.vtp` file, from 1). Written only if a user-defined fracture was rejected. |
 | `fractures_rejected.vtp` | The rejected fractures as polygons with their properties (VTK PolyData). Written only if `fram.write_rejected_fractures = true`. See below. |
+| `dfn_mesh.vtu` | The triangle mesh of the final fractures for fehm-rs (VTK UnstructuredGrid). Written only if `mesh.enable = true`. See below. |
 | `fracture_boundaries.vtp` | The boundary lines of the regions on the final fractures, as line segments (VTK PolyData). Written only if `region_boundaries.enable = true`. See below. |
 
 ### Cell data of `fractures.vtp`
@@ -455,6 +512,22 @@ fracture edge in `fractures.vtp`.
 
 For example, a segment of a fracture of the region `south` with 1 in
 `boundary__north` is on the boundary between the regions `south` and `north`.
+
+### Data of `dfn_mesh.vtu`
+
+The points are in the coordinates of the domain mesh. Each cell is a
+triangle (VTK type 5), counter-clockwise around the normal of its fracture.
+
+| Array | Content |
+|---|---|
+| `fracture_id` (cell) | Number of the final fracture, as in `fractures.vtp`. |
+| `aperture` (cell) | Aperture of the fracture (m). |
+| `permeability` (cell) | aperture² / 12 (m²). |
+| `boundary__mesh_surface` (point) | 1 for a point on a boundary line on the mesh surface, else 0. |
+| `boundary__<name>` (point) | One array for each region of the mesh: 1 for a point on a boundary line with a cell of the region `<name>` on the other side, else 0. |
+
+In the input file of fehm-rs, each `[[boundary]]` gives the pressure of one of
+these arrays by its name (`mesh_surface` or `<name>`).
 
 ## Library
 

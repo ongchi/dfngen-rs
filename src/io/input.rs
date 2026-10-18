@@ -5,7 +5,7 @@ use parry3d_f64::na::Vector3;
 use serde::Deserialize;
 use tracing::{debug, info, warn};
 
-use crate::distribution::{Fisher, LogNormalSampling, RadiusDistribution};
+use crate::distribution::{ApertureDistribution, Fisher, LogNormalSampling, RadiusDistribution};
 use crate::domain_mesh::{DomainMesh, MeshRegion};
 use crate::error::DfngenError;
 use crate::fracture::fracture_family::{
@@ -15,6 +15,7 @@ use crate::fracture::user_defined_fractures::UserFracture;
 use crate::fram::FramOptions;
 use crate::io::vtp::{parse_user_fractures, read_user_fractures, FracturePolygon};
 use crate::io::vtu::{parse_domain_mesh, read_domain_mesh};
+use crate::mesh::MeshOptions;
 use crate::region_boundaries::RegionBoundaryOptions;
 
 /// The input has `generation.n_poly` for `NPoly`, and no `n_poly` for `P32`.
@@ -53,6 +54,9 @@ pub struct Input {
 
     /// Options of the boundary lines of the regions. `None`: no lines.
     pub region_boundaries: Option<RegionBoundaryOptions>,
+
+    /// Options of the triangle mesh of the network. `None`: no mesh.
+    pub mesh: Option<MeshOptions>,
 
     /// 0 - Keep each cluster of 2 or more fractures
     /// 1 - Keep only the largest cluster
@@ -105,6 +109,8 @@ struct InputFile {
     fram: FramSection,
     #[serde(default)]
     region_boundaries: RegionBoundariesSection,
+    #[serde(default)]
+    mesh: MeshSection,
     clusters: ClustersSection,
     #[serde(default, rename = "family")]
     families: Vec<FamilySection>,
@@ -189,6 +195,29 @@ impl RegionBoundariesSection {
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
+#[serde(default)]
+struct MeshSection {
+    enable: bool,
+    max_size_factor: f64,
+    slope: f64,
+    user_fracture_aperture: Option<ApertureDistribution>,
+}
+
+/// Without the section or a key: no mesh, and with `enable = true` the
+/// largest triangle size is 10 times `min_feature_size` and the slope 0.5.
+impl Default for MeshSection {
+    fn default() -> Self {
+        Self {
+            enable: false,
+            max_size_factor: 10.,
+            slope: 0.5,
+            user_fracture_aperture: None,
+        }
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct ClustersSection {
     keep_only_largest: bool,
     keep_isolated_fractures: bool,
@@ -205,6 +234,8 @@ struct FamilySection {
     region: Option<String>,
     beta: Option<f64>,
     p32_target: Option<f64>,
+    /// Necessary with `[mesh]`, else no effect
+    aperture: Option<ApertureDistribution>,
     radius: RadiusSection,
     orientation: OrientationSection,
 }
@@ -436,6 +467,18 @@ fn build_input(
         probabilities.push(section.probability);
     }
 
+    let region_boundaries = file.region_boundaries.options();
+    let mesh = build_mesh_options(
+        file,
+        region_boundaries.is_some(),
+        !user_fractures.is_empty(),
+    )
+    .map_err(invalid_input)?;
+
+    if mesh.is_some() && fram.is_none() {
+        warn!("[mesh] with FRAM off: features smaller than min_feature_size give bad triangles");
+    }
+
     let input = Input {
         stop_condition,
         domain_size: domain_mesh.size(),
@@ -444,7 +487,8 @@ fn build_input(
         min_feature_size: file.min_feature_size,
         eps,
         fram,
-        region_boundaries: file.region_boundaries.options(),
+        region_boundaries,
+        mesh,
         keep_only_largest_cluster: file.clusters.keep_only_largest,
         keep_isolated_fractures: file.clusters.keep_isolated_fractures,
         force_large_fractures: file.generation.force_large_fractures,
@@ -461,6 +505,73 @@ fn build_input(
             probabilities,
         },
     ))
+}
+
+/// The mesh options, or `None` if `[mesh]` is off. The aperture keys then
+/// have no effect.
+///
+/// # Arguments
+///
+/// * `file` - Content of the TOML input file
+/// * `has_boundary_lines` - True if `[region_boundaries]` is on
+/// * `has_user_fractures` - True if the input has user-defined fractures
+fn build_mesh_options(
+    file: &InputFile,
+    has_boundary_lines: bool,
+    has_user_fractures: bool,
+) -> Result<Option<MeshOptions>, String> {
+    let section = &file.mesh;
+
+    if !section.enable {
+        return Ok(None);
+    }
+
+    if !has_boundary_lines {
+        return Err(
+            "[mesh] needs [region_boundaries] with enable = true: its boundary lines give the boundaries of the mesh"
+                .to_string(),
+        );
+    }
+    if !(section.max_size_factor.is_finite() && section.max_size_factor >= 1.) {
+        return Err("mesh.max_size_factor must be 1 or more".to_string());
+    }
+    if !(section.slope.is_finite() && section.slope > 0.) {
+        return Err("mesh.slope must be greater than 0".to_string());
+    }
+
+    let family_apertures =
+        file.families
+            .iter()
+            .enumerate()
+            .map(|(i, family)| {
+                let aperture = family.aperture.clone().ok_or_else(|| {
+                    format!("family {}: aperture is necessary with [mesh]", i + 1)
+                })?;
+                aperture
+                    .validate()
+                    .map_err(|message| format!("family {}: {message}", i + 1))?;
+                Ok(aperture)
+            })
+            .collect::<Result<Vec<_>, String>>()?;
+
+    let user_fracture_aperture = if has_user_fractures {
+        let aperture = section.user_fracture_aperture.clone().ok_or_else(|| {
+            "mesh.user_fracture_aperture is necessary with user-defined fractures".to_string()
+        })?;
+        aperture
+            .validate()
+            .map_err(|message| format!("mesh.user_fracture_aperture: {message}"))?;
+        Some(aperture)
+    } else {
+        None
+    };
+
+    Ok(Some(MeshOptions {
+        max_size_factor: section.max_size_factor,
+        slope: section.slope,
+        family_apertures,
+        user_fracture_aperture,
+    }))
 }
 
 /// Moves a polygon of the user-defined fracture file to the coordinates of
@@ -1304,6 +1415,88 @@ mod tests {
             message.contains("family 1: aspect_ratio must be greater than 0"),
             "{message}"
         );
+    }
+
+    const MESH_SECTIONS: &str = "[region_boundaries]\nenable = true\n[mesh]\nenable = true\n";
+    const CONSTANT_APERTURE: &str =
+        "aperture = { distribution = \"constant\", value = 1e-4 }\norientation";
+
+    #[test]
+    fn test_mesh_is_off_without_its_section() {
+        let (input, _) = parse(&[GENERAL_OPTIONS, ELLIPSE_FAMILY]).unwrap();
+
+        assert_eq!(input.mesh, None);
+    }
+
+    #[test]
+    fn test_mesh_section_with_only_enable_has_the_defaults() {
+        let family = ELLIPSE_FAMILY.replace("orientation", CONSTANT_APERTURE);
+
+        let (input, _) = parse(&[&add_before_clusters(MESH_SECTIONS), &family]).unwrap();
+
+        assert_eq!(
+            input.mesh,
+            Some(MeshOptions {
+                max_size_factor: 10.,
+                slope: 0.5,
+                family_apertures: vec![ApertureDistribution::Constant { value: 1e-4 }],
+                user_fracture_aperture: None,
+            })
+        );
+    }
+
+    #[test]
+    fn test_mesh_needs_region_boundaries() {
+        let family = ELLIPSE_FAMILY.replace("orientation", CONSTANT_APERTURE);
+        let options = add_before_clusters("[mesh]\nenable = true\n");
+
+        let message = error_message(parse(&[&options, &family]));
+
+        assert!(message.contains("needs [region_boundaries]"), "{message}");
+    }
+
+    #[test]
+    fn test_mesh_needs_the_aperture_of_each_family() {
+        let message = error_message(parse(&[
+            &add_before_clusters(MESH_SECTIONS),
+            ELLIPSE_FAMILY,
+        ]));
+
+        assert!(
+            message.contains("family 1: aperture is necessary"),
+            "{message}"
+        );
+    }
+
+    #[test]
+    fn test_family_aperture_without_mesh_has_no_effect() {
+        let family = ELLIPSE_FAMILY.replace("orientation", CONSTANT_APERTURE);
+
+        let (input, _) = parse(&[GENERAL_OPTIONS, &family]).unwrap();
+
+        assert_eq!(input.mesh, None);
+    }
+
+    #[test]
+    fn test_negative_aperture_sd_is_rejected() {
+        let family = ELLIPSE_FAMILY.replace(
+            "orientation",
+            "aperture = { distribution = \"log_normal\", log_mean = -8.0, sd = -1.0 }\norientation",
+        );
+
+        let message = error_message(parse(&[&add_before_clusters(MESH_SECTIONS), &family]));
+
+        assert!(message.contains("family 1: aperture"), "{message}");
+    }
+
+    #[test]
+    fn test_mesh_slope_of_zero_is_rejected() {
+        let family = ELLIPSE_FAMILY.replace("orientation", CONSTANT_APERTURE);
+        let options = add_before_clusters(&format!("{MESH_SECTIONS}slope = 0.0\n"));
+
+        let message = error_message(parse(&[&options, &family]));
+
+        assert!(message.contains("mesh.slope"), "{message}");
     }
 
     #[test]

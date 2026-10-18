@@ -1,0 +1,46 @@
+# Feature: triangle mesh of the network for fehm-rs ([mesh] enable = true).
+# The network of base, with the boundary lines at the surface of the box
+# mesh. Family 1 has a constant aperture, family 2 an aperture correlated
+# with the radius.
+
+seed = 12345
+min_feature_size = 0.1
+domain = "../box.vtu"
+
+[generation]
+n_poly = 100
+force_large_fractures = false
+remove_fractures_less_than = 0.0
+
+[fram]
+enable = true
+relaxed = false
+triple_intersections = true
+write_rejected_fractures = false
+rejects_per_fracture = 10
+
+[region_boundaries]
+enable = true
+
+[mesh]
+enable = true
+
+[clusters]
+keep_only_largest = false
+keep_isolated_fractures = false
+
+[[family]]
+number_of_points = 8
+probability = 0.5
+aspect_ratio = 1.0
+aperture = { distribution = "constant", value = 1e-4 }
+radius = { distribution = "truncated_power_law", alpha = 2.5, min = 1.0, max = 4.0 }
+orientation = { theta = 0.0, phi = 0.0, kappa = 10.0 }
+
+[[family]]
+number_of_points = 8
+probability = 0.5
+aspect_ratio = 1.0
+aperture = { distribution = "correlated", alpha = 1e-4, beta = 0.5 }
+radius = { distribution = "truncated_power_law", alpha = 2.5, min = 1.0, max = 4.0 }
+orientation = { theta = 90.0, phi = 0.0, kappa = 10.0 }

@@ -6,6 +6,7 @@ use parry3d_f64::na::Vector3;
 use crate::dfn::RejectedFracture;
 use crate::fracture::poly::Poly;
 use crate::io::output::to_output_coordinates;
+use crate::mesh::FractureMesh;
 use crate::region_boundaries::{BoundarySegment, OtherSide};
 
 /// Writes the final fractures as polygons in VTK XML PolyData format (`.vtp`, ASCII)
@@ -314,6 +315,134 @@ pub fn write_fracture_boundaries_vtk(
     writeln!(output, "</CellData>")?;
 
     write_file_end(output)
+}
+
+/// VTK cell type of a triangle
+const VTK_TRIANGLE: u8 = 5;
+
+/// Writes the triangle mesh of the final fractures in VTK XML
+/// UnstructuredGrid format (`.vtu`, ASCII), the mesh file of fehm-rs
+///
+/// Cell data: `fracture_id` (number of the final fracture, as in
+/// `fractures.vtp`), `aperture` (m) and `permeability` (m², aperture² / 12).
+/// Point data: `boundary__mesh_surface` and `boundary__<name>` for each
+/// region: 1 for a point on a boundary line with that other side, else 0.
+///
+/// # Arguments
+///
+/// * `mesh` - The mesh
+/// * `region_names` - Names of the regions of the mesh, in the order of `DomainMesh::regions`
+/// * `mesh_center` - Center of the domain mesh
+/// * `output` - File to write to
+pub fn write_mesh_vtu(
+    mesh: &FractureMesh,
+    region_names: &[&str],
+    mesh_center: &Vector3<f64>,
+    output: &mut impl Write,
+) -> io::Result<()> {
+    let apertures: Vec<f64> = mesh
+        .triangle_fractures
+        .iter()
+        .map(|&fracture| mesh.apertures[fracture])
+        .collect();
+
+    writeln!(output, r#"<?xml version="1.0"?>"#)?;
+    writeln!(
+        output,
+        r#"<VTKFile type="UnstructuredGrid" version="1.0" byte_order="LittleEndian">"#
+    )?;
+    writeln!(output, "<UnstructuredGrid>")?;
+    writeln!(
+        output,
+        r#"<Piece NumberOfPoints="{}" NumberOfCells="{}">"#,
+        mesh.points.len(),
+        mesh.triangles.len()
+    )?;
+
+    writeln!(output, "<Points>")?;
+    write_data_array(
+        output,
+        "points",
+        "Float64",
+        3,
+        mesh.points
+            .iter()
+            .map(|point| to_output_coordinates(point, mesh_center))
+            .map(|point| format!("{} {} {}", point.x, point.y, point.z)),
+    )?;
+    writeln!(output, "</Points>")?;
+
+    writeln!(output, "<Cells>")?;
+    write_data_array(
+        output,
+        "connectivity",
+        "Int64",
+        1,
+        mesh.triangles.iter().flatten(),
+    )?;
+    write_data_array(
+        output,
+        "offsets",
+        "Int64",
+        1,
+        (1..=mesh.triangles.len()).map(|triangle| 3 * triangle),
+    )?;
+    write_data_array(
+        output,
+        "types",
+        "UInt8",
+        1,
+        mesh.triangles.iter().map(|_| VTK_TRIANGLE),
+    )?;
+    writeln!(output, "</Cells>")?;
+
+    writeln!(output, "<CellData>")?;
+    write_data_array(
+        output,
+        "fracture_id",
+        "Int32",
+        1,
+        mesh.triangle_fractures.iter().map(|fracture| fracture + 1),
+    )?;
+    write_data_array(output, "aperture", "Float64", 1, apertures.iter())?;
+    write_data_array(
+        output,
+        "permeability",
+        "Float64",
+        1,
+        apertures.iter().map(|aperture| aperture * aperture / 12.),
+    )?;
+    writeln!(output, "</CellData>")?;
+
+    writeln!(output, "<PointData>")?;
+    write_data_array(
+        output,
+        "boundary__mesh_surface",
+        "Int32",
+        1,
+        mesh.point_sides
+            .iter()
+            .map(|sides| u8::from(sides.contains(&OtherSide::MeshSurface))),
+    )?;
+    for (position, name) in region_names.iter().enumerate() {
+        let region_id = position + 1;
+        write_data_array(
+            output,
+            &format!("boundary__{name}"),
+            "Int32",
+            1,
+            mesh.point_sides.iter().map(|sides| {
+                u8::from(sides.iter().any(|side| {
+                    matches!(side, OtherSide::Cell(region_ids) if region_ids.contains(&region_id))
+                }))
+            }),
+        )?;
+    }
+    writeln!(output, "</PointData>")?;
+
+    writeln!(output, "</Piece>")?;
+    writeln!(output, "</UnstructuredGrid>")?;
+    writeln!(output, "</VTKFile>")
 }
 
 /// Writes the start of the file, and one polygon cell for each fracture.

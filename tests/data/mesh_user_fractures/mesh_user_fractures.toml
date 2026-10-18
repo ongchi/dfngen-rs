@@ -1,0 +1,31 @@
+# Feature: triangle mesh of user-defined fractures ([mesh] with
+# mesh.user_fracture_aperture). The two pieces of fracture 7 share an edge,
+# and fracture 9 intersects both pieces along that edge. The mesh surface at
+# x = 5 crosses the second piece.
+
+seed = 12345
+min_feature_size = 0.1
+domain = "../box.vtu"
+user_fractures = "mesh_user_fractures.vtp"
+
+[generation]
+force_large_fractures = false
+remove_fractures_less_than = 0.0
+
+[fram]
+enable = true
+relaxed = false
+triple_intersections = true
+write_rejected_fractures = false
+rejects_per_fracture = 10
+
+[region_boundaries]
+enable = true
+
+[mesh]
+enable = true
+user_fracture_aperture = { distribution = "constant", value = 2e-4 }
+
+[clusters]
+keep_only_largest = false
+keep_isolated_fractures = false

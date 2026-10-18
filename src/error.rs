@@ -21,6 +21,8 @@ pub enum DfngenError {
     InvalidInput(String),
     #[error("No fracture is defined. Add a fracture family or a user-defined fracture in the domain to the input file.")]
     NoFractureDefined,
+    #[error("Mesh: {0}")]
+    Mesh(String),
     #[error("There are no intersecting fractures. Increase the fracture density, or decrease the domain size.")]
     NoIntersectingFractures,
 }

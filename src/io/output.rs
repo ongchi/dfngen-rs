@@ -12,8 +12,8 @@ use crate::fracture::poly::Poly;
 use crate::generation::Network;
 use crate::io::input::Input;
 use crate::io::vtk::{
-    write_fracture_boundaries_vtk, write_fractures_vtk, write_rejected_fractures_vtk,
-    write_removed_fractures_vtk,
+    write_fracture_boundaries_vtk, write_fractures_vtk, write_mesh_vtu,
+    write_rejected_fractures_vtk, write_removed_fractures_vtk,
 };
 use crate::stats::Stats;
 
@@ -74,13 +74,14 @@ pub fn write_output(network: &Network, create_file: &mut CreateFile) -> io::Resu
     write_fractures_vtk(final_fractures, accepted_polys, mesh_center, &mut vtk_file)?;
     vtk_file.flush()?;
 
+    let region_names: Vec<&str> = input
+        .domain_mesh
+        .regions()
+        .iter()
+        .map(|region| region.name.as_str())
+        .collect();
+
     if input.region_boundaries.is_some() {
-        let region_names: Vec<&str> = input
-            .domain_mesh
-            .regions()
-            .iter()
-            .map(|region| region.name.as_str())
-            .collect();
         let mut boundaries_file = create_file("fracture_boundaries.vtp")?;
         write_fracture_boundaries_vtk(
             final_fractures,
@@ -90,6 +91,12 @@ pub fn write_output(network: &Network, create_file: &mut CreateFile) -> io::Resu
             &mut boundaries_file,
         )?;
         boundaries_file.flush()?;
+    }
+
+    if let Some(mesh) = &network.mesh {
+        let mut mesh_file = create_file("dfn_mesh.vtu")?;
+        write_mesh_vtu(mesh, &region_names, mesh_center, &mut mesh_file)?;
+        mesh_file.flush()?;
     }
 
     let removed_fractures: Vec<usize> = (0..accepted_polys.len())

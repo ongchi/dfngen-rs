@@ -1,0 +1,39 @@
+<?xml version="1.0"?>
+<!-- Polygons 1 and 2: pieces of fracture 7 in the plane z = 0 (x 0 to 4 and 4 to 8;
+     the box is -5 to 5). Polygon 3: fracture 9 in the plane x = 4, which
+     intersects both pieces along their common edge. -->
+<VTKFile type="PolyData" version="1.0" byte_order="LittleEndian">
+<PolyData>
+<Piece NumberOfPoints="12" NumberOfVerts="0" NumberOfLines="0" NumberOfStrips="0" NumberOfPolys="3">
+<Points>
+<DataArray type="Float64" Name="points" NumberOfComponents="3" format="ascii">
+0.0 -1.0 0.0
+4.0 -1.0 0.0
+4.0 1.0 0.0
+0.0 1.0 0.0
+4.0 -1.0 0.0
+8.0 -1.0 0.0
+8.0 1.0 0.0
+4.0 1.0 0.0
+4.0 -2.0 -1.0
+4.0 2.0 -1.0
+4.0 2.0 1.0
+4.0 -2.0 1.0
+</DataArray>
+</Points>
+<Polys>
+<DataArray type="Int64" Name="connectivity" format="ascii">
+0 1 2 3 4 5 6 7 8 9 10 11
+</DataArray>
+<DataArray type="Int64" Name="offsets" format="ascii">
+4 8 12
+</DataArray>
+</Polys>
+<CellData>
+<DataArray type="Int32" Name="fracture_id" format="ascii">
+7 7 9
+</DataArray>
+</CellData>
+</Piece>
+</PolyData>
+</VTKFile>

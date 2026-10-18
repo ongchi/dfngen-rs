@@ -9,6 +9,7 @@ use std::rc::Rc;
 
 use dfngen::fracture::poly::{FractureOrigin, Poly};
 use dfngen::io::input::StopCondition;
+use dfngen::mesh::FractureMesh;
 use dfngen::region_boundaries::{BoundarySegment, OtherSide};
 use dfngen::stats::RejectionReasons;
 use dfngen::{
@@ -849,5 +850,194 @@ mod region_boundaries_user_fractures {
         let network = run("region_boundaries_user_fractures");
 
         assert_eq!(network.dfn.accepted_polys[2].boundary_lines.len(), 2);
+    }
+}
+
+/// The part of the mesh of each point: parts which are not connected have
+/// different numbers
+fn mesh_parts(mesh: &FractureMesh) -> Vec<usize> {
+    let mut parent: Vec<usize> = (0..mesh.points.len()).collect();
+    fn root(parent: &mut [usize], mut point: usize) -> usize {
+        while parent[point] != point {
+            parent[point] = parent[parent[point]];
+            point = parent[point];
+        }
+        point
+    }
+
+    for triangle in &mesh.triangles {
+        for pair in [[triangle[0], triangle[1]], [triangle[1], triangle[2]]] {
+            let (first, second) = (root(&mut parent, pair[0]), root(&mut parent, pair[1]));
+            parent[first] = second;
+        }
+    }
+
+    (0..mesh.points.len())
+        .map(|point| root(&mut parent, point))
+        .collect()
+}
+
+/// Number of parts of the mesh which are not connected
+fn mesh_part_count(mesh: &FractureMesh) -> usize {
+    let mut parts = mesh_parts(mesh);
+    parts.sort_unstable();
+    parts.dedup();
+    parts.len()
+}
+
+/// Positions of the final fractures which are in the mesh
+fn fractures_in_mesh(mesh: &FractureMesh) -> Vec<usize> {
+    let mut fractures = mesh.triangle_fractures.clone();
+    fractures.sort_unstable();
+    fractures.dedup();
+    fractures
+}
+
+fn triangle_area(mesh: &FractureMesh, triangle: &[usize; 3]) -> f64 {
+    let [a, b, c] = triangle.map(|point| mesh.points[point]);
+    (b - a).cross(&(c - a)).norm() / 2.
+}
+
+mod mesh {
+    use super::*;
+
+    #[test]
+    fn test_mesh_file_is_written() {
+        let network = run("mesh");
+
+        assert!(output_file_names(&network).contains(&"dfn_mesh.vtu".to_string()));
+    }
+
+    #[test]
+    fn test_mesh_has_one_part_for_each_cluster_in_it() {
+        let network = run("mesh");
+        let mesh = network.mesh.as_ref().unwrap();
+        let mut groups: Vec<Option<usize>> = fractures_in_mesh(mesh)
+            .into_iter()
+            .map(|position| network.dfn.accepted_polys[network.final_fractures[position]].group)
+            .collect();
+        groups.sort_unstable();
+        groups.dedup();
+
+        assert_eq!(mesh_part_count(mesh), groups.len());
+    }
+
+    #[test]
+    fn test_each_part_of_the_mesh_has_a_boundary_point() {
+        let network = run("mesh");
+        let mesh = network.mesh.as_ref().unwrap();
+        let parts = mesh_parts(mesh);
+        let mut parts_with_boundary: Vec<usize> = parts
+            .iter()
+            .zip(&mesh.point_sides)
+            .filter(|(_, sides)| !sides.is_empty())
+            .map(|(&part, _)| part)
+            .collect();
+        parts_with_boundary.sort_unstable();
+        parts_with_boundary.dedup();
+
+        assert_eq!(parts_with_boundary.len(), mesh_part_count(mesh));
+    }
+
+    #[test]
+    fn test_clusters_without_a_boundary_point_are_not_in_the_mesh() {
+        let network = run("mesh");
+
+        assert!(
+            fractures_in_mesh(network.mesh.as_ref().unwrap()).len() < network.final_fractures.len()
+        );
+    }
+
+    #[test]
+    fn test_triangles_cover_each_fracture() {
+        let network = run("mesh");
+        let mesh = network.mesh.as_ref().unwrap();
+        let mut mesh_areas = vec![0.; network.final_fractures.len()];
+        for (triangle, &fracture) in mesh.triangles.iter().zip(&mesh.triangle_fractures) {
+            mesh_areas[fracture] += triangle_area(mesh, triangle);
+        }
+
+        for position in fractures_in_mesh(mesh) {
+            let area = network.dfn.accepted_polys[network.final_fractures[position]].area;
+            assert!(
+                (mesh_areas[position] - area).abs() < 1e-9 * area,
+                "fracture {}: mesh area {} is not {area}",
+                position + 1,
+                mesh_areas[position]
+            );
+        }
+    }
+
+    #[test]
+    fn test_aperture_of_family_2_is_correlated_with_the_radius() {
+        let network = run("mesh");
+        let mesh = network.mesh.as_ref().unwrap();
+
+        for (position, &i) in network.final_fractures.iter().enumerate() {
+            let poly = &network.dfn.accepted_polys[i];
+            if poly.origin == FractureOrigin::Family(1) {
+                let expected = 1e-4 * poly.x_radius.sqrt();
+                assert!((mesh.apertures[position] - expected).abs() < 1e-15 * expected);
+            }
+        }
+    }
+
+    #[test]
+    fn test_mesh_surface_points_are_on_the_box_surface() {
+        let network = run("mesh");
+        let mesh = network.mesh.as_ref().unwrap();
+        let surface_points: Vec<&Point3<f64>> = mesh
+            .points
+            .iter()
+            .zip(&mesh.point_sides)
+            .filter(|(_, sides)| sides.contains(&OtherSide::MeshSurface))
+            .map(|(point, _)| point)
+            .collect();
+
+        assert!(!surface_points.is_empty());
+        for point in surface_points {
+            let largest_coordinate = point.coords.amax();
+            assert!((largest_coordinate - 5.).abs() < 1e-9, "{point}");
+        }
+    }
+
+    #[test]
+    fn test_mesh_does_not_change_the_network() {
+        let with_mesh = run("mesh");
+        let without_mesh = run_with_replaced_text("mesh", "[mesh]\nenable = true", "");
+        let vertices = |network: &Network| -> Vec<Vec<Point3<f64>>> {
+            network
+                .dfn
+                .accepted_polys
+                .iter()
+                .map(|poly| poly.vertices.clone())
+                .collect()
+        };
+
+        assert_eq!(vertices(&with_mesh), vertices(&without_mesh));
+    }
+}
+
+mod mesh_user_fractures {
+    use super::*;
+
+    #[test]
+    fn test_pieces_and_the_fracture_on_their_common_edge_are_one_part() {
+        let network = run("mesh_user_fractures");
+
+        assert_eq!(mesh_part_count(network.mesh.as_ref().unwrap()), 1);
+    }
+
+    #[test]
+    fn test_user_fractures_have_the_user_fracture_aperture() {
+        let network = run("mesh_user_fractures");
+
+        assert!(network
+            .mesh
+            .as_ref()
+            .unwrap()
+            .apertures
+            .iter()
+            .all(|&aperture| aperture == 2e-4));
     }
 }
