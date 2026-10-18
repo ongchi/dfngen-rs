@@ -6,6 +6,7 @@ use parry3d_f64::na::Vector3;
 use crate::dfn::RejectedFracture;
 use crate::fracture::poly::Poly;
 use crate::io::output::to_output_coordinates;
+use crate::region_boundaries::{BoundarySegment, OtherSide};
 
 /// Writes the final fractures as polygons in VTK XML PolyData format (`.vtp`, ASCII)
 ///
@@ -183,6 +184,133 @@ pub fn write_rejected_fractures_vtk(
     write_real_array(output, "aspect_ratio", &polys, |poly| poly.aspect_ratio)?;
     write_vector_array(output, "normal", &polys, |poly| poly.normal)?;
     write_translation_array(output, &polys, mesh_center)?;
+    writeln!(output, "</CellData>")?;
+
+    write_file_end(output)
+}
+
+/// Writes the boundary lines of the regions on the final fractures as lines
+/// in VTK XML PolyData format (`.vtp`, ASCII)
+///
+/// One line cell is written for each segment of a boundary line, in the order
+/// of the fractures and of their lines, with the cell data:
+/// * `fracture_id` - Number of the final fracture (as in `fractures.vtp`)
+/// * `line_id` - Number of the boundary line, starts at 1 for each fracture
+/// * `mesh_surface` - 1 if no mesh cell is on the other side of the segment, else 0
+/// * `boundary__<name>` - For each region of the mesh: 1 if the cell on the
+///   other side of the segment is in the region, else 0
+///
+/// # Arguments
+///
+/// * `final_fractures` - Sorted indices of fractures left after isolated fracture removal
+/// * `accepted_polys` - All accepted fractures
+/// * `region_names` - Names of the regions of the mesh, in the order of `DomainMesh::regions`
+/// * `mesh_center` - Center of the domain mesh
+/// * `output` - File to write to
+pub fn write_fracture_boundaries_vtk(
+    final_fractures: &[usize],
+    accepted_polys: &[Poly],
+    region_names: &[&str],
+    mesh_center: &Vector3<f64>,
+    output: &mut impl Write,
+) -> io::Result<()> {
+    // The fracture number, the line number and the segment
+    let segments: Vec<(usize, usize, &BoundarySegment)> = final_fractures
+        .iter()
+        .enumerate()
+        .flat_map(|(i, &poly_index)| {
+            accepted_polys[poly_index]
+                .boundary_lines
+                .iter()
+                .enumerate()
+                .flat_map(move |(line, boundary_line)| {
+                    boundary_line
+                        .segments
+                        .iter()
+                        .map(move |segment| (i + 1, line + 1, segment))
+                })
+        })
+        .collect();
+
+    writeln!(output, r#"<?xml version="1.0"?>"#)?;
+    writeln!(
+        output,
+        r#"<VTKFile type="PolyData" version="1.0" byte_order="LittleEndian">"#
+    )?;
+    writeln!(output, "<PolyData>")?;
+    writeln!(
+        output,
+        r#"<Piece NumberOfPoints="{}" NumberOfVerts="0" NumberOfLines="{}" NumberOfStrips="0" NumberOfPolys="0">"#,
+        2 * segments.len(),
+        segments.len()
+    )?;
+
+    writeln!(output, "<Points>")?;
+    write_data_array(
+        output,
+        "points",
+        "Float64",
+        3,
+        segments
+            .iter()
+            .flat_map(|(_, _, segment)| [segment.start, segment.end])
+            .map(|point| to_output_coordinates(&point, mesh_center))
+            .map(|point| format!("{} {} {}", point.x, point.y, point.z)),
+    )?;
+    writeln!(output, "</Points>")?;
+
+    writeln!(output, "<Lines>")?;
+    write_data_array(output, "connectivity", "Int64", 1, 0..2 * segments.len())?;
+    write_data_array(
+        output,
+        "offsets",
+        "Int64",
+        1,
+        (1..=segments.len()).map(|line| 2 * line),
+    )?;
+    writeln!(output, "</Lines>")?;
+
+    writeln!(output, "<CellData>")?;
+    write_data_array(
+        output,
+        "fracture_id",
+        "Int32",
+        1,
+        segments.iter().map(|(fracture_id, _, _)| *fracture_id),
+    )?;
+    write_data_array(
+        output,
+        "line_id",
+        "Int32",
+        1,
+        segments.iter().map(|(_, line_id, _)| *line_id),
+    )?;
+    write_data_array(
+        output,
+        "mesh_surface",
+        "Int32",
+        1,
+        segments
+            .iter()
+            .map(|(_, _, segment)| u8::from(segment.other_side == OtherSide::MeshSurface)),
+    )?;
+
+    for (position, name) in region_names.iter().enumerate() {
+        let region_id = position + 1;
+        write_data_array(
+            output,
+            &format!("boundary__{name}"),
+            "Int32",
+            1,
+            segments.iter().map(|(_, _, segment)| {
+                u8::from(matches!(
+                    &segment.other_side,
+                    OtherSide::Cell(region_ids) if region_ids.contains(&region_id)
+                ))
+            }),
+        )?;
+    }
+
     writeln!(output, "</CellData>")?;
 
     write_file_end(output)

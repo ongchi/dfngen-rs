@@ -1,12 +1,15 @@
 //! One test case of `tests/data` for each feature of the input. Each test
 //! checks what its feature must do with the network.
 
+use std::cell::RefCell;
 use std::fs;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
+use std::rc::Rc;
 
 use dfngen::fracture::poly::{FractureOrigin, Poly};
 use dfngen::io::input::StopCondition;
+use dfngen::region_boundaries::{BoundarySegment, OtherSide};
 use dfngen::stats::RejectionReasons;
 use dfngen::{
     build_input_from_text, generate, read_input, read_input_file_names, write_output, Network,
@@ -29,13 +32,21 @@ fn run(case: &str) -> Network {
 
 /// Network of a case, with one text of its input file replaced
 fn run_with_replaced_text(case: &str, from: &str, to: &str) -> Network {
+    run_with_replacements(case, &[(from, to)])
+}
+
+/// Network of a case, with texts of its input file replaced (from, to)
+fn run_with_replacements(case: &str, replacements: &[(&str, &str)]) -> Network {
     let folder = case_folder(case);
-    let toml_text = fs::read_to_string(folder.join(format!("{case}.toml"))).unwrap();
-    assert!(
-        toml_text.contains(from),
-        "the input of {case} has no {from:?}"
-    );
-    let toml_text = toml_text.replace(from, to);
+    let mut toml_text = fs::read_to_string(folder.join(format!("{case}.toml"))).unwrap();
+
+    for (from, to) in replacements {
+        assert!(
+            toml_text.contains(from),
+            "the input of {case} has no {from:?}"
+        );
+        toml_text = toml_text.replace(from, to);
+    }
 
     let names = read_input_file_names(&toml_text).unwrap();
     let read_text = |name: &str| fs::read_to_string(folder.join(name)).unwrap();
@@ -634,5 +645,209 @@ mod generation_options {
                 .iter()
                 .any(|poly| poly.x_radius == 4.0));
         }
+    }
+}
+
+fn final_polys(network: &Network) -> Vec<&Poly> {
+    network
+        .final_fractures
+        .iter()
+        .map(|&i| &network.dfn.accepted_polys[i])
+        .collect()
+}
+
+fn segments_of<'a>(polys: &[&'a Poly]) -> Vec<&'a BoundarySegment> {
+    polys
+        .iter()
+        .flat_map(|poly| &poly.boundary_lines)
+        .flat_map(|line| &line.segments)
+        .collect()
+}
+
+fn other_sides<'a>(polys: &[&'a Poly]) -> Vec<&'a OtherSide> {
+    segments_of(polys)
+        .into_iter()
+        .map(|segment| &segment.other_side)
+        .collect()
+}
+
+/// True if the point is on the surface of the box from -half to half
+fn is_on_box_surface(point: &Point3<f64>, half: [f64; 3]) -> bool {
+    const TOLERANCE: f64 = 1e-9;
+
+    (0..3).all(|axis| point[axis].abs() <= half[axis] + TOLERANCE)
+        && (0..3).any(|axis| (point[axis].abs() - half[axis]).abs() < TOLERANCE)
+}
+
+/// Text of an output file which `write_output` writes for the network
+fn output_file_text(network: &Network, file_name: &str) -> String {
+    let text = Rc::new(RefCell::new(Vec::new()));
+    write_output(network, &mut |name| {
+        if name == file_name {
+            Ok(Box::new(SharedBuffer(Rc::clone(&text))) as Box<dyn Write>)
+        } else {
+            Ok(Box::new(io::sink()) as Box<dyn Write>)
+        }
+    })
+    .unwrap();
+
+    String::from_utf8(text.take()).unwrap()
+}
+
+/// A writer into a buffer which the test keeps (the writer of `write_output`
+/// must own its target)
+struct SharedBuffer(Rc<RefCell<Vec<u8>>>);
+
+impl Write for SharedBuffer {
+    fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+        self.0.borrow_mut().extend_from_slice(bytes);
+        Ok(bytes.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
+
+mod region_boundaries_mesh {
+    use super::*;
+
+    #[test]
+    fn test_lines_are_on_the_surface_of_the_mesh() {
+        let network = run("region_boundaries_mesh");
+        let segments = segments_of(&final_polys(&network));
+
+        // The box mesh goes from -5 to 5
+        assert!(!segments.is_empty());
+        assert!(segments.iter().all(|segment| {
+            segment.other_side == OtherSide::MeshSurface
+                && is_on_box_surface(&segment.start, [5.; 3])
+                && is_on_box_surface(&segment.end, [5.; 3])
+        }));
+    }
+
+    #[test]
+    fn test_fram_rejects_fractures_for_their_boundary_lines() {
+        let network = run("region_boundaries_mesh");
+
+        assert!(network.dfn.stats.rejection_reasons.boundary_line > 0);
+    }
+
+    #[test]
+    fn test_without_fram_the_option_adds_only_the_lines() {
+        let fram_off = ("[fram]\nenable = true", "[fram]\nenable = false");
+        let with_lines = run_with_replacements("region_boundaries_mesh", &[fram_off]);
+        let without_lines = run_with_replacements(
+            "region_boundaries_mesh",
+            &[
+                fram_off,
+                (
+                    "[region_boundaries]\nenable = true",
+                    "[region_boundaries]\nenable = false",
+                ),
+            ],
+        );
+        let vertices = |network: &Network| -> Vec<Vec<Point3<f64>>> {
+            final_polys(network)
+                .iter()
+                .map(|poly| poly.vertices.clone())
+                .collect()
+        };
+
+        assert!(!segments_of(&final_polys(&with_lines)).is_empty());
+        assert_eq!(vertices(&with_lines), vertices(&without_lines));
+    }
+
+    #[test]
+    fn test_fracture_boundaries_file_has_a_line_for_each_segment() {
+        let network = run("region_boundaries_mesh");
+        let segment_count = segments_of(&final_polys(&network)).len();
+
+        let text = output_file_text(&network, "fracture_boundaries.vtp");
+
+        assert!(text.contains(&format!(r#"NumberOfLines="{segment_count}""#)));
+    }
+}
+
+mod region_boundaries_family_region {
+    use super::*;
+
+    /// The region `center_and_east` is region 2 of `regions.vtu`
+    const CENTER_AND_EAST: usize = 2;
+
+    #[test]
+    fn test_lines_of_a_family_are_on_the_surface_of_its_region() {
+        let network = run("region_boundaries_family_region");
+        let segments = segments_of(&family_fractures(&network, 1));
+
+        // The region `center` is the center cell, from -3 to 3. The lines of
+        // the mesh surface (from -5 to 5) in other cells are also lines.
+        assert!(!segments.is_empty());
+        assert!(segments.iter().all(|segment| {
+            let half = match segment.other_side {
+                OtherSide::Cell(_) => [3.; 3],
+                OtherSide::MeshSurface => [5.; 3],
+            };
+            is_on_box_surface(&segment.start, half) && is_on_box_surface(&segment.end, half)
+        }));
+    }
+
+    #[test]
+    fn test_line_at_the_east_cell_has_its_region_on_the_other_side() {
+        let network = run("region_boundaries_family_region");
+
+        assert!(other_sides(&family_fractures(&network, 1))
+            .contains(&&OtherSide::Cell(vec![CENTER_AND_EAST])));
+    }
+
+    #[test]
+    fn test_lines_are_on_the_mesh_surface_without_use_family_region() {
+        let network = run_with_replacements(
+            "region_boundaries_family_region",
+            &[("use_family_region = true", "use_family_region = false")],
+        );
+        let sides = other_sides(&family_fractures(&network, 1));
+
+        assert!(!sides.is_empty());
+        assert!(sides.iter().all(|side| **side == OtherSide::MeshSurface));
+    }
+}
+
+mod region_boundaries_user_fractures {
+    use super::*;
+
+    /// The region `north` is region 2 of `mesh_domain.vtu`
+    const NORTH: usize = 2;
+
+    fn sides_of_fracture(network: &Network, index: usize) -> Vec<&OtherSide> {
+        other_sides(&[&network.dfn.accepted_polys[index]])
+    }
+
+    #[test]
+    fn test_fracture_in_two_regions_has_no_line_between_them() {
+        let network = run("region_boundaries_user_fractures");
+
+        // Only the line at the corner where the mesh has no cell
+        assert_eq!(
+            sides_of_fracture(&network, 0),
+            [&OtherSide::MeshSurface, &OtherSide::MeshSurface]
+        );
+    }
+
+    #[test]
+    fn test_fracture_in_one_region_has_the_other_region_beside_its_line() {
+        let network = run("region_boundaries_user_fractures");
+
+        assert_eq!(
+            sides_of_fracture(&network, 1),
+            [&OtherSide::Cell(vec![NORTH])]
+        );
+    }
+
+    #[test]
+    fn test_fracture_through_both_arms_of_the_l_shape_has_two_lines() {
+        let network = run("region_boundaries_user_fractures");
+
+        assert_eq!(network.dfn.accepted_polys[2].boundary_lines.len(), 2);
     }
 }

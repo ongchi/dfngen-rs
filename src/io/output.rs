@@ -10,8 +10,10 @@ use tracing::info;
 use crate::dfn::Intersection;
 use crate::fracture::poly::Poly;
 use crate::generation::Network;
+use crate::io::input::Input;
 use crate::io::vtk::{
-    write_fractures_vtk, write_rejected_fractures_vtk, write_removed_fractures_vtk,
+    write_fracture_boundaries_vtk, write_fractures_vtk, write_rejected_fractures_vtk,
+    write_removed_fractures_vtk,
 };
 use crate::stats::Stats;
 
@@ -72,6 +74,24 @@ pub fn write_output(network: &Network, create_file: &mut CreateFile) -> io::Resu
     write_fractures_vtk(final_fractures, accepted_polys, mesh_center, &mut vtk_file)?;
     vtk_file.flush()?;
 
+    if input.region_boundaries.is_some() {
+        let region_names: Vec<&str> = input
+            .domain_mesh
+            .regions()
+            .iter()
+            .map(|region| region.name.as_str())
+            .collect();
+        let mut boundaries_file = create_file("fracture_boundaries.vtp")?;
+        write_fracture_boundaries_vtk(
+            final_fractures,
+            accepted_polys,
+            &region_names,
+            mesh_center,
+            &mut boundaries_file,
+        )?;
+        boundaries_file.flush()?;
+    }
+
     let removed_fractures: Vec<usize> = (0..accepted_polys.len())
         .filter(|i| final_fractures.binary_search(i).is_err())
         .collect();
@@ -108,7 +128,7 @@ pub fn write_output(network: &Network, create_file: &mut CreateFile) -> io::Resu
         mesh_center,
         &mut create_file("intersection_list.dat")?,
     )?;
-    write_rejection_stats(stats, &mut create_file("rejections.dat")?)?;
+    write_rejection_stats(input, stats, &mut create_file("rejections.dat")?)?;
 
     if !stats.rejected_user_fractures.is_empty() {
         write_user_rejected_fracture_information(
@@ -217,9 +237,10 @@ fn write_triple_pts(
 ///
 /// # Arguments
 ///
+/// * `input` - Input options. With the boundary lines, the file has their rejects.
 /// * `stats` - Statistics of the generation
 /// * `file` - File to write into
-fn write_rejection_stats(stats: &Stats, file: &mut impl Write) -> io::Result<()> {
+fn write_rejection_stats(input: &Input, stats: &Stats, file: &mut impl Write) -> io::Result<()> {
     info!("Writing Rejection Statistics File (rejections.dat)");
     let reasons = &stats.rejection_reasons;
 
@@ -238,6 +259,15 @@ fn write_rejection_stats(stats: &Stats, file: &mut impl Write) -> io::Result<()>
         "Intersections Too Close: {}",
         reasons.inter_close_to_inter
     )?;
+
+    if input.region_boundaries.is_some() {
+        writeln!(
+            file,
+            "Boundary Lines of the Regions: {}",
+            reasons.boundary_line
+        )?;
+    }
+
     file.flush()
 }
 

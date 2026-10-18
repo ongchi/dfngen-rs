@@ -83,6 +83,9 @@ pub struct RejectionReasons {
     /// Rejections due to an intersection landing too close to another
     /// intersection.
     pub inter_close_to_inter: usize,
+    /// Rejections due to a boundary line of the region on the fracture:
+    /// too short, too near to the edge, or too near to an intersection.
+    pub boundary_line: usize,
 }
 
 /// Statistics of the DFN which is generated

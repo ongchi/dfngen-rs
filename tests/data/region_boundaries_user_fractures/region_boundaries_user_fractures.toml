@@ -1,0 +1,29 @@
+# Feature: boundary lines of the regions of the user-defined fractures
+# ([region_boundaries] enable = true). For a fracture with two regions, the
+# lines are at the boundary of the two regions together. The mesh is the L
+# shape of ../mesh_domain/mesh_domain.vtu (regions south and north; no cell has
+# x > 15 and y > 25). See the comment of the fracture file.
+# keep_isolated_fractures = true keeps all fractures.
+
+seed = 12345
+min_feature_size = 0.1
+domain = "../mesh_domain/mesh_domain.vtu"
+user_fractures = "region_boundaries_user_fractures.vtp"
+
+[generation]
+force_large_fractures = false
+remove_fractures_less_than = 0.0
+
+[fram]
+enable = true
+relaxed = false
+triple_intersections = true
+write_rejected_fractures = false
+rejects_per_fracture = 10
+
+[region_boundaries]
+enable = true
+
+[clusters]
+keep_only_largest = false
+keep_isolated_fractures = true

@@ -15,6 +15,7 @@ use crate::fracture::insert_user_defined_fractures;
 use crate::fracture::poly::{FractureOrigin, Poly};
 use crate::fram::{check_intersections, log_reject_reason};
 use crate::io::input::{Input, StopCondition};
+use crate::region_boundaries::boundary_lines;
 use crate::stats::{FractureCount, Stats};
 
 /// Result of a generation
@@ -59,6 +60,7 @@ pub fn generate(
         domain_size: input.domain_size,
         domain_mesh: input.domain_mesh.clone(),
         fram: input.fram.clone(),
+        region_boundaries: input.region_boundaries.clone(),
     };
 
     let mut generator = Mt64::new(input.seed);
@@ -158,7 +160,7 @@ pub fn generate(
     );
 
     report_intersection_statistics(&dfn);
-    report_rejection_statistics(&dfn.stats);
+    report_rejection_statistics(&input, &dfn.stats);
 
     if total_families > 0 {
         report_estimation_statistics(&family_collection, &dfn.stats);
@@ -289,6 +291,7 @@ fn insert_stochastic_fractures(
             generator,
         )?;
 
+        let region_ids = boundary_region_ids(input, &family_collection.families[family_index]);
         let mut reject_counter = 0;
 
         // Re-translate the polygon until it is accepted or reaches its reject limit
@@ -305,6 +308,16 @@ fn insert_stochastic_fractures(
             }
 
             new_poly.assign_bounding_box();
+
+            if options.region_boundaries.is_some() {
+                new_poly.boundary_lines = boundary_lines(
+                    &new_poly.vertices,
+                    &new_poly.normal,
+                    &options.domain_mesh,
+                    &region_ids,
+                );
+            }
+
             // Find line of intersection and FRAM check
             let fram_result = check_intersections(options, &mut new_poly, dfn);
 
@@ -380,6 +393,17 @@ fn insert_stochastic_fractures(
     }
 
     Ok(())
+}
+
+/// Regions of the boundary lines of a stochastic fracture. No region: all
+/// cells of the mesh.
+fn boundary_region_ids(input: &Input, family: &FractureFamily) -> Vec<usize> {
+    match &input.region_boundaries {
+        Some(options) if options.use_family_region && family.region_id > 0 => {
+            vec![family.region_id]
+        }
+        _ => Vec::new(),
+    }
 }
 
 /// Part of the stop condition which is complete, from 0 to 1
@@ -614,7 +638,7 @@ fn report_intersection_statistics(dfn: &Dfn) {
     );
 }
 
-fn report_rejection_statistics(stats: &Stats) {
+fn report_rejection_statistics(input: &Input, stats: &Stats) {
     let reasons = &stats.rejection_reasons;
 
     info!("Rejection Statistics:");
@@ -628,6 +652,10 @@ fn report_rejection_statistics(stats: &Stats) {
         "{} Intersections Close to Other Intersections",
         reasons.inter_close_to_inter
     );
+
+    if input.region_boundaries.is_some() {
+        info!("{} Boundary Lines of the Regions", reasons.boundary_line);
+    }
 }
 
 /// Compares the estimated and the actual number of fractures per family.

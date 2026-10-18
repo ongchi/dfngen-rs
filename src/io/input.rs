@@ -15,6 +15,7 @@ use crate::fracture::user_defined_fractures::UserFracture;
 use crate::fram::FramOptions;
 use crate::io::vtp::{parse_user_fractures, read_user_fractures, FracturePolygon};
 use crate::io::vtu::{parse_domain_mesh, read_domain_mesh};
+use crate::region_boundaries::RegionBoundaryOptions;
 
 /// The input has `generation.n_poly` for `NPoly`, and no `n_poly` for `P32`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -49,6 +50,9 @@ pub struct Input {
 
     /// Options of FRAM. `None`: FRAM is off, there will be no fracture rejections.
     pub fram: Option<FramOptions>,
+
+    /// Options of the boundary lines of the regions. `None`: no lines.
+    pub region_boundaries: Option<RegionBoundaryOptions>,
 
     /// 0 - Keep each cluster of 2 or more fractures
     /// 1 - Keep only the largest cluster
@@ -99,6 +103,8 @@ struct InputFile {
     generation: GenerationSection,
     #[serde(default)]
     fram: FramSection,
+    #[serde(default)]
+    region_boundaries: RegionBoundariesSection,
     clusters: ClustersSection,
     #[serde(default, rename = "family")]
     families: Vec<FamilySection>,
@@ -148,6 +154,35 @@ impl FramSection {
             check_user_fractures: self.check_user_fractures,
             write_rejected_fractures: self.write_rejected_fractures,
             rejects_per_fracture: self.rejects_per_fracture,
+        })
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+#[serde(default)]
+struct RegionBoundariesSection {
+    enable: bool,
+    use_family_region: bool,
+}
+
+/// Without the section or a key: no boundary lines, and with `enable = true`
+/// the region of a stochastic fracture is the region of its family.
+impl Default for RegionBoundariesSection {
+    fn default() -> Self {
+        Self {
+            enable: false,
+            use_family_region: true,
+        }
+    }
+}
+
+impl RegionBoundariesSection {
+    /// The options of the boundary lines, or `None` if the option is off. The
+    /// other keys then have no effect.
+    fn options(&self) -> Option<RegionBoundaryOptions> {
+        self.enable.then_some(RegionBoundaryOptions {
+            use_family_region: self.use_family_region,
         })
     }
 }
@@ -409,6 +444,7 @@ fn build_input(
         min_feature_size: file.min_feature_size,
         eps,
         fram,
+        region_boundaries: file.region_boundaries.options(),
         keep_only_largest_cluster: file.clusters.keep_only_largest,
         keep_isolated_fractures: file.clusters.keep_isolated_fractures,
         force_large_fractures: file.generation.force_large_fractures,
@@ -996,6 +1032,51 @@ mod tests {
         let (input, _) = parse(&[&options]).unwrap();
 
         assert_eq!(input.fram, None);
+    }
+
+    /// `GENERAL_OPTIONS` with this text before its `[clusters]` section
+    fn add_before_clusters(section: &str) -> String {
+        GENERAL_OPTIONS.replace("[clusters]", &format!("{section}\n[clusters]"))
+    }
+
+    #[test]
+    fn test_region_boundaries_are_off_without_their_section() {
+        let (input, _) = parse(&[GENERAL_OPTIONS]).unwrap();
+
+        assert_eq!(input.region_boundaries, None);
+    }
+
+    #[test]
+    fn test_region_boundaries_section_with_only_enable_uses_the_family_region() {
+        let options = add_before_clusters("[region_boundaries]\nenable = true\n");
+
+        let (input, _) = parse(&[&options]).unwrap();
+
+        assert_eq!(
+            input.region_boundaries,
+            Some(RegionBoundaryOptions {
+                use_family_region: true
+            })
+        );
+    }
+
+    #[test]
+    fn test_region_boundaries_are_off_with_enable_false() {
+        let options =
+            add_before_clusters("[region_boundaries]\nenable = false\nuse_family_region = false\n");
+
+        let (input, _) = parse(&[&options]).unwrap();
+
+        assert_eq!(input.region_boundaries, None);
+    }
+
+    #[test]
+    fn test_unknown_region_boundaries_key_is_rejected() {
+        let options = add_before_clusters("[region_boundaries]\nenable = true\ncut = true\n");
+
+        let message = error_message(parse(&[&options]));
+
+        assert!(message.contains("unknown field `cut`"), "{message}");
     }
 
     #[test]

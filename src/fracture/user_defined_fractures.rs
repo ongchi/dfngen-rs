@@ -3,6 +3,7 @@ use std::collections::HashSet;
 use parry3d_f64::na::{center, distance, Point3};
 
 use crate::dfn::{Dfn, PolyOptions};
+use crate::region_boundaries::boundary_lines;
 use crate::stats::FractureCount;
 
 use super::poly::{FractureOrigin, Poly};
@@ -28,7 +29,18 @@ pub fn insert_user_defined_fractures(
             Some(id) if fracture_ids_in_domain.contains(&id) => DomainCheck::FractureIsInDomain,
             _ => DomainCheck::Regions(&fracture.region_ids),
         };
-        dfn.insert_poly(fracture.to_poly(), i + 1, domain_check, options);
+        let mut poly = fracture.to_poly();
+
+        if options.region_boundaries.is_some() {
+            poly.boundary_lines = boundary_lines(
+                &poly.vertices,
+                &poly.normal,
+                &options.domain_mesh,
+                &fracture.region_ids,
+            );
+        }
+
+        dfn.insert_poly(poly, i + 1, domain_check, options);
     }
 
     // A fracture with an accepted piece is accepted

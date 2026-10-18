@@ -5,6 +5,7 @@ use parry3d_f64::na::{center, Point3, Rotation3, Vector3};
 use parry3d_f64::shape::Triangle;
 
 use crate::geometry::{is_parallel, rotation_between};
+use crate::region_boundaries::BoundaryLine;
 
 /// Where a fracture comes from
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -75,6 +76,10 @@ pub struct Poly {
 
     /// Indices of the intersections of the DFN which are on this polygon
     pub intersection_indices: Vec<usize>,
+
+    /// Lines where the boundary of the region of the fracture crosses it.
+    /// Empty without the option `region_boundaries`.
+    pub boundary_lines: Vec<BoundaryLine>,
 }
 
 impl Default for Poly {
@@ -93,6 +98,7 @@ impl Default for Poly {
             bounding_box: Aabb::new_invalid(),
             vertices: Vec::new(),
             intersection_indices: Vec::new(),
+            boundary_lines: Vec::new(),
         }
     }
 }

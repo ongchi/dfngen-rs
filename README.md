@@ -36,6 +36,11 @@ check_user_fractures = true        # default false; false = no FRAM for two user
 write_rejected_fractures = false   # default false; true = also write the fractures which FRAM rejected to fractures_rejected.vtp (see "Output files")
 rejects_per_fracture = 10          # default 10; FRAM rejects of a stochastic fracture before it is rejected; it moves after each reject
 
+# Optional section; each key is optional. Without it: no boundary lines.
+[region_boundaries]
+enable = true                      # default false; true = write the lines where the boundary of the region of each fracture crosses it (see "Boundary lines of the regions")
+use_family_region = true           # default true; false = the lines of each stochastic fracture are at the mesh surface, also if its family has a region
+
 [clusters]
 keep_only_largest = false          # true = keep only the largest cluster; no effect with keep_isolated_fractures = true
 keep_isolated_fractures = false    # true = keep all accepted fractures; false = remove the fractures with no intersection
@@ -113,6 +118,61 @@ Each fracture is whole: the domain does not cut it. Thus:
 - FRAM also checks the intersections outside the domain, and they are written.
 - The area and the P32 values include the part outside the domain. Thus a run
   without `n_poly` stops with a lower intensity in the domain than `p32_target`.
+
+### Boundary lines of the regions
+
+`region_boundaries.enable = true` finds, for each fracture, the lines where
+the boundary of its region crosses it, and the lines where the mesh surface
+crosses it. The fracture is not cut: it stays whole. `fracture_boundaries.vtp` has the lines of the final fractures, with
+the regions on the other side of each line (see "Output files"). A mesher
+can mesh the fractures with these lines, and make boundary nodes from them,
+for example the point arrays `boundary__<name>` of fehm-rs.
+`tests/data/region_boundaries_mesh`, `tests/data/region_boundaries_family_region`
+and `tests/data/region_boundaries_user_fractures` are examples.
+
+- The region of a fracture:
+  - A stochastic fracture: the cells of the region of its family (`region`).
+    A family without `region`: all cells of the mesh, thus the lines are at
+    the mesh surface. With `region_boundaries.use_family_region = false`: all
+    cells of the mesh, for each family.
+  - A user-defined fracture: the cells of all its regions together (the arrays
+    `region__<name>` of the fracture file). The faces between two of these
+    cells give no line. A fracture with no region: all cells of the mesh.
+- The plane of the fracture cuts each tetrahedron of these cells (see "Domain
+  mesh"). The boundary of the part of the fracture in the cross-sections,
+  without its edges on the fracture edge, gives the lines. Where the fracture
+  crosses the mesh surface in the cells of other regions, these lines are
+  also lines (with `mesh_surface` = 1). Thus each fracture which crosses the
+  mesh surface has a line there. A line ends on the fracture edge or on
+  another line (where the boundary of the region meets the mesh surface), or
+  it is a closed loop around a hole of the region. A
+  line has one or more straight segments; a segment ends where the line
+  bends, or where the cell on its other side changes. The vertices are on
+  the cell faces.
+- With FRAM, FRAM checks the lines of a new fracture (h = `min_feature_size`):
+  - `ShortBoundaryLine`: a line is shorter than h.
+  - `BoundaryCloseToEdge`: a vertex of a line which is not on the fracture
+    edge is nearer than h to the fracture edge; or, where a line ends on the
+    edge, the point at the distance h along the line is nearer than 0.4 h to
+    the edge (the line meets the edge at an angle of less than about 24°).
+  - `IntersectionCloseToBoundary`: an intersection is nearer than h to a line
+    of one of its two fractures, and does not cross it; or it crosses the
+    line nearer than h to an end of the intersection, or at an angle outside
+    of 47° to 133° (the angle rule of a triple intersection).
+
+  With `fram.relaxed = true`, only `ShortBoundaryLine`. The checks of the
+  lines of a user-defined fracture (the first two) apply only with
+  `fram.check_user_fractures = true`; thus by default each user-defined
+  fracture in the domain is accepted, as without the option. A rejected
+  stochastic fracture moves, as for the other FRAM rejects.
+- Without FRAM, the network is the same as without the option: the option
+  adds only the lines.
+- The steps of a region boundary in a fine mesh give short segments. A short
+  segment alone is not a reject; only a line shorter than h is.
+- `rejections.dat` and the log have the number of rejects for the lines:
+  `Boundary Lines of the Regions`.
+- The lines are calculated at each attempt of a fracture. On a mesh with many
+  cells, this takes the most time of the run.
 
 ### Domain mesh
 
@@ -309,6 +369,7 @@ of such a run is approximate.
 | `rejectsPerAttempt.dat` | Line N: number of rejected attempts before accepted fracture N. |
 | `userFractureRejections.dat` | Number of each rejected user-defined fracture (the position of its polygon in the `.vtp` file, from 1). Written only if a user-defined fracture was rejected. |
 | `fractures_rejected.vtp` | The rejected fractures as polygons with their properties (VTK PolyData). Written only if `fram.write_rejected_fractures = true`. See below. |
+| `fracture_boundaries.vtp` | The boundary lines of the regions on the final fractures, as line segments (VTK PolyData). Written only if `region_boundaries.enable = true`. See below. |
 
 ### Cell data of `fractures.vtp`
 
@@ -364,6 +425,9 @@ then has no valid polygon.
 | `TripleAngleTooSmall` | Triple intersection with an angle that is too small. |
 | `TriplePointCloseToEndpoint` | Triple intersection point too near to an end point of an intersection. |
 | `TriplePointCloseToTriplePoint` | Triple intersection point too near to another triple intersection point. |
+| `ShortBoundaryLine` | A boundary line of the region on the fracture is shorter than `min_feature_size`. |
+| `BoundaryCloseToEdge` | A boundary line of the region is too near to the fracture edge. |
+| `IntersectionCloseToBoundary` | An intersection is too near to a boundary line of the region, or crosses it near its end or at a small angle. |
 
 The log gives the same name for each FRAM reject. The reject of a
 user-defined fracture is a warning with the number of the fracture. The
@@ -374,6 +438,23 @@ these lines).
 `fractures.vtp`, `fractures_removed.vtp` and `fractures_rejected.vtp` together
 do not have all generated fractures. An accepted fracture which is removed later because it
 is smaller than `remove_fractures_less_than` is in none of these files.
+
+### Cell data of `fracture_boundaries.vtp`
+
+The file has one line cell for each segment of a boundary line of a final
+fracture, in the order of the fractures and of their lines. The points of a
+segment are in the plane of the fracture; the ends of a line are on the
+fracture edge in `fractures.vtp`.
+
+| Array | Content |
+|---|---|
+| `fracture_id` | Number of the final fracture, as in `fractures.vtp`. |
+| `line_id` | Number of the boundary line on its fracture, starts at 1. The segments of one line are in the order of the line. |
+| `mesh_surface` | 1 if no cell of the mesh is on the other side of the segment (the segment is on the surface of the mesh), else 0. |
+| `boundary__<name>` | One array for each region of the mesh, in the order of the mesh file: 1 if the cell on the other side of the segment is in the region `<name>`, else 0. All arrays are 0 for a segment with a cell of no region on the other side. |
+
+For example, a segment of a fracture of the region `south` with 1 in
+`boundary__north` is on the boundary between the regions `south` and `north`.
 
 ## Library
 

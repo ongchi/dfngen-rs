@@ -1,0 +1,53 @@
+# Feature: boundary lines of the region of the family of each stochastic
+# fracture ([region_boundaries] enable = true, use_family_region = true).
+# Family 2 has the region "center" (the center cell), family 3
+# "center_and_east", and family 1 no region (the lines are at the mesh
+# surface). The other keys are those of family_regions. The mesh is
+# ../regions.vtu.
+
+seed = 12345
+min_feature_size = 0.1
+domain = "../regions.vtu"
+
+[generation]
+n_poly = 60
+force_large_fractures = false
+remove_fractures_less_than = 0.0
+
+[fram]
+enable = true
+relaxed = false
+triple_intersections = true
+write_rejected_fractures = false
+rejects_per_fracture = 10
+
+[region_boundaries]
+enable = true
+use_family_region = true
+
+[clusters]
+keep_only_largest = false
+keep_isolated_fractures = false
+
+[[family]]
+number_of_points = 8
+probability = 0.4
+aspect_ratio = 1.0
+radius = { distribution = "truncated_power_law", alpha = 2.5, min = 1.0, max = 4.0 }
+orientation = { theta = 0.0, phi = 0.0, kappa = 10.0 }
+
+[[family]]
+number_of_points = 8
+probability = 0.3
+aspect_ratio = 1.0
+region = "center"
+radius = { distribution = "truncated_power_law", alpha = 2.5, min = 1.0, max = 4.0 }
+orientation = { theta = 90.0, phi = 0.0, kappa = 10.0 }
+
+[[family]]
+number_of_points = 8
+probability = 0.3
+aspect_ratio = 1.0
+region = "center_and_east"
+radius = { distribution = "truncated_power_law", alpha = 2.5, min = 1.0, max = 4.0 }
+orientation = { theta = 90.0, phi = 90.0, kappa = 10.0 }

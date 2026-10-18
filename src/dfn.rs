@@ -8,6 +8,7 @@ use crate::fracture::cluster_groups::ClusterGroups;
 use crate::fracture::poly::Poly;
 use crate::fracture::user_defined_fractures::DomainCheck;
 use crate::fram::{check_intersections, FramOptions, RejectReason};
+use crate::region_boundaries::RegionBoundaryOptions;
 use crate::stats::Stats;
 
 /// A fracture which was not accepted, with the FRAM reject reason of its last attempt.
@@ -197,6 +198,8 @@ pub struct PolyOptions {
     pub domain_mesh: Rc<DomainMesh>,
     /// Options of FRAM. `None`: FRAM is off.
     pub fram: Option<FramOptions>,
+    /// Options of the boundary lines of the regions. `None`: no lines.
+    pub region_boundaries: Option<RegionBoundaryOptions>,
 }
 
 impl PolyOptions {
@@ -226,6 +229,7 @@ mod tests {
                 write_rejected_fractures: keep_rejected_fractures,
                 ..fram_options()
             }),
+            region_boundaries: None,
         }
     }
 

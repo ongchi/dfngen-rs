@@ -7,6 +7,7 @@ pub mod fram;
 pub mod generation;
 pub mod geometry;
 pub mod io;
+pub mod region_boundaries;
 pub mod stats;
 
 pub use error::DfngenError;

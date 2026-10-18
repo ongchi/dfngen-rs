@@ -1,0 +1,45 @@
+<?xml version="1.0"?>
+<!-- Fracture 1: regions south and north, horizontal across the missing corner of
+     the L shape: two lines on the mesh surface (x = 15 and y = 25), no line
+     between south and north. 2: region south, horizontal across y = 25: one
+     line, with the region north on the other side for x < 15. 3: no region,
+     vertical in the plane x + y = 41 through both arms of the L shape: two
+     lines, at x = 15 and at y = 25. -->
+<VTKFile type="PolyData" version="1.0" byte_order="LittleEndian">
+<PolyData>
+<Piece NumberOfPoints="12" NumberOfVerts="0" NumberOfLines="0" NumberOfStrips="0" NumberOfPolys="3">
+<Points>
+<DataArray type="Float64" Name="points" NumberOfComponents="3" format="ascii">
+12.0 22.0 35.0
+18.0 22.0 35.0
+18.0 28.0 35.0
+12.0 28.0 35.0
+12.0 22.0 33.0
+14.0 22.0 33.0
+14.0 28.0 33.0
+12.0 28.0 33.0
+11.5 29.5 31.0
+19.5 21.5 31.0
+19.5 21.5 39.0
+11.5 29.5 39.0
+</DataArray>
+</Points>
+<Polys>
+<DataArray type="Int64" Name="connectivity" format="ascii">
+0 1 2 3 4 5 6 7 8 9 10 11
+</DataArray>
+<DataArray type="Int64" Name="offsets" format="ascii">
+4 8 12
+</DataArray>
+</Polys>
+<CellData>
+<DataArray type="Int32" Name="region__south" format="ascii">
+1 1 0
+</DataArray>
+<DataArray type="Int32" Name="region__north" format="ascii">
+1 0 0
+</DataArray>
+</CellData>
+</Piece>
+</PolyData>
+</VTKFile>

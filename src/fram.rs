@@ -6,6 +6,7 @@ use crate::{
     dfn::{Dfn, Intersection, PolyOptions},
     fracture::poly::{FractureOrigin, Poly},
     geometry::{are_segments_farther_than, is_same_point, line_seg_to_line_seg, point_to_line_seg},
+    region_boundaries::{check_boundary_lines, is_intersection_near_boundary},
     stats::Stats,
 };
 
@@ -52,6 +53,12 @@ pub enum RejectReason {
     TriplePointCloseToEndpoint,
     /// Triple intersection point too near to another triple intersection point
     TriplePointCloseToTriplePoint,
+    /// Boundary line of the region shorter than `min_feature_size`
+    ShortBoundaryLine,
+    /// Boundary line of the region too near to the edge of its fracture
+    BoundaryCloseToEdge,
+    /// Intersection too near to a boundary line of the region, or crossing it badly
+    IntersectionCloseToBoundary,
 }
 
 impl RejectReason {
@@ -67,6 +74,9 @@ impl RejectReason {
             Self::TripleAngleTooSmall => "TripleAngleTooSmall",
             Self::TriplePointCloseToEndpoint => "TriplePointCloseToEndpoint",
             Self::TriplePointCloseToTriplePoint => "TriplePointCloseToTriplePoint",
+            Self::ShortBoundaryLine => "ShortBoundaryLine",
+            Self::BoundaryCloseToEdge => "BoundaryCloseToEdge",
+            Self::IntersectionCloseToBoundary => "IntersectionCloseToBoundary",
         }
     }
 
@@ -82,6 +92,9 @@ impl RejectReason {
             Self::TripleAngleTooSmall => "Fracture created a triple intersection with an angle too small.",
             Self::TriplePointCloseToEndpoint => "Fracture created a triple intersection with the triple intersection point too close to an intersection's endpoint.",
             Self::TriplePointCloseToTriplePoint => "Fracture created a triple intersection with the triple intersection point too close to another triple intersection point.",
+            Self::ShortBoundaryLine => "Boundary line of the region on the fracture is shorter than min_feature_size.",
+            Self::BoundaryCloseToEdge => "Boundary line of the region is too close to the edge of the fracture.",
+            Self::IntersectionCloseToBoundary => "Intersection is too close to a boundary line of the region, or crosses it at a small angle or near its end.",
         }
     }
 }
@@ -318,6 +331,15 @@ fn fram(
         ) {
             stats.rejection_reasons.close_to_edge += 1;
             return Err(RejectReason::CloseToEdge);
+        }
+
+        // Intersection to boundary line checks, after the shortening at the edges
+        let segment = [intersection.p1, intersection.p2];
+        if [new_poly, other_poly].iter().any(|poly| {
+            is_intersection_near_boundary(&poly.boundary_lines, &segment, min_feature_size, eps)
+        }) {
+            stats.rejection_reasons.boundary_line += 1;
+            return Err(RejectReason::IntersectionCloseToBoundary);
         }
 
         // Intersection to Intersection Distance Checks
@@ -611,6 +633,23 @@ pub fn check_intersections(
     // Index to intersections if the new fracture intersections
     let first_intersection_index = intersections.len();
     let mut encountered_groups = Vec::new();
+
+    // Boundary lines of the region on the new fracture. A user-defined
+    // fracture is checked only if FRAM checks the user-defined fractures.
+    if let Some(fram_options) = &options.fram {
+        let is_checked =
+            new_poly.origin != FractureOrigin::UserDefined || fram_options.check_user_fractures;
+
+        if is_checked {
+            check_boundary_lines(
+                &new_poly.boundary_lines,
+                &new_poly.vertices,
+                options.min_feature_size,
+                fram_options.relaxed,
+            )
+            .inspect_err(|_| stats.rejection_reasons.boundary_line += 1)?;
+        }
+    }
 
     for (ii, poly) in accepted_polys.iter().enumerate() {
         if new_poly.is_piece_of_same_fracture(poly) {
@@ -1044,7 +1083,7 @@ fn check_for_triple_intersections(
 mod tests {
     use super::*;
 
-    const ALL_REJECT_REASONS: [RejectReason; 9] = [
+    const ALL_REJECT_REASONS: [RejectReason; 12] = [
         RejectReason::ShortIntersection,
         RejectReason::CloseToIntersection,
         RejectReason::CloseToEdge,
@@ -1054,6 +1093,9 @@ mod tests {
         RejectReason::TripleAngleTooSmall,
         RejectReason::TriplePointCloseToEndpoint,
         RejectReason::TriplePointCloseToTriplePoint,
+        RejectReason::ShortBoundaryLine,
+        RejectReason::BoundaryCloseToEdge,
+        RejectReason::IntersectionCloseToBoundary,
     ];
 
     #[test]
