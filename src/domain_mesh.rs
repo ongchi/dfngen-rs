@@ -103,6 +103,41 @@ impl Tetrahedron {
 
         !part_in_tetrahedron.is_empty()
     }
+
+    /// Points where the edges of the tetrahedron cross the plane: the 3 or 4
+    /// corners of the cross-section, in no special order. Empty: the plane
+    /// does not cut the tetrahedron.
+    ///
+    /// A vertex on the plane counts as below it. The point of an edge is
+    /// calculated from its two vertices in a fixed order, thus two
+    /// tetrahedra with the edge in common get the same point.
+    fn plane_section(&self, plane_point: &Point3<f64>, normal: &Vector3<f64>) -> Vec<Point3<f64>> {
+        const EDGES: [(usize, usize); 6] = [(0, 1), (0, 2), (0, 3), (1, 2), (1, 3), (2, 3)];
+        let mut corners: Vec<Point3<f64>> = Vec::with_capacity(4);
+
+        for (i, j) in EDGES {
+            let (mut start, mut end) = (self.vertices[i], self.vertices[j]);
+
+            if end.coords.as_slice() < start.coords.as_slice() {
+                std::mem::swap(&mut start, &mut end);
+            }
+
+            let start_distance = (start - plane_point).dot(normal);
+            let end_distance = (end - plane_point).dot(normal);
+
+            if (start_distance > 0.) == (end_distance > 0.) {
+                continue;
+            }
+
+            let corner = start + (end - start) * (start_distance / (start_distance - end_distance));
+
+            if !corners.contains(&corner) {
+                corners.push(corner);
+            }
+        }
+
+        corners
+    }
 }
 
 fn tetrahedron_volume(vertices: &[Point3<f64>; 4]) -> f64 {
@@ -331,17 +366,72 @@ impl DomainMesh {
         point
     }
 
-    /// True if the convex polygon has a point in a cell of the region.
-    /// `region_id` 0 means a cell of any region.
-    pub fn intersects_polygon(&self, vertices: &[Point3<f64>], region_id: usize) -> bool {
+    /// Distance below which two points are the same point: a small part of the
+    /// diagonal of the bounding box
+    pub fn tolerance(&self) -> f64 {
+        self.tolerance
+    }
+
+    /// Indices of the tetrahedra which can have a point in the box, sorted
+    fn tetrahedra_near(&self, bounds: &Aabb) -> Vec<usize> {
         let mut near_tetrahedra: Vec<usize> = self
             .grid
-            .cells_in(&Aabb::from_points(vertices))
+            .cells_in(bounds)
             .flat_map(|cell| &self.grid.tetrahedra_of_cell[cell])
             .copied()
             .collect();
         near_tetrahedra.sort();
         near_tetrahedra.dedup();
+
+        near_tetrahedra
+    }
+
+    /// Cross-sections of a plane with the tetrahedra near a box.
+    ///
+    /// # Returns
+    ///
+    /// For each cross-section: its 3 or 4 corners, in no special order, and
+    /// true if its cell is in one or more of the regions (no region: all cells)
+    pub fn plane_sections(
+        &self,
+        plane_point: &Point3<f64>,
+        normal: &Vector3<f64>,
+        bounds: &Aabb,
+        region_ids: &[usize],
+    ) -> Vec<(Vec<Point3<f64>>, bool)> {
+        self.tetrahedra_near(bounds)
+            .into_iter()
+            .map(|i| &self.tetrahedra[i])
+            .map(|tetrahedron| {
+                let is_in_regions = region_ids.is_empty()
+                    || region_ids
+                        .iter()
+                        .any(|&region_id| tetrahedron.is_in_region(region_id));
+                (
+                    tetrahedron.plane_section(plane_point, normal),
+                    is_in_regions,
+                )
+            })
+            .filter(|(corners, _)| corners.len() >= 3)
+            .collect()
+    }
+
+    /// Regions of the cell which has the point (N is region N of `regions`).
+    /// `None` if no cell has the point.
+    pub fn regions_at(&self, point: &Point3<f64>) -> Option<&[usize]> {
+        let cell = self.grid.index_of(self.grid.cell_of(point));
+
+        self.grid.tetrahedra_of_cell[cell]
+            .iter()
+            .map(|&i| &self.tetrahedra[i])
+            .find(|tetrahedron| tetrahedron.contains_point(point, self.tolerance))
+            .map(|tetrahedron| tetrahedron.region_ids.as_slice())
+    }
+
+    /// True if the convex polygon has a point in a cell of the region.
+    /// `region_id` 0 means a cell of any region.
+    pub fn intersects_polygon(&self, vertices: &[Point3<f64>], region_id: usize) -> bool {
+        let near_tetrahedra = self.tetrahedra_near(&Aabb::from_points(vertices));
 
         near_tetrahedra.iter().any(|&i| {
             let tetrahedron = &self.tetrahedra[i];
