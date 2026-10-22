@@ -226,17 +226,28 @@ network is the same as without the option.
 - A sliver (a fracture narrower than h with a corner below 10°) has small
   angles near that corner: no refinement can change an angle of the input.
   The log gives the number of slivers.
-- An obtuse triangle at a line which the mesh must follow can give a negative
-  connection coefficient in fehm-rs (it writes a warning with the number).
+- Smoothing (as LaGriT `smooth` and `recon` in dfnWorks, and the smoothing
+  of the MeshLab filter "Isotropic Explicit Remeshing"): three passes; each
+  point which is on no line, with a triangle around it with an angle below
+  30° or above 90°, moves to the area-weighted centroid of its triangles if
+  no triangle around it then gets a smaller smallest angle. The mesh stays
+  Delaunay.
+- A line edge with an angle above 90° opposite it (a negative connection
+  coefficient in fehm-rs) is divided, a shared line in all its fractures,
+  then the refinement and the smoothing again. Remaining negative
+  coefficients are mostly in slivers.
+- A point on a line is a point of that line (also of a shared line, in all
+  its fractures). A triangle with no area (fehm-rs rejects it) is thus not
+  made; if one is found, it is not in the mesh, with a warning.
 - fehm-rs needs a boundary point in each cluster. A cluster with no point on
   a boundary array (see `dfn_mesh.vtu` below; for example, fully in one
   region and away from the mesh surface) is not in the mesh; the log gives
   the number of these fractures. The other output files keep them.
 - A line with a cell of no region on the other side gives no array: its
   points are not boundary points.
-- A point where a line of a region meets a line on the mesh surface is in
-  both arrays. fehm-rs accepts such a point only if the two boundaries have
-  the same pressure.
+- A point where a line of a region meets a line on the mesh surface (or of
+  another region) is in both arrays. fehm-rs gives such a point the pressure
+  of the first of the two boundaries in its input file, with a warning.
 
 Apertures: each family has an `aperture`, and the user-defined fractures
 have `mesh.user_fracture_aperture`. The distributions (as the transmissivity

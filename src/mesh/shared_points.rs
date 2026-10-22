@@ -9,9 +9,9 @@ use std::collections::HashMap;
 
 use parry3d_f64::na::{center, distance, Point3};
 
-use super::plane::{segment_crossing, FracturePlane};
+use super::plane::{segment_crossing, FracturePlane, Point2};
 use super::{JOIN_DISTANCE_PART, MERGE_DISTANCE_PART};
-use crate::region_boundaries::{distance_to_segment, position_on_segment};
+use crate::region_boundaries::{distance as distance_2d, distance_to_segment, position_on_segment};
 
 /// How a point merges with the other points. Points of user-defined
 /// fractures which FRAM did not check can be nearer to each other than
@@ -165,6 +165,140 @@ pub struct SharedNetwork {
 }
 
 impl SharedNetwork {
+    /// Makes each shared point of a fracture which is on a shared line of
+    /// that fracture (in its plane, nearer than the merge distance to an
+    /// edge of the line, not at an end of the edge) a point of the line.
+    /// Else a triangle of the fracture has its three points on one line.
+    /// The point then is a point of the other fracture of the line too, thus
+    /// this repeats until no point is inserted. Returns the fractures of the
+    /// changed lines.
+    pub fn insert_points_on_lines(&mut self, planes: &[FracturePlane]) -> Vec<usize> {
+        let mut changed_fractures = Vec::new();
+
+        loop {
+            for points in &mut self.points_of_fracture {
+                points.sort_unstable();
+                points.dedup();
+            }
+
+            let insertions = self.points_on_lines(planes);
+            if insertions.is_empty() {
+                break;
+            }
+
+            for (line_index, mut points) in insertions {
+                let line = &mut self.lines[line_index];
+                // By the edge, then along the edge
+                points.sort_by(|a, b| a.0.cmp(&b.0).then(a.1.total_cmp(&b.1)));
+                points.dedup_by_key(|(_, _, id)| *id);
+
+                let mut point_ids = Vec::with_capacity(line.point_ids.len() + points.len());
+                let mut next = points.iter().peekable();
+                for (edge, &id) in line.point_ids.iter().enumerate() {
+                    point_ids.push(id);
+                    while let Some(&(_, _, inserted)) =
+                        next.next_if(|(point_edge, _, _)| *point_edge == edge)
+                    {
+                        point_ids.push(inserted);
+                    }
+                }
+                line.point_ids = point_ids;
+
+                for fracture in line.fractures {
+                    self.points_of_fracture[fracture].extend(points.iter().map(|&(_, _, id)| id));
+                    changed_fractures.push(fracture);
+                }
+            }
+        }
+
+        changed_fractures.sort_unstable();
+        changed_fractures.dedup();
+        changed_fractures
+    }
+
+    /// The shared points on the edges of each line (see
+    /// `insert_points_on_lines`): for each line, (edge, position on the edge,
+    /// point id); edge k goes from point k to point k + 1 of the line
+    fn points_on_lines(
+        &self,
+        planes: &[FracturePlane],
+    ) -> HashMap<usize, Vec<(usize, f64, usize)>> {
+        let tolerance = self.shared_points.tolerance;
+        let mut lines_of_fracture: Vec<Vec<usize>> = vec![Vec::new(); planes.len()];
+        for (index, line) in self.lines.iter().enumerate() {
+            for fracture in line.fractures {
+                lines_of_fracture[fracture].push(index);
+            }
+        }
+
+        let mut insertions: HashMap<usize, Vec<(usize, f64, usize)>> = HashMap::new();
+        for (fracture, plane) in planes.iter().enumerate() {
+            if lines_of_fracture[fracture].is_empty() {
+                continue;
+            }
+
+            // The shared points of the fracture in its plane, by grid cell
+            let cell_size = plane.min_size;
+            let cell_of = |[x, y]: Point2| {
+                (
+                    (x / cell_size).floor() as i64,
+                    (y / cell_size).floor() as i64,
+                )
+            };
+            let mut cells: HashMap<(i64, i64), Vec<(usize, Point2)>> = HashMap::new();
+            for &id in &self.points_of_fracture[fracture] {
+                let position = plane.frame.to_plane(&self.shared_points.points[id]);
+                cells
+                    .entry(cell_of(position))
+                    .or_default()
+                    .push((id, position));
+            }
+
+            for &line_index in &lines_of_fracture[fracture] {
+                let point_ids = &self.lines[line_index].point_ids;
+                for (edge, pair) in point_ids.windows(2).enumerate() {
+                    let segment = [pair[0], pair[1]]
+                        .map(|id| plane.frame.to_plane(&self.shared_points.points[id]));
+                    let (low, high) = (
+                        cell_of([
+                            segment[0][0].min(segment[1][0]) - tolerance,
+                            segment[0][1].min(segment[1][1]) - tolerance,
+                        ]),
+                        cell_of([
+                            segment[0][0].max(segment[1][0]) + tolerance,
+                            segment[0][1].max(segment[1][1]) + tolerance,
+                        ]),
+                    );
+
+                    for cell_x in low.0..=high.0 {
+                        for cell_y in low.1..=high.1 {
+                            let Some(points) = cells.get(&(cell_x, cell_y)) else {
+                                continue;
+                            };
+                            for &(id, position) in points {
+                                let is_on_edge = !pair.contains(&id)
+                                    && distance_to_segment(position, segment) < tolerance
+                                    && segment
+                                        .iter()
+                                        .all(|&end| distance_2d(end, position) > tolerance)
+                                    && !point_ids.contains(&id);
+                                if is_on_edge {
+                                    insertions.entry(line_index).or_default().push((
+                                        edge,
+                                        position_on_segment(position, segment),
+                                        id,
+                                    ));
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        insertions
+    }
+
     /// Splits each edge (two consecutive points of a shared line) at its
     /// middle, in each line which has it. Returns the fractures of these lines.
     pub fn split_edges(&mut self, edges: &[[usize; 2]]) -> Vec<usize> {
@@ -297,10 +431,7 @@ pub fn build_shared_network(
         });
     }
 
-    for points in &mut network.points_of_fracture {
-        points.sort_unstable();
-        points.dedup();
-    }
+    network.insert_points_on_lines(planes);
 
     network
 }

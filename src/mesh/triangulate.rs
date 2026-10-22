@@ -3,7 +3,7 @@
 use std::collections::{HashMap, HashSet};
 
 use spade::handles::{
-    DirectedEdgeHandle, FaceHandle, FixedFaceHandle, FixedVertexHandle, InnerTag,
+    DirectedEdgeHandle, FaceHandle, FixedFaceHandle, FixedVertexHandle, InnerTag, VertexHandle,
 };
 use spade::{
     mitigate_underflow, CdtEdge, ConstrainedDelaunayTriangulation, HasPosition, InsertionError,
@@ -32,6 +32,23 @@ const MIN_SPACING_PART: f64 = 0.7;
 /// edge for which the line is along the edge (see `NearLines::of_edge`)
 const ALONG_ANGLE: f64 = 30.;
 
+/// Passes of the smoothing (as dfnWorks: three times LaGriT `smooth` and
+/// `recon`)
+const SMOOTHING_PASSES: usize = 3;
+
+/// Angles (degrees) of a bad triangle for the smoothing: below the first or
+/// above the second
+const SMOOTH_MIN_ANGLE: f64 = 30.;
+const SMOOTH_MAX_ANGLE: f64 = 90.;
+
+/// Largest angle (degrees) opposite a constraint edge: a larger angle gives
+/// a negative connection coefficient in fehm-rs, thus the edge is split
+const MAX_OPPOSITE_ANGLE: f64 = 90.;
+
+/// Rounds of the splits of encroached constraint edges, each followed by
+/// the refinement and the smoothing
+const MAX_ENCROACHMENT_ROUNDS: usize = 3;
+
 /// Limit of the refinement passes; a normal mesh needs far fewer
 const MAX_REFINEMENT_PASSES: usize = 200;
 
@@ -55,6 +72,8 @@ pub struct LocalMesh {
     /// Edges of shared lines (pairs of shared ids) which the refinement
     /// needs split; the network splits them in all fractures of the line
     pub shared_splits: Vec<[usize; 2]>,
+    /// Number of triangles with no area which are not in the mesh
+    pub degenerate_triangles: usize,
 }
 
 /// The vertices of the mesh, found by their position in the plane
@@ -105,6 +124,31 @@ impl LocalVertices {
                 distance(self.vertices[a].position, point)
                     .total_cmp(&distance(self.vertices[b].position, point))
             })
+    }
+
+    /// The vertices in the bounding box of the segment, made larger by the margin
+    fn in_box(&self, [start, end]: [Point2; 2], margin: f64) -> impl Iterator<Item = usize> + '_ {
+        let low = self.cell_of([start[0].min(end[0]) - margin, start[1].min(end[1]) - margin]);
+        let high = self.cell_of([start[0].max(end[0]) + margin, start[1].max(end[1]) + margin]);
+
+        (low.0..=high.0)
+            .flat_map(move |cell_x| (low.1..=high.1).map(move |cell_y| (cell_x, cell_y)))
+            .filter_map(|cell| self.cells.get(&cell))
+            .flatten()
+            .copied()
+    }
+
+    /// Moves the vertex to the position
+    fn move_to(&mut self, index: usize, position: Point2) {
+        let old_cell = self.cell_of(self.vertices[index].position);
+        if let Some(indices) = self.cells.get_mut(&old_cell) {
+            indices.retain(|&other| other != index);
+        }
+        self.vertices[index].position = position;
+        self.cells
+            .entry(self.cell_of(position))
+            .or_default()
+            .push(index);
     }
 
     /// The vertex nearer than the merge distance, or a new vertex
@@ -188,7 +232,6 @@ pub fn mesh_fracture(
         })
         .collect();
 
-    let shared_line_count = polylines.len();
     let joinable_polylines: Vec<&Vec<usize>> = shared
         .lines
         .iter()
@@ -213,6 +256,12 @@ pub fn mesh_fracture(
         .filter(|index| !line_vertices.contains(index))
         .collect();
 
+    let shared_edges: HashSet<(usize, usize)> = polylines
+        .iter()
+        .flat_map(|polyline| polyline.windows(2))
+        .map(|pair| edge_key(pair[0], pair[1]))
+        .collect();
+
     let mut outline_polylines = Vec::new();
     for edge in plane.outline_edges() {
         if is_shared_edge(edge, &polylines, &vertices, merge_distance) {
@@ -232,29 +281,52 @@ pub fn mesh_fracture(
             &mut vertices,
             plane,
             &near,
+            &shared_edges,
         ));
     }
-    polylines.extend(outline_polylines);
+    let mut boundary_polylines: Vec<Vec<usize>> = plane
+        .boundary_segments
+        .iter()
+        .map(|boundary| {
+            divide_segment(
+                boundary.segment,
+                &[],
+                &shared_vertices,
+                &mut vertices,
+                plane,
+                &NearLines::default(),
+                &shared_edges,
+            )
+        })
+        .collect();
+
+    // A vertex of one line (an outline edge, a boundary line) on another
+    // line must be a point of that line too, else a triangle has its three
+    // points on one line
+    for polyline in outline_polylines.iter_mut().chain(&mut boundary_polylines) {
+        insert_vertices_on_polyline(polyline, &vertices, merge_distance);
+    }
+
+    // A joined point of a shared line (see `Join`) can leave an end of a
+    // boundary line or an outline point on a shared edge: it moves to the
+    // nearer end of the edge, as the join moved the shared point
+    let moved = local_vertices_on_shared_edges(&shared_edges, &vertices, plane);
+    for polyline in outline_polylines.iter_mut().chain(&mut boundary_polylines) {
+        for index in polyline.iter_mut() {
+            if let Some(&end) = moved.get(index) {
+                *index = end;
+            }
+        }
+        polyline.dedup();
+    }
 
     let mut edges = ConstraintEdges {
-        shared: polylines[..shared_line_count]
-            .iter()
-            .flat_map(|polyline| polyline.windows(2))
-            .map(|pair| edge_key(pair[0], pair[1]))
-            .collect(),
+        shared: shared_edges,
         boundary: HashMap::new(),
     };
 
     let mut boundary_sides = Vec::new();
-    for boundary in &plane.boundary_segments {
-        let polyline = divide_segment(
-            boundary.segment,
-            &[],
-            &shared_vertices,
-            &mut vertices,
-            plane,
-            &NearLines::default(),
-        );
+    for (boundary, polyline) in plane.boundary_segments.iter().zip(&boundary_polylines) {
         boundary_sides.extend(
             polyline
                 .iter()
@@ -265,22 +337,29 @@ pub fn mesh_fracture(
                 .boundary
                 .insert(edge_key(pair[0], pair[1]), boundary.other_side.clone());
         }
-        polylines.push(polyline);
     }
+    polylines.extend(outline_polylines);
+    polylines.extend(boundary_polylines);
 
     let mut cdt = Cdt::new();
     let mut handles = Vec::with_capacity(vertices.vertices.len());
     for (index, vertex) in vertices.vertices.iter().enumerate() {
-        handles.push(cdt.insert(CdtVertex {
+        if moved.contains_key(&index) {
+            handles.push(None);
+            continue;
+        }
+        handles.push(Some(cdt.insert(CdtVertex {
             position: spade_point(vertex.position),
             index,
-        })?);
+        })?));
     }
 
     let mut skipped_constraints = 0;
     for polyline in &polylines {
         for pair in polyline.windows(2) {
-            let (from, to) = (handles[pair[0]], handles[pair[1]]);
+            let (Some(from), Some(to)) = (handles[pair[0]], handles[pair[1]]) else {
+                continue;
+            };
             if from != to
                 && !cdt.exists_constraint(from, to)
                 && cdt.try_add_constraint(from, to).is_empty()
@@ -290,7 +369,7 @@ pub fn mesh_fracture(
         }
     }
 
-    let shared_splits = refine(
+    let mut shared_splits = refine(
         &mut cdt,
         &mut vertices,
         plane,
@@ -298,6 +377,59 @@ pub fn mesh_fracture(
         &mut boundary_sides,
         &mut skipped_constraints,
     )?;
+    for _ in 0..SMOOTHING_PASSES {
+        smooth(&mut cdt, &mut vertices)?;
+    }
+
+    // Constraint edges with an obtuse angle opposite them are split, then
+    // the refinement and the smoothing again
+    let min_spacing = MIN_SPACING_PART * plane.min_size;
+    for _ in 0..MAX_ENCROACHMENT_ROUNDS {
+        let outside = outside_faces(&cdt);
+        let is_inside = |face: FaceHandle<InnerTag, CdtVertex, (), CdtEdge<()>, ()>| {
+            if skipped_constraints == 0 {
+                !outside.contains(&face.fix())
+            } else {
+                is_centroid_inside(face.positions(), plane, merge_distance)
+            }
+        };
+        let encroached = encroached_constraint_edges(&cdt, &is_inside);
+
+        let mut split_count = 0;
+        for edge in encroached {
+            match try_split(
+                &mut cdt,
+                &mut vertices,
+                edge,
+                &mut edges,
+                &mut boundary_sides,
+                &mut skipped_constraints,
+                min_spacing,
+            )? {
+                SplitResult::Split => split_count += 1,
+                SplitResult::Shared(key) => {
+                    shared_splits.insert(key);
+                }
+                SplitResult::NotSplit => {}
+            }
+        }
+        if split_count == 0 {
+            break;
+        }
+
+        shared_splits.extend(refine(
+            &mut cdt,
+            &mut vertices,
+            plane,
+            &mut edges,
+            &mut boundary_sides,
+            &mut skipped_constraints,
+        )?);
+        for _ in 0..SMOOTHING_PASSES {
+            smooth(&mut cdt, &mut vertices)?;
+        }
+    }
+
     let shared_splits = shared_splits
         .into_iter()
         .filter_map(|(first, second)| {
@@ -311,6 +443,7 @@ pub fn mesh_fracture(
     // A skipped constraint edge can be a gap in the outline, and a path from
     // the hull can then go into the fracture. Then the centroid test.
     let outside = outside_faces(&cdt);
+    let mut degenerate_triangles = 0;
     let triangles: Vec<[usize; 3]> = cdt
         .inner_faces()
         .filter(|face| {
@@ -319,6 +452,13 @@ pub fn mesh_fracture(
             } else {
                 is_centroid_inside(face.positions(), plane, merge_distance)
             }
+        })
+        .filter(|face| {
+            let has_area = has_area(face.positions());
+            if !has_area {
+                degenerate_triangles += 1;
+            }
+            has_area
         })
         .map(|face| face.vertices().map(|vertex| vertex.data().index))
         .collect();
@@ -329,7 +469,26 @@ pub fn mesh_fracture(
         boundary_sides,
         skipped_constraints,
         shared_splits,
+        degenerate_triangles,
     })
+}
+
+/// Largest ratio of 2 × area to the square of the longest edge for which a
+/// triangle has no area (its points are on one line). fehm-rs rejects a
+/// triangle below 1e-12.
+const DEGENERATE_RATIO: f64 = 1e-9;
+
+/// True if the points of the triangle are not on one line (see
+/// `DEGENERATE_RATIO`). A point on a line which is not a point of the line
+/// gives such a triangle; the mesh code avoids that, thus this is a guard.
+fn has_area([a, b, c]: [SpadePoint<f64>; 3]) -> bool {
+    let double_area = ((b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x)).abs();
+    let longest_squared = [(a, b), (b, c), (c, a)]
+        .map(|(p, q)| (q.x - p.x).powi(2) + (q.y - p.y).powi(2))
+        .into_iter()
+        .fold(0., f64::max);
+
+    double_area > DEGENERATE_RATIO * longest_squared
 }
 
 /// The triangles outside the outline: those which a path from the convex
@@ -474,6 +633,7 @@ fn divide_segment(
     vertices: &mut LocalVertices,
     plane: &FracturePlane,
     near: &NearLines,
+    shared_edges: &HashSet<(usize, usize)>,
 ) -> Vec<usize> {
     let merge_distance = MERGE_DISTANCE_PART * plane.min_size;
 
@@ -502,22 +662,95 @@ fn divide_segment(
 
     let mut polyline = vec![on_segment[0].1];
     for pair in on_segment.windows(2) {
-        if near.covered.contains(&edge_key(pair[0].1, pair[1].1)) {
+        // A shared edge or a joinable line covers this part: no own points
+        let key = edge_key(pair[0].1, pair[1].1);
+        if near.covered.contains(&key) || shared_edges.contains(&key) {
             polyline.push(pair[1].1);
             continue;
         }
         let start = vertices.vertices[pair[0].1].position;
         let end = vertices.vertices[pair[1].1].position;
+        // An existing vertex at a division point (for example of another
+        // line on this one, halved in the same way) is that point
         for point in divide_2d(start, end, &|point| plane.size_at(point)) {
-            polyline.push(vertices.add(LocalVertex {
-                position: point,
-                shared_id: None,
-            }));
+            polyline.push(vertices.find_or_add(point, merge_distance));
         }
         polyline.push(pair[1].1);
+        polyline.dedup();
     }
 
     polyline
+}
+
+/// The local vertices (not shared) on a shared edge (nearer than the merge
+/// distance, not at an end) which are within the join distance of an end of
+/// the edge, with that end
+fn local_vertices_on_shared_edges(
+    shared_edges: &HashSet<(usize, usize)>,
+    vertices: &LocalVertices,
+    plane: &FracturePlane,
+) -> HashMap<usize, usize> {
+    let merge_distance = MERGE_DISTANCE_PART * plane.min_size;
+    let join_distance = JOIN_DISTANCE_PART * plane.min_size;
+    let mut moved = HashMap::new();
+
+    for &(first, second) in shared_edges {
+        let segment = [first, second].map(|index| vertices.vertices[index].position);
+        for index in vertices.in_box(segment, merge_distance) {
+            let vertex = &vertices.vertices[index];
+            if vertex.shared_id.is_some() || index == first || index == second {
+                continue;
+            }
+            let [to_first, to_second] = segment.map(|end| distance(end, vertex.position));
+            let is_on_edge = distance_to_segment(vertex.position, segment) < merge_distance
+                && to_first.min(to_second) > merge_distance;
+            if is_on_edge && to_first.min(to_second) < join_distance {
+                moved.insert(index, if to_first <= to_second { first } else { second });
+            }
+        }
+    }
+
+    moved
+}
+
+/// Inserts into the polyline each vertex which is on one of its edges
+/// (nearer than the tolerance, not at an end of the edge).
+fn insert_vertices_on_polyline(
+    polyline: &mut Vec<usize>,
+    vertices: &LocalVertices,
+    tolerance: f64,
+) {
+    let mut result = Vec::with_capacity(polyline.len());
+
+    for pair in polyline.windows(2) {
+        result.push(pair[0]);
+        let segment = [pair[0], pair[1]].map(|index| vertices.vertices[index].position);
+        let mut on_edge: Vec<(f64, usize)> = vertices
+            .in_box(segment, tolerance)
+            .filter(|&index| !pair.contains(&index))
+            .filter(|&index| {
+                let position = vertices.vertices[index].position;
+                distance_to_segment(position, segment) < tolerance
+                    && segment
+                        .iter()
+                        .all(|&end| distance(end, position) > tolerance)
+            })
+            .map(|index| {
+                (
+                    position_on_segment(vertices.vertices[index].position, segment),
+                    index,
+                )
+            })
+            .collect();
+        on_edge.sort_by(|a, b| a.0.total_cmp(&b.0));
+        result.extend(on_edge.into_iter().map(|(_, index)| index));
+    }
+
+    if let Some(&last) = polyline.last() {
+        result.push(last);
+    }
+    result.dedup();
+    *polyline = result;
 }
 
 /// Points between the two points (not the two points), so that no part is
@@ -628,33 +861,22 @@ fn refine(
                     })?;
                     changes += 1;
                 }
-                Refinement::Split([from, to]) => {
-                    // The edge can be gone after an earlier change of this pass
-                    if !cdt.exists_constraint(from, to) {
-                        continue;
-                    }
-                    let (first, second) =
-                        (cdt.vertex(from).data().index, cdt.vertex(to).data().index);
-                    let length = distance(
-                        vertices.vertices[first].position,
-                        vertices.vertices[second].position,
-                    );
-                    if length < 2. * min_spacing {
-                        continue;
-                    }
-                    if edges.shared.contains(&edge_key(first, second)) {
-                        shared_splits.insert(edge_key(first, second));
-                        continue;
-                    }
-                    split_edge(
+                Refinement::Split(edge) => {
+                    match try_split(
                         cdt,
                         vertices,
-                        [from, to],
+                        edge,
                         edges,
                         boundary_sides,
                         skipped_constraints,
-                    )?;
-                    changes += 1;
+                        min_spacing,
+                    )? {
+                        SplitResult::Split => changes += 1,
+                        SplitResult::Shared(key) => {
+                            shared_splits.insert(key);
+                        }
+                        SplitResult::NotSplit => {}
+                    }
                 }
             }
         }
@@ -767,6 +989,204 @@ fn encroached_edge(
         .map(vertices_of)
 }
 
+/// What happened to a constraint edge which needs a split
+enum SplitResult {
+    Split,
+    /// An edge of a shared line (local vertex indices): the network splits
+    /// it in all fractures of the line
+    Shared((usize, usize)),
+    /// The edge is gone after an earlier change, or it is too short
+    NotSplit,
+}
+
+/// Splits a constraint edge of this fracture at its middle, if it still
+/// exists and is not shorter than two times the minimum spacing. An edge of
+/// a shared line is not split here (see `SplitResult::Shared`).
+fn try_split(
+    cdt: &mut Cdt,
+    vertices: &mut LocalVertices,
+    [from, to]: [FixedVertexHandle; 2],
+    edges: &mut ConstraintEdges,
+    boundary_sides: &mut Vec<(usize, OtherSide)>,
+    skipped_constraints: &mut usize,
+    min_spacing: f64,
+) -> Result<SplitResult, InsertionError> {
+    if !cdt.exists_constraint(from, to) {
+        return Ok(SplitResult::NotSplit);
+    }
+    let (first, second) = (cdt.vertex(from).data().index, cdt.vertex(to).data().index);
+    let length = distance(
+        vertices.vertices[first].position,
+        vertices.vertices[second].position,
+    );
+    if length < 2. * min_spacing {
+        return Ok(SplitResult::NotSplit);
+    }
+    if edges.shared.contains(&edge_key(first, second)) {
+        return Ok(SplitResult::Shared(edge_key(first, second)));
+    }
+
+    split_edge(
+        cdt,
+        vertices,
+        [from, to],
+        edges,
+        boundary_sides,
+        skipped_constraints,
+    )?;
+    Ok(SplitResult::Split)
+}
+
+/// Moves each free vertex (on no constraint edge, not shared, not on the
+/// hull) with a bad triangle around it (an angle below `SMOOTH_MIN_ANGLE` or
+/// above `SMOOTH_MAX_ANGLE`) to the area-weighted centroid of its triangles,
+/// if no triangle around it then turns over or gets a smaller smallest
+/// angle. As LaGriT `smooth` with `recon` (dfnWorks) and the smoothing of
+/// MeshLab isotropic remeshing: the move is a removal and an insertion, thus
+/// the mesh stays Delaunay.
+fn smooth(cdt: &mut Cdt, vertices: &mut LocalVertices) -> Result<(), InsertionError> {
+    let candidates: Vec<usize> = cdt
+        .vertices()
+        .filter(|vertex| vertices.vertices[vertex.data().index].shared_id.is_none())
+        .filter(|vertex| {
+            vertex
+                .out_edges()
+                .all(|edge| !edge.is_constraint_edge() && !edge.face().is_outer())
+        })
+        .filter(|vertex| {
+            let position = [vertex.position().x, vertex.position().y];
+            ring_of(vertex).iter().any(|&[a, b]| {
+                let angles = triangle_angles([position, a, b]);
+                angles.iter().any(|&angle| {
+                    angle < SMOOTH_MIN_ANGLE.to_radians() || angle > SMOOTH_MAX_ANGLE.to_radians()
+                })
+            })
+        })
+        .map(|vertex| vertex.data().index)
+        .collect();
+
+    for index in candidates {
+        let position = vertices.vertices[index].position;
+        let Some(vertex) = cdt.locate_vertex(spade_point(position)) else {
+            continue;
+        };
+        let Some(target) = smoothed_position(position, &ring_of(&vertex)) else {
+            continue;
+        };
+
+        let fixed = vertex.fix();
+        cdt.remove(fixed);
+        vertices.move_to(index, target);
+        cdt.insert(CdtVertex {
+            position: spade_point(target),
+            index,
+        })?;
+    }
+
+    Ok(())
+}
+
+/// The other two corners of each triangle around a vertex, counter-clockwise
+fn ring_of(vertex: &VertexHandle<CdtVertex, (), CdtEdge<()>, ()>) -> Vec<[Point2; 2]> {
+    vertex
+        .out_edges()
+        .map(|edge| {
+            [edge.to().position(), edge.next().to().position()].map(|point| [point.x, point.y])
+        })
+        .collect()
+}
+
+/// The three angles of a triangle (radians)
+fn triangle_angles(corners: [Point2; 3]) -> [f64; 3] {
+    [0, 1, 2].map(|i| {
+        let [vertex, next, previous] = [corners[i], corners[(i + 1) % 3], corners[(i + 2) % 3]];
+        angle_between(
+            [next[0] - vertex[0], next[1] - vertex[1]],
+            [previous[0] - vertex[0], previous[1] - vertex[1]],
+        )
+    })
+}
+
+/// The area-weighted centroid of the triangles around a vertex, if no
+/// triangle around it then turns over or gets a smaller smallest angle
+///
+/// # Arguments
+///
+/// * `position` - The vertex
+/// * `ring` - The other two corners of each triangle around it, counter-clockwise
+fn smoothed_position(position: Point2, ring: &[[Point2; 2]]) -> Option<Point2> {
+    let area_sum: f64 = ring
+        .iter()
+        .map(|&[a, b]| triangle_area(position, a, b))
+        .sum();
+    if area_sum <= 0. {
+        return None;
+    }
+    let target = ring.iter().fold([0., 0.], |sum, &[a, b]| {
+        let weight = triangle_area(position, a, b) / area_sum;
+        [
+            sum[0] + weight * (position[0] + a[0] + b[0]) / 3.,
+            sum[1] + weight * (position[1] + a[1] + b[1]) / 3.,
+        ]
+    });
+
+    let smallest_angle = |point: Point2| {
+        ring.iter()
+            .map(|&[a, b]| {
+                if triangle_area(point, a, b) <= 0. {
+                    return f64::NEG_INFINITY;
+                }
+                smallest_triangle_angle([point, a, b])
+            })
+            .fold(f64::INFINITY, f64::min)
+    };
+
+    (smallest_angle(target) >= smallest_angle(position)).then_some(target)
+}
+
+/// Signed area of the triangle; positive for counter-clockwise corners
+fn triangle_area(a: Point2, b: Point2, c: Point2) -> f64 {
+    ((b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0])) / 2.
+}
+
+fn smallest_triangle_angle(corners: [Point2; 3]) -> f64 {
+    triangle_angles(corners)
+        .into_iter()
+        .fold(f64::INFINITY, f64::min)
+}
+
+/// The constraint edges with an angle above `MAX_OPPOSITE_ANGLE` opposite
+/// them, in a triangle in the outline: such an edge gives a negative
+/// connection coefficient in fehm-rs (the opposite vertex is in the
+/// diametral circle of the edge)
+fn encroached_constraint_edges(
+    cdt: &Cdt,
+    is_inside: &impl Fn(FaceHandle<InnerTag, CdtVertex, (), CdtEdge<()>, ()>) -> bool,
+) -> Vec<[FixedVertexHandle; 2]> {
+    cdt.undirected_edges()
+        .filter(|edge| edge.is_constraint_edge())
+        .filter_map(|edge| {
+            let directed = edge.as_directed();
+            let is_encroached = [directed, directed.rev()].into_iter().any(|side| {
+                let Some(face) = side.face().as_inner() else {
+                    return false;
+                };
+                if !is_inside(face) {
+                    return false;
+                }
+                let [from, to] = side.positions().map(|point| [point.x, point.y]);
+                let opposite = side.next().to().position();
+                let opposite = [opposite.x, opposite.y];
+                angle_between(
+                    [from[0] - opposite[0], from[1] - opposite[1]],
+                    [to[0] - opposite[0], to[1] - opposite[1]],
+                ) > MAX_OPPOSITE_ANGLE.to_radians()
+            });
+            is_encroached.then(|| directed.vertices().map(|vertex| vertex.fix()))
+        })
+        .collect()
+}
+
 /// Splits a constraint edge of this fracture at its middle. The vertex on a
 /// boundary line gets the other side of the line.
 fn split_edge(
@@ -828,7 +1248,7 @@ mod tests {
 
     use super::*;
     use crate::fracture::poly::Poly;
-    use crate::mesh::shared_points::{build_shared_network, LineOnFractures};
+    use crate::mesh::shared_points::{build_shared_network, LineOnFractures, PointOnFractures};
 
     /// Sizes: `min_feature_size`, largest size, slope
     const SIZES: [f64; 3] = [0.5, 2., 0.5];
@@ -836,6 +1256,13 @@ mod tests {
     /// Two squares of 10 × 10 with the center at the origin: one in the plane
     /// z = 0 and one in the plane y = 0. They intersect along the x axis.
     fn crossing_squares() -> (Vec<FracturePlane>, SharedNetwork) {
+        crossing_squares_with_points(&[])
+    }
+
+    /// The crossing squares, with more shared points (for example point contacts)
+    fn crossing_squares_with_points(
+        points: &[PointOnFractures],
+    ) -> (Vec<FracturePlane>, SharedNetwork) {
         let square = |vertices: [[f64; 3]; 4], normal: Vector3<f64>| Poly {
             vertices: vertices.map(Point3::from).to_vec(),
             normal,
@@ -860,9 +1287,43 @@ mod tests {
             ends: intersection,
             join: Join::None,
         }];
-        let network = build_shared_network(&planes, &[0, 1], &lines, &[], &[]);
+        let network = build_shared_network(&planes, &[0, 1], &lines, &[], points);
 
         (planes, network)
+    }
+
+    #[test]
+    fn test_shared_point_on_a_shared_line_is_a_point_of_the_line() {
+        let contact = Point3::new(1.234, 0., 0.);
+        let (_, network) = crossing_squares_with_points(&[PointOnFractures {
+            fractures: vec![0],
+            point: contact,
+            join: Join::None,
+        }]);
+
+        let contact_id = network
+            .shared_points
+            .points
+            .iter()
+            .position(|point| *point == contact)
+            .unwrap();
+        assert!(network.lines[0].point_ids.contains(&contact_id));
+    }
+
+    #[test]
+    fn test_vertex_on_an_edge_of_a_polyline_is_a_point_of_the_polyline() {
+        let mut vertices = LocalVertices::new(1.);
+        for position in [[0., 0.], [10., 0.], [4., 1e-9]] {
+            vertices.add(LocalVertex {
+                position,
+                shared_id: None,
+            });
+        }
+        let mut polyline = vec![0, 1];
+
+        insert_vertices_on_polyline(&mut polyline, &vertices, 1e-6);
+
+        assert_eq!(polyline, [0, 2, 1]);
     }
 
     fn triangle_area(mesh: &LocalMesh, triangle: &[usize; 3]) -> f64 {

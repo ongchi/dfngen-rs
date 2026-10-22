@@ -200,10 +200,12 @@ pub fn mesh_network(
     };
     let mut point_sides: HashMap<usize, Vec<OtherSide>> = HashMap::new();
     let mut skipped_constraints = 0;
+    let mut degenerate_triangles = 0;
     let (mut total_area, mut trimmed_area) = (0., 0.);
 
     for (position, (plane, local)) in planes.iter().zip(locals).enumerate() {
         skipped_constraints += local.skipped_constraints;
+        degenerate_triangles += local.degenerate_triangles;
         if local.skipped_constraints > 0 {
             debug!(
                 "Mesh: fracture {}: {} constraint edges cross other lines{}",
@@ -260,6 +262,13 @@ pub fn mesh_network(
             mesh.triangles.push(triangle);
             mesh.triangle_fractures.push(position);
         }
+    }
+
+    if degenerate_triangles > 0 {
+        warn!(
+            "Mesh: {} triangles with no area (points on one line) are not in the mesh; this is a defect of the mesh code",
+            degenerate_triangles
+        );
     }
 
     if trimmed_area > 0. {
@@ -342,6 +351,9 @@ fn mesh_fractures(
         }
 
         to_mesh = shared.split_edges(&splits);
+        to_mesh.extend(shared.insert_points_on_lines(planes));
+        to_mesh.sort_unstable();
+        to_mesh.dedup();
         debug!(
             "Mesh: round {round}: {} edges of shared lines split, {} fractures meshed again",
             splits.len(),
