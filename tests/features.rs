@@ -885,12 +885,45 @@ fn mesh_part_count(mesh: &FractureMesh) -> usize {
     parts.len()
 }
 
+/// True if each vertex of the final fracture is in the box of the cases
+/// (−5 to 5)
+fn is_in_box(network: &Network, position: usize) -> bool {
+    network.dfn.accepted_polys[network.final_fractures[position]]
+        .vertices
+        .iter()
+        .all(|vertex| vertex.coords.amax() <= 5.)
+}
+
 /// Positions of the final fractures which are in the mesh
 fn fractures_in_mesh(mesh: &FractureMesh) -> Vec<usize> {
     let mut fractures = mesh.triangle_fractures.clone();
     fractures.sort_unstable();
     fractures.dedup();
     fractures
+}
+
+/// The smallest angle of each triangle (degrees)
+fn smallest_angles(mesh: &FractureMesh) -> Vec<f64> {
+    mesh.triangles
+        .iter()
+        .map(|triangle| {
+            let corners = triangle.map(|point| mesh.points[point]);
+            (0..3)
+                .map(|i| {
+                    let to_next = corners[(i + 1) % 3] - corners[i];
+                    let to_previous = corners[(i + 2) % 3] - corners[i];
+                    to_next.angle(&to_previous).to_degrees()
+                })
+                .fold(180., f64::min)
+        })
+        .collect()
+}
+
+/// The length of each edge of each triangle
+fn edge_lengths(mesh: &FractureMesh) -> impl Iterator<Item = f64> + '_ {
+    mesh.triangles.iter().flat_map(move |triangle| {
+        (0..3).map(move |i| (mesh.points[triangle[(i + 1) % 3]] - mesh.points[triangle[i]]).norm())
+    })
 }
 
 fn triangle_area(mesh: &FractureMesh, triangle: &[usize; 3]) -> f64 {
@@ -909,17 +942,39 @@ mod mesh {
     }
 
     #[test]
-    fn test_mesh_has_one_part_for_each_cluster_in_it() {
+    fn test_each_triangle_is_in_the_box() {
         let network = run("mesh");
         let mesh = network.mesh.as_ref().unwrap();
-        let mut groups: Vec<Option<usize>> = fractures_in_mesh(mesh)
-            .into_iter()
-            .map(|position| network.dfn.accepted_polys[network.final_fractures[position]].group)
-            .collect();
-        groups.sort_unstable();
-        groups.dedup();
 
-        assert_eq!(mesh_part_count(mesh), groups.len());
+        for triangle in &mesh.triangles {
+            let [a, b, c] = triangle.map(|point| mesh.points[point]);
+            let centroid = (a.coords + b.coords + c.coords) / 3.;
+            assert!(centroid.amax() < 5., "{centroid}");
+        }
+    }
+
+    #[test]
+    fn test_mesh_has_less_area_than_a_fracture_which_crosses_the_box_surface() {
+        let network = run("mesh");
+        let mesh = network.mesh.as_ref().unwrap();
+        let crossing = fractures_in_mesh(mesh)
+            .into_iter()
+            .find(|&position| !is_in_box(&network, position))
+            .expect("a fracture of the case crosses the box surface");
+
+        let mesh_area: f64 = mesh
+            .triangles
+            .iter()
+            .zip(&mesh.triangle_fractures)
+            .filter(|(_, &fracture)| fracture == crossing)
+            .map(|(triangle, _)| triangle_area(mesh, triangle))
+            .sum();
+
+        let area = network.dfn.accepted_polys[network.final_fractures[crossing]].area;
+        assert!(
+            mesh_area < 0.999 * area,
+            "{mesh_area} is not less than {area}"
+        );
     }
 
     #[test]
@@ -949,7 +1004,7 @@ mod mesh {
     }
 
     #[test]
-    fn test_triangles_cover_each_fracture() {
+    fn test_triangles_cover_each_fracture_in_the_box() {
         let network = run("mesh");
         let mesh = network.mesh.as_ref().unwrap();
         let mut mesh_areas = vec![0.; network.final_fractures.len()];
@@ -957,7 +1012,10 @@ mod mesh {
             mesh_areas[fracture] += triangle_area(mesh, triangle);
         }
 
-        for position in fractures_in_mesh(mesh) {
+        for position in fractures_in_mesh(mesh)
+            .into_iter()
+            .filter(|&position| is_in_box(&network, position))
+        {
             let area = network.dfn.accepted_polys[network.final_fractures[position]].area;
             assert!(
                 (mesh_areas[position] - area).abs() < 1e-9 * area,
@@ -966,6 +1024,19 @@ mod mesh {
                 mesh_areas[position]
             );
         }
+    }
+
+    #[test]
+    fn test_almost_no_triangle_has_an_angle_below_20_degrees() {
+        let network = run("mesh");
+        let angles = smallest_angles(network.mesh.as_ref().unwrap());
+
+        let small_count = angles.iter().filter(|&&angle| angle < 20.).count();
+        assert!(
+            small_count * 1000 < angles.len(),
+            "{small_count} of {} triangles",
+            angles.len()
+        );
     }
 
     #[test]
@@ -1039,5 +1110,34 @@ mod mesh_user_fractures {
             .apertures
             .iter()
             .all(|&aperture| aperture == 2e-4));
+    }
+}
+
+mod mesh_user_fractures_tiny {
+    use super::*;
+
+    #[test]
+    fn test_tiny_features_give_no_edge_shorter_than_a_quarter_of_h() {
+        let network = run("mesh_user_fractures_tiny");
+
+        let shortest = edge_lengths(network.mesh.as_ref().unwrap()).fold(f64::INFINITY, f64::min);
+        assert!(shortest >= 0.025, "{shortest}");
+    }
+
+    #[test]
+    fn test_tiny_features_give_no_angle_below_20_degrees() {
+        let network = run("mesh_user_fractures_tiny");
+
+        let smallest = smallest_angles(network.mesh.as_ref().unwrap())
+            .into_iter()
+            .fold(180., f64::min);
+        assert!(smallest > 19.9, "{smallest}");
+    }
+
+    #[test]
+    fn test_fractures_with_tiny_features_are_one_part() {
+        let network = run("mesh_user_fractures_tiny");
+
+        assert_eq!(mesh_part_count(network.mesh.as_ref().unwrap()), 1);
     }
 }

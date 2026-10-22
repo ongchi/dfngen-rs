@@ -5,10 +5,22 @@ use parry3d_f64::na::Point3;
 
 use crate::fracture::poly::Poly;
 use crate::geometry::PlaneFrame;
-use crate::region_boundaries::{distance_to_segment, OtherSide};
+use crate::region_boundaries::{distance, distance_to_segment, OtherSide};
 
 /// A point in the plane of a fracture
 pub type Point2 = [f64; 2];
+
+/// Corner angle (degrees) below which a thin fracture is a sliver
+const SLIVER_ANGLE: f64 = 10.;
+
+/// Part of `min_feature_size`: the width of a fracture limits the size to
+/// no less than this (near a sharp corner the width goes to 0)
+const MIN_WIDTH_SIZE_PART: f64 = 0.5;
+
+/// Largest angle (degrees) between an outline edge and the reverse of
+/// another edge for which the other edge is on the opposite side of the
+/// fracture (see `FracturePlane::width_at`)
+const OPPOSITE_ANGLE: f64 = 30.;
 
 /// A boundary line segment in the plane, with what is on its other side
 pub struct BoundarySegment2 {
@@ -39,13 +51,14 @@ impl FracturePlane {
     pub fn new(poly: &Poly, intersections: &[[Point3<f64>; 2]], sizes: [f64; 3]) -> Self {
         let frame = PlaneFrame::new(&poly.vertices, &poly.normal);
         let [min_size, max_size, slope] = sizes;
+        let outline: Vec<Point2> = poly
+            .vertices
+            .iter()
+            .map(|vertex| frame.to_plane(vertex))
+            .collect();
 
         Self {
-            outline: poly
-                .vertices
-                .iter()
-                .map(|vertex| frame.to_plane(vertex))
-                .collect(),
+            outline,
             intersections: intersections
                 .iter()
                 .map(|[start, end]| [frame.to_plane(start), frame.to_plane(end)])
@@ -66,6 +79,34 @@ impl FracturePlane {
         }
     }
 
+    /// True if the fracture is a sliver: narrower than `min_feature_size`
+    /// (2 × area / longest edge) and with a corner below `SLIVER_ANGLE`. Its
+    /// triangles near that corner have small angles; no refinement can
+    /// change that.
+    pub fn is_sliver(&self) -> bool {
+        let edges: Vec<[Point2; 2]> = self.outline_edges().collect();
+        let twice_area: f64 = edges
+            .iter()
+            .map(|[start, end]| start[0] * end[1] - end[0] * start[1])
+            .sum::<f64>()
+            .abs();
+        let longest = edges
+            .iter()
+            .map(|&[start, end]| distance(start, end))
+            .fold(0., f64::max);
+        let has_sharp_corner = (0..edges.len()).any(|i| {
+            let [corner, next] = edges[i];
+            let previous = edges[(i + edges.len() - 1) % edges.len()][0];
+            let to_next = [next[0] - corner[0], next[1] - corner[1]];
+            let to_previous = [previous[0] - corner[0], previous[1] - corner[1]];
+            let cross = to_next[0] * to_previous[1] - to_next[1] * to_previous[0];
+            let dot = to_next[0] * to_previous[0] + to_next[1] * to_previous[1];
+            cross.abs().atan2(dot) < SLIVER_ANGLE.to_radians()
+        });
+
+        twice_area < self.min_size * longest && has_sharp_corner
+    }
+
     /// The edges of the outline
     pub fn outline_edges(&self) -> impl Iterator<Item = [Point2; 2]> + '_ {
         (0..self.outline.len())
@@ -83,14 +124,47 @@ impl FracturePlane {
 
     /// Target triangle size at the point: the smallest size plus the slope
     /// times the distance to the nearest intersection or boundary line, at
-    /// most the largest size
+    /// most the largest size, and at most the width of the fracture at the
+    /// point (thus a thin fracture gets triangles of a good shape across it);
+    /// the width limits the size to no less than `MIN_WIDTH_SIZE_PART` × h
     pub fn size_at(&self, point: Point2) -> f64 {
         let distance = self
             .feature_segments()
             .map(|segment| distance_to_segment(point, segment))
             .fold(f64::INFINITY, f64::min);
 
-        (self.min_size + self.slope * distance).min(self.max_size)
+        (self.min_size + self.slope * distance)
+            .min(self.max_size)
+            .min(
+                self.width_at(point)
+                    .max(MIN_WIDTH_SIZE_PART * self.min_size),
+            )
+    }
+
+    /// Width of the fracture at the point: the distance to the nearest
+    /// outline edge which goes in the opposite direction of the outline edge
+    /// nearest to the point (within `OPPOSITE_ANGLE`)
+    fn width_at(&self, point: Point2) -> f64 {
+        let direction = |[start, end]: [Point2; 2]| {
+            let length = distance(start, end);
+            [(end[0] - start[0]) / length, (end[1] - start[1]) / length]
+        };
+        let Some(nearest) = self.outline_edges().min_by(|a, b| {
+            distance_to_segment(point, *a).total_cmp(&distance_to_segment(point, *b))
+        }) else {
+            return f64::INFINITY;
+        };
+        let nearest_direction = direction(nearest);
+        let max_cosine = -OPPOSITE_ANGLE.to_radians().cos();
+
+        self.outline_edges()
+            .filter(|&edge| {
+                let edge_direction = direction(edge);
+                nearest_direction[0] * edge_direction[0] + nearest_direction[1] * edge_direction[1]
+                    < max_cosine
+            })
+            .map(|edge| distance_to_segment(point, edge))
+            .fold(f64::INFINITY, f64::min)
     }
 
     /// True if the point is in the outline (even-odd rule)
@@ -105,15 +179,6 @@ impl FracturePlane {
             .count()
             % 2
             == 1
-    }
-
-    /// Distance to the nearest line which the mesh must follow: the outline,
-    /// the intersections and the boundary lines
-    pub fn distance_to_lines(&self, point: Point2) -> f64 {
-        self.outline_edges()
-            .chain(self.feature_segments())
-            .map(|segment| distance_to_segment(point, segment))
-            .fold(f64::INFINITY, f64::min)
     }
 }
 

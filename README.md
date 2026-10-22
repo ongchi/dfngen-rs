@@ -188,22 +188,41 @@ With `mesh.enable = true`, the run also writes `dfn_mesh.vtu`: one triangle
 mesh of the final fractures, the mesh file of [fehm-rs](../fehm-rs). The
 network is the same as without the option.
 
+- Only the part of each fracture in the domain mesh is in the mesh. The
+  fractures stay whole in the network; the mesh is cut along their mesh
+  surface lines. The log gives the part of the area which is cut off.
 - Fractures which intersect share the points of their intersection. Two
   fractures which only touch at a point share that point. The pieces of a
   user-defined fracture share the points of their common edges and corners.
-  Thus each cluster is one connected mesh.
+  Thus each cluster is one connected mesh (the cut at the mesh surface can
+  split a cluster).
 - The mesh of each fracture follows its outline, its intersections and its
-  boundary lines (constrained Delaunay triangulation of the crate `spade`,
-  then new points in the large triangles).
+  boundary lines (constrained Delaunay triangulation of the crate `spade`).
 - Triangle size: `min_feature_size` (h) along the intersections and the
   boundary lines, and h + `slope` × distance from them, at most
-  `max_size_factor` × h. Without FRAM (a warning), and at user-defined
-  fractures which are thinner than h, the triangles near small features are
-  small and can have small angles.
+  `max_size_factor` × h, and at most the width of the fracture at the point
+  (not below h / 2), thus a narrow fracture gets triangles of a good shape
+  across it.
+- Angles: a triangle with an angle below 20° gets a new point (Ruppert
+  refinement), except where the small angle is an angle of the input (two
+  lines of the mesh meet at it). A line of one fracture (outline, boundary
+  line) is divided where needed; a shared line is divided in all its
+  fractures, which are then meshed again (at most 10 rounds; a warning gives
+  the edges which still need a division). No new point is nearer than 0.7 h
+  to another point.
+- Tiny features of user-defined fractures which FRAM did not check (FRAM off,
+  or `fram.check_user_fractures = false`): their intersections shorter than
+  h / 2 are point contacts; the points of their shared lines within h / 2 of
+  each other are one point; their shared lines which are almost parallel and
+  within h / 2 of each other get the same points; an outline edge with such
+  a line or point within h / 2 goes through it. The corners of the pieces do
+  not move. A line can then cross another line; the log gives the number of
+  edges which the mesh does not follow for that reason.
+- A sliver (a fracture narrower than h with a corner below 10°) has small
+  angles near that corner: no refinement can change an angle of the input.
+  The log gives the number of slivers.
 - An obtuse triangle at a line which the mesh must follow can give a negative
-  connection coefficient in fehm-rs (it writes a warning with the number). The
-  lines are never divided again after the first division, thus the fractures
-  on both sides keep the same points.
+  connection coefficient in fehm-rs (it writes a warning with the number).
 - fehm-rs needs a boundary point in each cluster. A cluster with no point on
   a boundary array (see `dfn_mesh.vtu` below; for example, fully in one
   region and away from the mesh surface) is not in the mesh; the log gives

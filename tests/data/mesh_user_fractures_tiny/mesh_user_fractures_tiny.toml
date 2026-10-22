@@ -1,0 +1,32 @@
+# Feature: tiny features of user-defined fractures which FRAM does not check
+# (check_user_fractures = false) are joined in the mesh. Fracture 2 has an
+# intersection of 0.2 min_feature_size with fracture 1, 0.1 min_feature_size
+# from its edge; fractures 4 and 5 intersect fracture 1 along two lines
+# 0.3 min_feature_size apart, which fracture 3 crosses.
+
+seed = 12345
+min_feature_size = 0.1
+domain = "../box.vtu"
+user_fractures = "mesh_user_fractures_tiny.vtp"
+
+[generation]
+force_large_fractures = false
+remove_fractures_less_than = 0.0
+
+[fram]
+enable = true
+relaxed = false
+triple_intersections = true
+write_rejected_fractures = false
+rejects_per_fracture = 10
+
+[region_boundaries]
+enable = true
+
+[mesh]
+enable = true
+user_fracture_aperture = { distribution = "constant", value = 2e-4 }
+
+[clusters]
+keep_only_largest = false
+keep_isolated_fractures = false

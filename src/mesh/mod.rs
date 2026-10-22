@@ -12,7 +12,7 @@ use std::collections::HashMap;
 
 use parry3d_f64::na::{center, distance, Point3};
 use rand_mt::Mt64;
-use tracing::{info, warn};
+use tracing::{debug, info, warn};
 
 use crate::dfn::Dfn;
 use crate::distribution::ApertureDistribution;
@@ -21,8 +21,8 @@ use crate::fracture::poly::{FractureOrigin, Poly};
 use crate::io::input::Input;
 use crate::region_boundaries::OtherSide;
 use plane::FracturePlane;
-use shared_points::{build_shared_network, LineOnFractures, PointOnFractures};
-use triangulate::mesh_fracture;
+use shared_points::{build_shared_network, Join, LineOnFractures, PointOnFractures, SharedNetwork};
+use triangulate::{mesh_fracture, LocalMesh};
 
 /// Part of `min_feature_size`: points nearer than this are one point. It
 /// removes only the rounding differences of a point which is calculated
@@ -30,6 +30,11 @@ use triangulate::mesh_fracture;
 /// which are near to each other (user-defined pieces can be thinner than
 /// `min_feature_size`).
 const MERGE_DISTANCE_PART: f64 = 1e-6;
+
+/// Part of `min_feature_size`: the points of tiny features of two
+/// user-defined fractures which FRAM did not check are joined within this
+/// distance, and their intersections shorter than it are point contacts
+const JOIN_DISTANCE_PART: f64 = 0.5;
 
 /// Options of the mesh (input section `[mesh]`). The input has them only
 /// when the option is on.
@@ -95,21 +100,43 @@ pub fn mesh_network(
         final_position[index] = Some(position);
     }
 
-    // An intersection of almost no length is a point where the two
-    // fractures touch: one shared point keeps them connected
+    // FRAM does not check a pair of user-defined fractures without FRAM or
+    // with check_user_fractures = false: their tiny features are joined
+    let is_user_check_off = input
+        .fram
+        .as_ref()
+        .is_none_or(|fram| !fram.check_user_fractures);
+    let is_user = |position: usize| polys[position].origin == FractureOrigin::UserDefined;
+    let join_of = |fractures: [usize; 2]| {
+        if is_user_check_off && fractures.into_iter().all(is_user) {
+            Join::Joinable
+        } else {
+            Join::None
+        }
+    };
+    let join_distance = JOIN_DISTANCE_PART * input.min_feature_size;
+
+    // An intersection of almost no length (or a tiny one which is joined) is
+    // a point where the two fractures touch: one shared point keeps them
+    // connected
     let (intersections, touching): (Vec<LineOnFractures>, Vec<LineOnFractures>) = dfn
         .intersections
         .iter()
         .filter_map(|intersection| {
+            let fractures = [
+                final_position[intersection.fracture1]?,
+                final_position[intersection.fracture2]?,
+            ];
             Some(LineOnFractures {
-                fractures: [
-                    final_position[intersection.fracture1]?,
-                    final_position[intersection.fracture2]?,
-                ],
+                fractures,
                 ends: [intersection.p1, intersection.p2],
+                join: join_of(fractures),
             })
         })
-        .partition(|line| distance(&line.ends[0], &line.ends[1]) > input.eps);
+        .partition(|line| {
+            let length = distance(&line.ends[0], &line.ends[1]);
+            length > input.eps && !(line.join == Join::Joinable && length < join_distance)
+        });
 
     let sizes = [
         input.min_feature_size,
@@ -129,18 +156,40 @@ pub fn mesh_network(
         })
         .collect();
 
-    let (piece_edges, mut shared_points) = piece_contacts(&polys, &groups);
+    let corner_join = if is_user_check_off {
+        Join::Target
+    } else {
+        Join::None
+    };
+    let edge_join = if is_user_check_off {
+        Join::Joinable
+    } else {
+        Join::None
+    };
+    let (piece_edges, mut shared_points) =
+        piece_contacts(&polys, &groups, [corner_join, edge_join]);
     shared_points.extend(touching.iter().map(|line| PointOnFractures {
         fractures: line.fractures.to_vec(),
         point: center(&line.ends[0], &line.ends[1]),
+        join: line.join,
     }));
-    let shared = build_shared_network(
+    let mut shared = build_shared_network(
         &planes,
         &groups,
         &intersections,
         &piece_edges,
         &shared_points,
     );
+
+    let sliver_count = planes.iter().filter(|plane| plane.is_sliver()).count();
+    if sliver_count > 0 {
+        warn!(
+            "Mesh: {} fractures are slivers (narrower than min_feature_size, with a corner below 10°): their triangles have small angles near that corner",
+            sliver_count
+        );
+    }
+
+    let locals = mesh_fractures(&planes, &mut shared)?;
 
     let mut mesh = FractureMesh {
         points: shared.shared_points.points.clone(),
@@ -151,11 +200,18 @@ pub fn mesh_network(
     };
     let mut point_sides: HashMap<usize, Vec<OtherSide>> = HashMap::new();
     let mut skipped_constraints = 0;
+    let (mut total_area, mut trimmed_area) = (0., 0.);
 
-    for (position, plane) in planes.iter().enumerate() {
-        let local = mesh_fracture(plane, position, &shared)
-            .map_err(|error| DfngenError::Mesh(format!("fracture {}: {error}", position + 1)))?;
+    for (position, (plane, local)) in planes.iter().zip(locals).enumerate() {
         skipped_constraints += local.skipped_constraints;
+        if local.skipped_constraints > 0 {
+            debug!(
+                "Mesh: fracture {}: {} constraint edges cross other lines{}",
+                position + 1,
+                local.skipped_constraints,
+                if plane.is_sliver() { " (sliver)" } else { "" }
+            );
+        }
 
         let global_ids: Vec<usize> = local
             .vertices
@@ -175,10 +231,30 @@ pub fn mesh_network(
             }
         }
 
+        // Only the part in the domain mesh: the mesh surface lines are
+        // constraint lines, thus the cut follows the mesh surface
         for triangle in local.triangles {
-            mesh.triangles.push(triangle.map(|index| global_ids[index]));
+            let triangle = triangle.map(|index| global_ids[index]);
+            let [a, b, c] = triangle.map(|id| mesh.points[id]);
+            let area = (b - a).cross(&(c - a)).norm() / 2.;
+            total_area += area;
+
+            let centroid = Point3::from((a.coords + b.coords + c.coords) / 3.);
+            if input.domain_mesh.regions_at(&centroid).is_none() {
+                trimmed_area += area;
+                continue;
+            }
+
+            mesh.triangles.push(triangle);
             mesh.triangle_fractures.push(position);
         }
+    }
+
+    if trimmed_area > 0. {
+        info!(
+            "Mesh: {:.1} % of the fracture area is outside the domain mesh and is not in the mesh",
+            100. * trimmed_area / total_area
+        );
     }
 
     if skipped_constraints > 0 {
@@ -209,6 +285,62 @@ pub fn mesh_network(
     );
 
     Ok(mesh)
+}
+
+/// Rounds of the split of shared lines which the angle refinement needs
+const MAX_SPLIT_ROUNDS: usize = 10;
+
+/// Meshes each fracture. The angle refinement of a fracture can need a
+/// split of an edge of a shared line: the edge is split in the line, thus in
+/// each fracture which shares it, and these fractures are meshed again.
+fn mesh_fractures(
+    planes: &[FracturePlane],
+    shared: &mut SharedNetwork,
+) -> Result<Vec<LocalMesh>, DfngenError> {
+    let mut locals: Vec<Option<LocalMesh>> = planes.iter().map(|_| None).collect();
+    let mut to_mesh: Vec<usize> = (0..planes.len()).collect();
+
+    for round in 1..=MAX_SPLIT_ROUNDS {
+        let mut splits: Vec<[usize; 2]> = Vec::new();
+        for &position in &to_mesh {
+            let local = mesh_fracture(&planes[position], position, shared).map_err(|error| {
+                DfngenError::Mesh(format!("fracture {}: {error}", position + 1))
+            })?;
+            splits.extend(
+                local
+                    .shared_splits
+                    .iter()
+                    .map(|&[a, b]| [a.min(b), a.max(b)]),
+            );
+            locals[position] = Some(local);
+        }
+
+        splits.sort_unstable();
+        splits.dedup();
+        if splits.is_empty() {
+            break;
+        }
+        if round == MAX_SPLIT_ROUNDS {
+            warn!(
+                "Mesh: {} edges of shared lines still need a split after {} rounds; some triangles there keep angles below the target",
+                splits.len(),
+                MAX_SPLIT_ROUNDS
+            );
+            break;
+        }
+
+        to_mesh = shared.split_edges(&splits);
+        debug!(
+            "Mesh: round {round}: {} edges of shared lines split, {} fractures meshed again",
+            splits.len(),
+            to_mesh.len()
+        );
+    }
+
+    Ok(locals
+        .into_iter()
+        .map(|local| local.expect("the first round meshes each fracture"))
+        .collect())
 }
 
 /// Group of each fracture: the position of the first piece of its
@@ -265,6 +397,7 @@ fn sample_apertures(
 fn piece_contacts(
     polys: &[&Poly],
     groups: &[usize],
+    [corner_join, edge_join]: [Join; 2],
 ) -> (Vec<LineOnFractures>, Vec<PointOnFractures>) {
     let mut piece_count: HashMap<usize, usize> = HashMap::new();
     for &group in groups {
@@ -286,6 +419,7 @@ fn piece_contacts(
             piece_vertices.push(PointOnFractures {
                 fractures: vec![position],
                 point: *vertex,
+                join: corner_join,
             });
 
             let next = &vertices[(i + 1) % vertices.len()];
@@ -300,6 +434,7 @@ fn piece_contacts(
                     piece_edges.push(LineOnFractures {
                         fractures: [other, position],
                         ends: [*vertex, *next],
+                        join: edge_join,
                     });
                 }
                 _ => {

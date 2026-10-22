@@ -7,11 +7,26 @@
 
 use std::collections::HashMap;
 
-use parry3d_f64::na::{distance, Point3};
+use parry3d_f64::na::{center, distance, Point3};
 
 use super::plane::{segment_crossing, FracturePlane};
-use super::MERGE_DISTANCE_PART;
+use super::{JOIN_DISTANCE_PART, MERGE_DISTANCE_PART};
 use crate::region_boundaries::{distance_to_segment, position_on_segment};
+
+/// How a point merges with the other points. Points of user-defined
+/// fractures which FRAM did not check can be nearer to each other than
+/// `min_feature_size`: their tiny features are joined.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Join {
+    /// Merges only within the rounding tolerance, and other points do not
+    /// join it
+    None,
+    /// Does not move, but a `Joinable` point can join it (a corner of a piece
+    /// of a user-defined fracture)
+    Target,
+    /// Joins a `Target` or `Joinable` point within the join distance
+    Joinable,
+}
 
 /// Points in space which two or more fractures share. A point with a
 /// "group" can merge with another point of the same group; the group of a
@@ -22,43 +37,67 @@ pub struct SharedPoints {
     /// Groups of each point (empty for a point which does not merge)
     groups: Vec<Vec<usize>>,
     tolerance: f64,
+    join_distance: f64,
     /// Points which can merge, by the grid cell of size `tolerance` which has them
     cells: HashMap<[i64; 3], Vec<usize>>,
+    /// The join targets, by the grid cell of size `join_distance` which has them
+    join_cells: HashMap<[i64; 3], Vec<usize>>,
 }
 
 impl SharedPoints {
-    fn new(tolerance: f64) -> Self {
+    fn new(tolerance: f64, join_distance: f64) -> Self {
         Self {
             points: Vec::new(),
             groups: Vec::new(),
             tolerance,
+            join_distance,
             cells: HashMap::new(),
+            join_cells: HashMap::new(),
         }
     }
 
-    fn cell_of(&self, point: &Point3<f64>) -> [i64; 3] {
-        [point.x, point.y, point.z].map(|coordinate| (coordinate / self.tolerance).floor() as i64)
+    fn cell_of(point: &Point3<f64>, cell_size: f64) -> [i64; 3] {
+        [point.x, point.y, point.z].map(|coordinate| (coordinate / cell_size).floor() as i64)
     }
 
-    /// The point nearer than the tolerance which has one of the groups, or a
-    /// new point. The point gets the groups.
-    fn find_or_insert(&mut self, point: Point3<f64>, groups: &[usize]) -> usize {
-        let [x, y, z] = self.cell_of(&point);
-        let nearest = (x - 1..=x + 1)
+    /// The nearest point within the distance (`cell_size` of the grid) which
+    /// has one of the groups
+    fn nearest(
+        &self,
+        point: &Point3<f64>,
+        groups: &[usize],
+        cells: &HashMap<[i64; 3], Vec<usize>>,
+        max_distance: f64,
+    ) -> Option<usize> {
+        let [x, y, z] = Self::cell_of(point, max_distance);
+        (x - 1..=x + 1)
             .flat_map(|cell_x| (y - 1..=y + 1).map(move |cell_y| (cell_x, cell_y)))
             .flat_map(|(cell_x, cell_y)| {
                 (z - 1..=z + 1).map(move |cell_z| [cell_x, cell_y, cell_z])
             })
-            .filter_map(|cell| self.cells.get(&cell))
+            .filter_map(|cell| cells.get(&cell))
             .flatten()
             .copied()
-            .filter(|&id| distance(&self.points[id], &point) < self.tolerance)
+            .filter(|&id| distance(&self.points[id], point) < max_distance)
             .filter(|&id| self.groups[id].iter().any(|group| groups.contains(group)))
             .min_by(|&a, &b| {
-                distance(&self.points[a], &point).total_cmp(&distance(&self.points[b], &point))
+                distance(&self.points[a], point).total_cmp(&distance(&self.points[b], point))
+            })
+    }
+
+    /// The point nearer than the tolerance (or the join distance, for a
+    /// joinable point) which has one of the groups, or a new point. The point
+    /// gets the groups.
+    fn find_or_insert(&mut self, point: Point3<f64>, groups: &[usize], join: Join) -> usize {
+        let found = self
+            .nearest(&point, groups, &self.cells, self.tolerance)
+            .or_else(|| {
+                (join == Join::Joinable)
+                    .then(|| self.nearest(&point, groups, &self.join_cells, self.join_distance))
+                    .flatten()
             });
 
-        if let Some(id) = nearest {
+        if let Some(id) = found {
             for &group in groups {
                 if !self.groups[id].contains(&group) {
                     self.groups[id].push(group);
@@ -69,7 +108,16 @@ impl SharedPoints {
 
         let id = self.add(point);
         self.groups[id] = groups.to_vec();
-        self.cells.entry(self.cell_of(&point)).or_default().push(id);
+        self.cells
+            .entry(Self::cell_of(&point, self.tolerance))
+            .or_default()
+            .push(id);
+        if join != Join::None {
+            self.join_cells
+                .entry(Self::cell_of(&point, self.join_distance))
+                .or_default()
+                .push(id);
+        }
         id
     }
 
@@ -80,12 +128,15 @@ impl SharedPoints {
         self.points.len() - 1
     }
 }
+
 /// A line which two fractures share, divided into points
 pub struct SharedLine {
     /// Positions of the two fractures in the final fractures
     pub fractures: [usize; 2],
     /// Ids of the points in `SharedPoints`, in order along the line
     pub point_ids: Vec<usize>,
+    /// `Joinable`: an outline edge near the line can use its points
+    pub join: Join,
 }
 
 /// A point in space which the fractures share: a corner of a piece of a
@@ -93,12 +144,16 @@ pub struct SharedLine {
 pub struct PointOnFractures {
     pub fractures: Vec<usize>,
     pub point: Point3<f64>,
+    pub join: Join,
 }
 
 /// A line in space which two fractures share, before it is divided
 pub struct LineOnFractures {
     pub fractures: [usize; 2],
     pub ends: [Point3<f64>; 2],
+    /// `Joinable` for two user-defined fractures which FRAM did not check,
+    /// else `None`
+    pub join: Join,
 }
 
 /// The shared points and lines of the network
@@ -107,6 +162,50 @@ pub struct SharedNetwork {
     pub lines: Vec<SharedLine>,
     /// Ids of the shared points on each final fracture
     pub points_of_fracture: Vec<Vec<usize>>,
+}
+
+impl SharedNetwork {
+    /// Splits each edge (two consecutive points of a shared line) at its
+    /// middle, in each line which has it. Returns the fractures of these lines.
+    pub fn split_edges(&mut self, edges: &[[usize; 2]]) -> Vec<usize> {
+        // The middle point of each edge, by the edge with the smaller id first
+        let mut middles: HashMap<(usize, usize), usize> = HashMap::new();
+        for &[first, second] in edges {
+            let points = &self.shared_points.points;
+            let middle = center(&points[first], &points[second]);
+            let id = self.shared_points.add(middle);
+            middles.insert((first.min(second), first.max(second)), id);
+        }
+
+        let mut changed_fractures = Vec::new();
+        for line in &mut self.lines {
+            let mut point_ids = Vec::with_capacity(line.point_ids.len());
+            let mut is_changed = false;
+
+            for (index, &id) in line.point_ids.iter().enumerate() {
+                point_ids.push(id);
+                let Some(&next) = line.point_ids.get(index + 1) else {
+                    continue;
+                };
+                if let Some(&middle) = middles.get(&(id.min(next), id.max(next))) {
+                    point_ids.push(middle);
+                    for fracture in line.fractures {
+                        self.points_of_fracture[fracture].push(middle);
+                    }
+                    is_changed = true;
+                }
+            }
+
+            if is_changed {
+                line.point_ids = point_ids;
+                changed_fractures.extend(line.fractures);
+            }
+        }
+
+        changed_fractures.sort_unstable();
+        changed_fractures.dedup();
+        changed_fractures
+    }
 }
 
 /// Divides the intersections and the common edges of the pieces, and joins
@@ -134,7 +233,7 @@ pub fn build_shared_network(
     let min_size = planes.first().map_or(1., |plane| plane.min_size);
     let tolerance = MERGE_DISTANCE_PART * min_size;
     let mut network = SharedNetwork {
-        shared_points: SharedPoints::new(tolerance),
+        shared_points: SharedPoints::new(tolerance, JOIN_DISTANCE_PART * min_size),
         lines: Vec::new(),
         points_of_fracture: vec![Vec::new(); planes.len()],
     };
@@ -147,7 +246,7 @@ pub fn build_shared_network(
             .collect();
         let id = network
             .shared_points
-            .find_or_insert(point.point, &point_groups);
+            .find_or_insert(point.point, &point_groups, point.join);
         for &fracture in &point.fractures {
             network.points_of_fracture[fracture].push(id);
         }
@@ -172,7 +271,8 @@ pub fn build_shared_network(
 
     let mut point_ids_of_line: Vec<Vec<usize>> = vec![Vec::new(); lines.len()];
 
-    for cluster in overlapping_lines(&lines, planes.len(), tolerance) {
+    let join_distance = network.shared_points.join_distance;
+    for cluster in overlapping_lines(&lines, planes.len(), [tolerance, join_distance]) {
         let ids = divide_cluster(
             &cluster,
             &lines,
@@ -193,6 +293,7 @@ pub fn build_shared_network(
         network.lines.push(SharedLine {
             fractures: line.fractures,
             point_ids,
+            join: line.join,
         });
     }
 
@@ -206,10 +307,14 @@ pub fn build_shared_network(
 
 /// Groups of lines which are on one straight line and overlap, on a common
 /// fracture. A line which overlaps no other line is a group of one.
+///
+/// Two `Joinable` lines are one group also if they are only near each other
+/// (within the join distance), almost parallel and overlap: they then get
+/// the same points.
 fn overlapping_lines(
     lines: &[&LineOnFractures],
     fracture_count: usize,
-    tolerance: f64,
+    [tolerance, join_distance]: [f64; 2],
 ) -> Vec<Vec<usize>> {
     let mut lines_of_fracture: Vec<Vec<usize>> = vec![Vec::new(); fracture_count];
     for (index, line) in lines.iter().enumerate() {
@@ -230,7 +335,14 @@ fn overlapping_lines(
     for fracture_lines in &lines_of_fracture {
         for (i, &first) in fracture_lines.iter().enumerate() {
             for &second in &fracture_lines[i + 1..] {
-                if are_overlapping(lines[first], lines[second], tolerance) {
+                let is_joinable =
+                    lines[first].join == Join::Joinable && lines[second].join == Join::Joinable;
+                let distance = if is_joinable {
+                    join_distance
+                } else {
+                    tolerance
+                };
+                if are_overlapping(lines[first], lines[second], distance) {
                     let (first_root, second_root) =
                         (root(&mut parent, first), root(&mut parent, second));
                     parent[first_root] = second_root;
@@ -314,8 +426,22 @@ fn divide_cluster(
         })
         .map(|point| (position_of(&point), point))
         .collect();
+    // Tiny features of user-defined fractures which FRAM did not check are
+    // joined: their points within the join distance are one point
+    let join = if cluster
+        .iter()
+        .all(|&line| lines[line].join == Join::Joinable)
+    {
+        Join::Joinable
+    } else {
+        Join::None
+    };
+    let merge_distance = match join {
+        Join::Joinable => shared_points.join_distance,
+        _ => tolerance,
+    };
     special.sort_by(|a, b| a.0.total_cmp(&b.0));
-    special.dedup_by(|later, earlier| later.0 - earlier.0 < tolerance);
+    special.dedup_by(|later, earlier| later.0 - earlier.0 < merge_distance);
 
     // The ranges of the lines along the cluster
     let ranges: Vec<[f64; 2]> = cluster
@@ -328,7 +454,7 @@ fn divide_cluster(
 
     let mut points: Vec<(f64, usize)> = Vec::new();
     for (position, point) in special {
-        let id = shared_points.find_or_insert(point, &cluster_groups);
+        let id = shared_points.find_or_insert(point, &cluster_groups, join);
 
         if let Some(&(previous_position, previous)) = points.last() {
             if previous == id {
@@ -455,6 +581,7 @@ mod tests {
         LineOnFractures {
             fractures: [0, 1],
             ends: [Point3::from(start), Point3::from(end)],
+            join: Join::None,
         }
     }
 
@@ -496,20 +623,51 @@ mod tests {
 
     #[test]
     fn test_points_of_one_group_merge() {
-        let mut shared_points = SharedPoints::new(0.1);
+        let mut shared_points = SharedPoints::new(0.1, 1.);
 
-        let first = shared_points.find_or_insert(Point3::new(1., 1., 1.), &[0, 1]);
-        let second = shared_points.find_or_insert(Point3::new(1.05, 1., 1.), &[1, 2]);
+        let first = shared_points.find_or_insert(Point3::new(1., 1., 1.), &[0, 1], Join::None);
+        let second = shared_points.find_or_insert(Point3::new(1.05, 1., 1.), &[1, 2], Join::None);
 
         assert_eq!(first, second);
     }
 
     #[test]
-    fn test_points_without_a_common_group_do_not_merge() {
-        let mut shared_points = SharedPoints::new(0.1);
+    fn test_joinable_point_joins_a_target_within_the_join_distance() {
+        let mut shared_points = SharedPoints::new(0.1, 1.);
 
-        let first = shared_points.find_or_insert(Point3::new(1., 1., 1.), &[0, 1]);
-        let second = shared_points.find_or_insert(Point3::new(1.05, 1., 1.), &[2, 3]);
+        let corner = shared_points.find_or_insert(Point3::new(1., 1., 1.), &[0], Join::Target);
+        let end = shared_points.find_or_insert(Point3::new(1.5, 1., 1.), &[0, 1], Join::Joinable);
+
+        assert_eq!(corner, end);
+        assert_eq!(shared_points.points[corner], Point3::new(1., 1., 1.));
+    }
+
+    #[test]
+    fn test_point_which_is_not_joinable_does_not_join_within_the_join_distance() {
+        let mut shared_points = SharedPoints::new(0.1, 1.);
+
+        let first = shared_points.find_or_insert(Point3::new(1., 1., 1.), &[0], Join::Joinable);
+        let second = shared_points.find_or_insert(Point3::new(1.5, 1., 1.), &[0], Join::None);
+
+        assert_ne!(first, second);
+    }
+
+    #[test]
+    fn test_joinable_point_does_not_join_a_point_which_is_no_target() {
+        let mut shared_points = SharedPoints::new(0.1, 1.);
+
+        let first = shared_points.find_or_insert(Point3::new(1., 1., 1.), &[0], Join::None);
+        let second = shared_points.find_or_insert(Point3::new(1.5, 1., 1.), &[0], Join::Joinable);
+
+        assert_ne!(first, second);
+    }
+
+    #[test]
+    fn test_points_without_a_common_group_do_not_merge() {
+        let mut shared_points = SharedPoints::new(0.1, 1.);
+
+        let first = shared_points.find_or_insert(Point3::new(1., 1., 1.), &[0, 1], Join::None);
+        let second = shared_points.find_or_insert(Point3::new(1.05, 1., 1.), &[2, 3], Join::None);
 
         assert_ne!(first, second);
     }
