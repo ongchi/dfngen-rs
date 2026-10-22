@@ -1,0 +1,46 @@
+# Feature: the mesh of each fracture is cut at its regions ([mesh] with
+# [region_boundaries]). The L-shaped mesh of ../mesh_domain/mesh_domain.vtu
+# has the regions south (y 20 to 25) and north (y 25 to 30, x 10 to 15). The
+# family is in the region south; with use_family_region = true its mesh has
+# no triangle in north. The user-defined fractures are those of
+# ../region_boundaries_user_fractures: fracture 2 is in the region south and
+# goes across y = 25; fracture 3 has no region.
+# keep_isolated_fractures = true keeps all fractures.
+
+seed = 12345
+min_feature_size = 0.1
+domain = "../mesh_domain/mesh_domain.vtu"
+user_fractures = "../region_boundaries_user_fractures/region_boundaries_user_fractures.vtp"
+
+[generation]
+n_poly = 30
+force_large_fractures = false
+remove_fractures_less_than = 0.0
+
+[fram]
+enable = true
+relaxed = false
+triple_intersections = true
+write_rejected_fractures = false
+rejects_per_fracture = 10
+
+[region_boundaries]
+enable = true
+use_family_region = true
+
+[mesh]
+enable = true
+user_fracture_aperture = { distribution = "constant", value = 2e-4 }
+
+[clusters]
+keep_only_largest = false
+keep_isolated_fractures = true
+
+[[family]]
+number_of_points = 8
+probability = 1.0
+aspect_ratio = 1.0
+region = "south"
+aperture = { distribution = "constant", value = 1e-4 }
+radius = { distribution = "constant", value = 2.0 }
+orientation = { theta = 0.0, phi = 0.0, kappa = 8.0 }

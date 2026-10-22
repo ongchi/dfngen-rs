@@ -1141,3 +1141,103 @@ mod mesh_user_fractures_tiny {
         assert_eq!(mesh_part_count(network.mesh.as_ref().unwrap()), 1);
     }
 }
+
+mod mesh_regions {
+    use super::*;
+
+    /// Region id (position in the regions of the domain mesh plus 1) of the name
+    fn region_id(network: &Network, name: &str) -> usize {
+        network
+            .input
+            .domain_mesh
+            .regions()
+            .iter()
+            .position(|region| region.name == name)
+            .expect("the mesh has the region")
+            + 1
+    }
+
+    /// The regions of the cell at the centroid of each triangle of the
+    /// fractures which the filter selects
+    fn triangle_regions(network: &Network, select: impl Fn(&Poly) -> bool) -> Vec<Vec<usize>> {
+        let mesh = network.mesh.as_ref().unwrap();
+        mesh.triangles
+            .iter()
+            .zip(&mesh.triangle_fractures)
+            .filter(|(_, &position)| {
+                select(&network.dfn.accepted_polys[network.final_fractures[position]])
+            })
+            .map(|(triangle, _)| {
+                let [a, b, c] = triangle.map(|point| mesh.points[point]);
+                let centroid = Point3::from((a.coords + b.coords + c.coords) / 3.);
+                network
+                    .input
+                    .domain_mesh
+                    .regions_at(&centroid)
+                    .expect("each triangle is in the domain mesh")
+                    .to_vec()
+            })
+            .collect()
+    }
+
+    #[test]
+    fn test_family_triangles_are_in_the_family_region() {
+        let network = run("mesh_regions");
+        let south = region_id(&network, "south");
+
+        let regions = triangle_regions(&network, |poly| poly.origin == FractureOrigin::Family(0));
+
+        assert!(!regions.is_empty());
+        assert!(regions
+            .iter()
+            .all(|cell_regions| cell_regions.contains(&south)));
+    }
+
+    #[test]
+    fn test_family_triangles_cross_the_region_boundary_without_use_family_region() {
+        let network = run_with_replaced_text(
+            "mesh_regions",
+            "use_family_region = true",
+            "use_family_region = false",
+        );
+        let north = region_id(&network, "north");
+
+        let regions = triangle_regions(&network, |poly| poly.origin == FractureOrigin::Family(0));
+
+        assert!(regions
+            .iter()
+            .any(|cell_regions| cell_regions.contains(&north)));
+    }
+
+    #[test]
+    fn test_user_fracture_triangles_are_in_its_region() {
+        let network = run("mesh_regions");
+        let south = region_id(&network, "south");
+
+        let regions = triangle_regions(&network, |poly| {
+            poly.origin == FractureOrigin::UserDefined && poly.region_ids == [south]
+        });
+
+        assert!(!regions.is_empty());
+        assert!(regions
+            .iter()
+            .all(|cell_regions| cell_regions.contains(&south)));
+    }
+
+    #[test]
+    fn test_user_fracture_without_region_has_triangles_in_both_regions() {
+        let network = run("mesh_regions");
+        let (south, north) = (region_id(&network, "south"), region_id(&network, "north"));
+
+        let regions = triangle_regions(&network, |poly| {
+            poly.origin == FractureOrigin::UserDefined && poly.region_ids.is_empty()
+        });
+
+        assert!(regions
+            .iter()
+            .any(|cell_regions| cell_regions.contains(&south)));
+        assert!(regions
+            .iter()
+            .any(|cell_regions| cell_regions.contains(&north)));
+    }
+}

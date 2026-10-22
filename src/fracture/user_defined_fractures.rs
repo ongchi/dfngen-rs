@@ -99,6 +99,7 @@ impl UserFracture {
         let mut poly = Poly {
             origin: FractureOrigin::UserDefined,
             user_fracture_id: self.fracture_id,
+            region_ids: self.region_ids.clone(),
             ..Default::default()
         };
         let nodes = &self.vertices;

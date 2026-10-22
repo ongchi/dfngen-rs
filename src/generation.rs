@@ -302,6 +302,7 @@ fn insert_stochastic_fractures(
         )?;
 
         let region_ids = boundary_region_ids(input, &family_collection.families[family_index]);
+        new_poly.region_ids = region_ids.clone();
         let mut reject_counter = 0;
 
         // Re-translate the polygon until it is accepted or reaches its reject limit
@@ -405,7 +406,8 @@ fn insert_stochastic_fractures(
     Ok(())
 }
 
-/// Regions of the boundary lines of a stochastic fracture. No region: all
+/// Regions of a stochastic fracture: its boundary lines are at their
+/// boundary, and its mesh has no triangle outside them. No region: all
 /// cells of the mesh.
 fn boundary_region_ids(input: &Input, family: &FractureFamily) -> Vec<usize> {
     match &input.region_boundaries {

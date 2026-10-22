@@ -231,8 +231,10 @@ pub fn mesh_network(
             }
         }
 
-        // Only the part in the domain mesh: the mesh surface lines are
-        // constraint lines, thus the cut follows the mesh surface
+        // Only the part in the domain mesh, and in the regions of the
+        // fracture: the lines of the mesh surface and of the regions are
+        // constraint lines, thus the cut follows them
+        let region_ids = &polys[position].region_ids;
         for triangle in local.triangles {
             let triangle = triangle.map(|index| global_ids[index]);
             let [a, b, c] = triangle.map(|id| mesh.points[id]);
@@ -240,7 +242,17 @@ pub fn mesh_network(
             total_area += area;
 
             let centroid = Point3::from((a.coords + b.coords + c.coords) / 3.);
-            if input.domain_mesh.regions_at(&centroid).is_none() {
+            let is_in_regions =
+                input
+                    .domain_mesh
+                    .regions_at(&centroid)
+                    .is_some_and(|cell_regions| {
+                        region_ids.is_empty()
+                            || cell_regions
+                                .iter()
+                                .any(|region| region_ids.contains(region))
+                    });
+            if !is_in_regions {
                 trimmed_area += area;
                 continue;
             }
@@ -252,7 +264,7 @@ pub fn mesh_network(
 
     if trimmed_area > 0. {
         info!(
-            "Mesh: {:.1} % of the fracture area is outside the domain mesh and is not in the mesh",
+            "Mesh: {:.1} % of the fracture area is outside the domain mesh or the regions of its fracture and is not in the mesh",
             100. * trimmed_area / total_area
         );
     }

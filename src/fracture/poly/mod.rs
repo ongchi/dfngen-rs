@@ -80,6 +80,11 @@ pub struct Poly {
     /// Lines where the boundary of the region of the fracture crosses it.
     /// Empty without the option `region_boundaries`.
     pub boundary_lines: Vec<BoundaryLine>,
+
+    /// Regions of the fracture (N is region N of `DomainMesh::regions`):
+    /// its boundary lines are at their boundary, and its mesh has no
+    /// triangle outside them. Empty: the whole domain mesh.
+    pub region_ids: Vec<usize>,
 }
 
 impl Default for Poly {
@@ -99,6 +104,7 @@ impl Default for Poly {
             vertices: Vec::new(),
             intersection_indices: Vec::new(),
             boundary_lines: Vec::new(),
+            region_ids: Vec::new(),
         }
     }
 }
