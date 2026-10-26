@@ -24,6 +24,11 @@ rejects_per_fracture = 10
 [region_boundaries]
 enable = true
 
+[mesh]
+enable = false
+max_size_factor = 10.0
+slope = 0.5
+
 [clusters]
 keep_only_largest = false
 keep_isolated_fractures = true

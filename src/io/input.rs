@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::path::Path;
 use std::rc::Rc;
 
@@ -7,7 +8,7 @@ use tracing::{debug, info, warn};
 
 use crate::distribution::{ApertureDistribution, Fisher, LogNormalSampling, RadiusDistribution};
 use crate::domain_mesh::{DomainMesh, MeshRegion};
-use crate::error::{DfngenError, FamilyError, RegionError};
+use crate::error::{DfngenError, FamilyError, RegionError, UserFractureError};
 use crate::fracture::fracture_family::{
     FractureFamily, FractureFamilyBuilder, FractureFamilyCollection,
 };
@@ -107,9 +108,7 @@ struct InputFile {
     generation: GenerationSection,
     #[serde(default)]
     fram: FramSection,
-    #[serde(default)]
     region_boundaries: RegionBoundariesSection,
-    #[serde(default)]
     mesh: MeshSection,
     clusters: ClustersSection,
     #[serde(default, rename = "family")]
@@ -164,10 +163,9 @@ impl FramSection {
     }
 }
 
-/// Without the section or the key: no boundary lines
-#[derive(Deserialize, Default)]
+/// Necessary section and key: `enable = false` gives no boundary lines
+#[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
-#[serde(default)]
 struct RegionBoundariesSection {
     enable: bool,
 }
@@ -179,27 +177,14 @@ impl RegionBoundariesSection {
     }
 }
 
+/// Necessary section and keys: `enable = false` gives no mesh, and the other
+/// keys then have no effect
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
-#[serde(default)]
 struct MeshSection {
     enable: bool,
     max_size_factor: f64,
     slope: f64,
-    user_fracture_aperture: Option<ApertureDistribution>,
-}
-
-/// Without the section or a key: no mesh, and with `enable = true` the
-/// largest triangle size is 10 times `min_feature_size` and the slope 0.5.
-impl Default for MeshSection {
-    fn default() -> Self {
-        Self {
-            enable: false,
-            max_size_factor: 10.,
-            slope: 0.5,
-            user_fracture_aperture: None,
-        }
-    }
 }
 
 #[derive(Deserialize)]
@@ -220,8 +205,8 @@ struct FamilySection {
     region: Option<String>,
     beta: Option<f64>,
     p32_target: Option<f64>,
-    /// Necessary with `[mesh]`, else no effect
-    aperture: Option<ApertureDistribution>,
+    /// Necessary; only the mesh uses it
+    aperture: ApertureDistribution,
     radius: RadiusSection,
     orientation: OrientationSection,
 }
@@ -436,6 +421,7 @@ fn build_input(
             })
         })
         .collect::<Result<Vec<_>, _>>()?;
+    check_piece_apertures(&user_fractures)?;
 
     let family_context = FamilyContext {
         stop_condition,
@@ -458,11 +444,7 @@ fn build_input(
     }
 
     let region_boundaries = file.region_boundaries.options();
-    let mesh = build_mesh_options(
-        file,
-        region_boundaries.is_some(),
-        !user_fractures.is_empty(),
-    )?;
+    let mesh = build_mesh_options(file, region_boundaries.is_some())?;
 
     if mesh.is_some() && fram.is_none() {
         warn!("[mesh] with FRAM off: features smaller than min_feature_size give bad triangles");
@@ -496,18 +478,16 @@ fn build_input(
     ))
 }
 
-/// The mesh options, or `None` if `[mesh]` is off. The aperture keys then
-/// have no effect.
+/// The mesh options, or `None` if `[mesh]` is off. The apertures then
+/// have no effect. `build_family` has checked the family apertures.
 ///
 /// # Arguments
 ///
 /// * `file` - Content of the TOML input file
 /// * `has_boundary_lines` - True if `[region_boundaries]` is on
-/// * `has_user_fractures` - True if the input has user-defined fractures
 fn build_mesh_options(
     file: &InputFile,
     has_boundary_lines: bool,
-    has_user_fractures: bool,
 ) -> Result<Option<MeshOptions>, DfngenError> {
     let section = &file.mesh;
 
@@ -525,54 +505,30 @@ fn build_mesh_options(
         return Err(DfngenError::MeshSlope);
     }
 
-    let family_apertures = file
-        .families
-        .iter()
-        .enumerate()
-        .map(|(i, family)| {
-            let family_error = |source| DfngenError::Family {
-                family: i + 1,
-                source,
-            };
-            let aperture = family
-                .aperture
-                .clone()
-                .ok_or_else(|| family_error(FamilyError::ApertureMissing))?;
-            aperture
-                .validate()
-                .map_err(|error| family_error(error.into()))?;
-            Ok(aperture)
-        })
-        .collect::<Result<Vec<_>, DfngenError>>()?;
-
-    let user_fracture_aperture = if has_user_fractures {
-        let aperture = section
-            .user_fracture_aperture
-            .clone()
-            .ok_or(DfngenError::UserFractureApertureMissing)?;
-        aperture
-            .validate()
-            .map_err(DfngenError::UserFractureAperture)?;
-        Some(aperture)
-    } else {
-        None
-    };
-
     Ok(Some(MeshOptions {
         max_size_factor: section.max_size_factor,
         slope: section.slope,
-        family_apertures,
-        user_fracture_aperture,
+        family_apertures: file
+            .families
+            .iter()
+            .map(|family| family.aperture.clone())
+            .collect(),
     }))
 }
 
 /// Moves a polygon of the user-defined fracture file to the coordinates of
-/// the generation (the center of the mesh at the origin), and finds its regions
-/// in the mesh.
+/// the generation (the center of the mesh at the origin), finds its regions
+/// in the mesh, and checks its aperture.
 fn build_user_fracture(
     polygon: &FracturePolygon,
     domain_mesh: &DomainMesh,
-) -> Result<UserFracture, RegionError> {
+) -> Result<UserFracture, UserFractureError> {
+    if !(polygon.aperture.is_finite() && polygon.aperture > 0.) {
+        return Err(UserFractureError::Aperture {
+            aperture: polygon.aperture,
+        });
+    }
+
     let domain_center = domain_mesh.center();
 
     Ok(UserFracture {
@@ -587,7 +543,33 @@ fn build_user_fracture(
             .map(|region| find_mesh_region_id(Some(region), domain_mesh.regions()))
             .collect::<Result<_, _>>()?,
         fracture_id: polygon.fracture_id,
+        aperture: polygon.aperture,
     })
+}
+
+/// The pieces of a user-defined fracture (same `fracture_id`) must have the
+/// same aperture: the mesh gives the fracture one aperture.
+fn check_piece_apertures(user_fractures: &[UserFracture]) -> Result<(), DfngenError> {
+    let mut first_apertures: HashMap<u64, f64> = HashMap::new();
+
+    for fracture in user_fractures {
+        let Some(fracture_id) = fracture.fracture_id else {
+            continue;
+        };
+        let first = *first_apertures
+            .entry(fracture_id)
+            .or_insert(fracture.aperture);
+
+        if fracture.aperture != first {
+            return Err(DfngenError::UserFracturePieceApertures {
+                fracture_id,
+                first,
+                other: fracture.aperture,
+            });
+        }
+    }
+
+    Ok(())
 }
 
 /// Values of the input file which each family needs.
@@ -618,6 +600,8 @@ fn build_family(
         .orientation(build_orientation(&section.orientation, context.eps)?)
         .region_id(region_id)
         .domain_mesh(context.domain_mesh.clone());
+
+    section.aperture.validate()?;
 
     if let Some(beta) = section.beta {
         builder.beta(beta.to_radians());
@@ -760,6 +744,14 @@ pub mod test_inputs {
         write_rejected_fractures = false
         rejects_per_fracture = 10
 
+        [region_boundaries]
+        enable = false
+
+        [mesh]
+        enable = false
+        max_size_factor = 10.0
+        slope = 0.5
+
         [clusters]
         keep_only_largest = false
         keep_isolated_fractures = false
@@ -784,6 +776,7 @@ mod tests {
         number_of_points = 4
         probability = 0.6
         aspect_ratio = 1.5
+        aperture = { distribution = "constant", value = 1e-4 }
         radius = { distribution = "log_normal", log_mean = 0.5, sd = 0.4, min = 1.0, max = 4.0 }
         orientation = { trend = 90.0, plunge = 30.0, kappa = 10.0 }
     "#;
@@ -794,6 +787,7 @@ mod tests {
         probability = 0.4
         aspect_ratio = 1.0
         beta = 90.0
+        aperture = { distribution = "constant", value = 1e-4 }
         radius = { distribution = "truncated_power_law", alpha = 2.5, min = 1.0, max = 5.0 }
         orientation = { theta = 0.0, phi = 0.0, kappa = 8.0 }
     "#;
@@ -984,15 +978,35 @@ mod tests {
         regions: &[&str],
     ) -> Result<(Input, FractureFamilyCollection), DfngenError> {
         let triangle = FracturePolygon {
-            vertices: vec![[15., 25., 35.], [16., 25., 35.], [16., 26., 35.]],
             regions: regions.iter().map(ToString::to_string).collect(),
-            fracture_id: Some(4),
+            ..triangle(2e-4, Some(4))
         };
 
         build_input(
             &parse_input_file(options).unwrap(),
             l_shaped_mesh(),
             &[triangle],
+        )
+    }
+
+    /// A triangle in the L-shaped mesh with no region; its first vertex is the center of the mesh
+    fn triangle(aperture: f64, fracture_id: Option<u64>) -> FracturePolygon {
+        FracturePolygon {
+            vertices: vec![[15., 25., 35.], [16., 25., 35.], [16., 26., 35.]],
+            aperture,
+            regions: Vec::new(),
+            fracture_id,
+        }
+    }
+
+    /// Builds the input of `GENERAL_OPTIONS` with these user-defined fractures
+    fn parse_with_triangles(
+        triangles: &[FracturePolygon],
+    ) -> Result<(Input, FractureFamilyCollection), DfngenError> {
+        build_input(
+            &parse_input_file(GENERAL_OPTIONS).unwrap(),
+            l_shaped_mesh(),
+            triangles,
         )
     }
 
@@ -1024,8 +1038,10 @@ mod tests {
         assert!(
             matches!(
                 &error,
-                DfngenError::UserFracture { fracture: 1, source: RegionError::Unknown { region } }
-                    if region == "east"
+                DfngenError::UserFracture {
+                    fracture: 1,
+                    source: UserFractureError::Region(RegionError::Unknown { region })
+                } if region == "east"
             ),
             "{error}"
         );
@@ -1098,15 +1114,16 @@ mod tests {
         assert!(message.contains("missing field `seed`"), "{}", message);
     }
 
+    /// The options with this text in place of the section `[name]`
+    fn replace_section(options: &str, name: &str, section: &str) -> String {
+        let start = options.find(&format!("[{name}]")).unwrap();
+        let end = start + 1 + options[start + 1..].find('[').unwrap();
+        format!("{}{section}\n{}", &options[..start], &options[end..])
+    }
+
     /// `GENERAL_OPTIONS` with this text in place of its `[fram]` section
     fn replace_fram_section(fram_section: &str) -> String {
-        let start = GENERAL_OPTIONS.find("[fram]").unwrap();
-        let end = GENERAL_OPTIONS.find("[clusters]").unwrap();
-        format!(
-            "{}{fram_section}\n{}",
-            &GENERAL_OPTIONS[..start],
-            &GENERAL_OPTIONS[end..]
-        )
+        replace_section(GENERAL_OPTIONS, "fram", fram_section)
     }
 
     #[test]
@@ -1155,21 +1172,35 @@ mod tests {
         assert_eq!(input.fram, None);
     }
 
-    /// `GENERAL_OPTIONS` with this text before its `[clusters]` section
-    fn add_before_clusters(section: &str) -> String {
-        GENERAL_OPTIONS.replace("[clusters]", &format!("{section}\n[clusters]"))
+    /// `GENERAL_OPTIONS` with this text in place of its `[region_boundaries]` section
+    fn replace_region_boundaries_section(section: &str) -> String {
+        replace_section(GENERAL_OPTIONS, "region_boundaries", section)
     }
 
     #[test]
-    fn test_region_boundaries_are_off_without_their_section() {
-        let (input, _) = parse(&[GENERAL_OPTIONS]).unwrap();
+    fn test_input_without_region_boundaries_section_is_rejected() {
+        let options = replace_region_boundaries_section("");
 
-        assert_eq!(input.region_boundaries, None);
+        let message = error_message(parse(&[&options]));
+
+        assert!(
+            message.contains("missing field `region_boundaries`"),
+            "{message}"
+        );
+    }
+
+    #[test]
+    fn test_region_boundaries_without_enable_is_rejected() {
+        let options = replace_region_boundaries_section("[region_boundaries]\n");
+
+        let message = error_message(parse(&[&options]));
+
+        assert!(message.contains("missing field `enable`"), "{message}");
     }
 
     #[test]
     fn test_region_boundaries_are_on_with_enable_true() {
-        let options = add_before_clusters("[region_boundaries]\nenable = true\n");
+        let options = replace_region_boundaries_section("[region_boundaries]\nenable = true\n");
 
         let (input, _) = parse(&[&options]).unwrap();
 
@@ -1178,16 +1209,15 @@ mod tests {
 
     #[test]
     fn test_region_boundaries_are_off_with_enable_false() {
-        let options = add_before_clusters("[region_boundaries]\nenable = false\n");
-
-        let (input, _) = parse(&[&options]).unwrap();
+        let (input, _) = parse(&[GENERAL_OPTIONS]).unwrap();
 
         assert_eq!(input.region_boundaries, None);
     }
 
     #[test]
     fn test_unknown_region_boundaries_key_is_rejected() {
-        let options = add_before_clusters("[region_boundaries]\nenable = true\ncut = true\n");
+        let options =
+            replace_region_boundaries_section("[region_boundaries]\nenable = true\ncut = true\n");
 
         let message = error_message(parse(&[&options]));
 
@@ -1459,40 +1489,79 @@ mod tests {
         );
     }
 
-    const MESH_SECTIONS: &str = "[region_boundaries]\nenable = true\n[mesh]\nenable = true\n";
-    const CONSTANT_APERTURE: &str =
-        "aperture = { distribution = \"constant\", value = 1e-4 }\norientation";
+    /// `GENERAL_OPTIONS` with the boundary lines on and this `[mesh]` section
+    fn options_with_mesh_section(mesh_section: &str) -> String {
+        let options = replace_section(
+            GENERAL_OPTIONS,
+            "region_boundaries",
+            "[region_boundaries]\nenable = true\n",
+        );
+        replace_section(&options, "mesh", mesh_section)
+    }
 
     #[test]
-    fn test_mesh_is_off_without_its_section() {
+    fn test_mesh_is_off_with_enable_false() {
         let (input, _) = parse(&[GENERAL_OPTIONS, ELLIPSE_FAMILY]).unwrap();
 
         assert_eq!(input.mesh, None);
     }
 
     #[test]
-    fn test_mesh_section_with_only_enable_has_the_defaults() {
-        let family = ELLIPSE_FAMILY.replace("orientation", CONSTANT_APERTURE);
+    fn test_mesh_options_are_read_with_enable_true() {
+        let options = options_with_mesh_section(
+            "[mesh]\nenable = true\nmax_size_factor = 4.0\nslope = 0.3\n",
+        );
 
-        let (input, _) = parse(&[&add_before_clusters(MESH_SECTIONS), &family]).unwrap();
+        let (input, _) = parse(&[&options, ELLIPSE_FAMILY]).unwrap();
 
         assert_eq!(
             input.mesh,
             Some(MeshOptions {
-                max_size_factor: 10.,
-                slope: 0.5,
+                max_size_factor: 4.,
+                slope: 0.3,
                 family_apertures: vec![ApertureDistribution::Constant { value: 1e-4 }],
-                user_fracture_aperture: None,
             })
         );
     }
 
     #[test]
-    fn test_mesh_needs_region_boundaries() {
-        let family = ELLIPSE_FAMILY.replace("orientation", CONSTANT_APERTURE);
-        let options = add_before_clusters("[mesh]\nenable = true\n");
+    fn test_input_without_mesh_section_is_rejected() {
+        let options = replace_section(GENERAL_OPTIONS, "mesh", "");
 
-        let error = input_error(parse(&[&options, &family]));
+        let message = error_message(parse(&[&options]));
+
+        assert!(message.contains("missing field `mesh`"), "{message}");
+    }
+
+    #[test]
+    fn test_mesh_section_without_a_key_is_rejected() {
+        for key in ["enable", "max_size_factor", "slope"] {
+            let mesh_section: String =
+                "[mesh]\nenable = false\nmax_size_factor = 10.0\nslope = 0.5\n"
+                    .lines()
+                    .filter(|line| !line.starts_with(key))
+                    .map(|line| format!("{line}\n"))
+                    .collect();
+            let options = replace_section(GENERAL_OPTIONS, "mesh", &mesh_section);
+
+            let message = error_message(parse(&[&options]));
+
+            assert!(
+                message.contains(&format!("missing field `{key}`")),
+                "{message}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_mesh_needs_region_boundaries() {
+        let options = replace_section(
+            GENERAL_OPTIONS,
+            "mesh",
+            "[mesh]\nenable = true\nmax_size_factor = 10.0\nslope = 0.5\n",
+        );
+
+        let error = input_error(parse(&[&options, ELLIPSE_FAMILY]));
 
         assert!(
             matches!(error, DfngenError::MeshNeedsRegionBoundaries),
@@ -1501,41 +1570,25 @@ mod tests {
     }
 
     #[test]
-    fn test_mesh_needs_the_aperture_of_each_family() {
-        let error = input_error(parse(&[
-            &add_before_clusters(MESH_SECTIONS),
-            ELLIPSE_FAMILY,
-        ]));
-
-        assert!(
-            matches!(
-                error,
-                DfngenError::Family {
-                    family: 1,
-                    source: FamilyError::ApertureMissing
-                }
-            ),
-            "{error}"
-        );
-    }
-
-    #[test]
-    fn test_family_aperture_without_mesh_has_no_effect() {
-        let family = ELLIPSE_FAMILY.replace("orientation", CONSTANT_APERTURE);
-
-        let (input, _) = parse(&[GENERAL_OPTIONS, &family]).unwrap();
-
-        assert_eq!(input.mesh, None);
-    }
-
-    #[test]
-    fn test_negative_aperture_sd_is_rejected() {
+    fn test_family_without_aperture_is_rejected() {
         let family = ELLIPSE_FAMILY.replace(
-            "orientation",
-            "aperture = { distribution = \"log_normal\", log_mean = -8.0, sd = -1.0 }\norientation",
+            "aperture = { distribution = \"constant\", value = 1e-4 }",
+            "",
         );
 
-        let error = input_error(parse(&[&add_before_clusters(MESH_SECTIONS), &family]));
+        let message = error_message(parse(&[GENERAL_OPTIONS, &family]));
+
+        assert!(message.contains("missing field `aperture`"), "{message}");
+    }
+
+    #[test]
+    fn test_negative_aperture_sd_is_rejected_without_mesh() {
+        let family = ELLIPSE_FAMILY.replace(
+            "{ distribution = \"constant\", value = 1e-4 }",
+            "{ distribution = \"log_normal\", log_mean = -8.0, sd = -1.0 }",
+        );
+
+        let error = input_error(parse(&[GENERAL_OPTIONS, &family]));
 
         assert!(
             matches!(
@@ -1551,47 +1604,68 @@ mod tests {
 
     #[test]
     fn test_mesh_slope_of_zero_is_rejected() {
-        let family = ELLIPSE_FAMILY.replace("orientation", CONSTANT_APERTURE);
-        let options = add_before_clusters(&format!("{MESH_SECTIONS}slope = 0.0\n"));
+        let options = options_with_mesh_section(
+            "[mesh]\nenable = true\nmax_size_factor = 10.0\nslope = 0.0\n",
+        );
 
-        let error = input_error(parse(&[&options, &family]));
+        let error = input_error(parse(&[&options, ELLIPSE_FAMILY]));
 
         assert!(matches!(error, DfngenError::MeshSlope), "{error}");
     }
 
     #[test]
     fn test_mesh_max_size_factor_below_one_is_rejected() {
-        let family = ELLIPSE_FAMILY.replace("orientation", CONSTANT_APERTURE);
-        let options = add_before_clusters(&format!("{MESH_SECTIONS}max_size_factor = 0.5\n"));
+        let options = options_with_mesh_section(
+            "[mesh]\nenable = true\nmax_size_factor = 0.5\nslope = 0.5\n",
+        );
 
-        let error = input_error(parse(&[&options, &family]));
+        let error = input_error(parse(&[&options, ELLIPSE_FAMILY]));
 
         assert!(matches!(error, DfngenError::MeshMaxSizeFactor), "{error}");
     }
 
     #[test]
-    fn test_mesh_needs_the_aperture_of_the_user_fractures() {
-        let error = input_error(parse_options_with_triangle(
-            &add_before_clusters(MESH_SECTIONS),
-            &[],
-        ));
+    fn test_user_fracture_keeps_the_aperture_of_its_polygon() {
+        let (input, _) = parse_with_triangles(&[triangle(2e-4, None)]).unwrap();
 
-        assert!(
-            matches!(error, DfngenError::UserFractureApertureMissing),
-            "{error}"
-        );
+        assert_eq!(input.user_fractures[0].aperture, 2e-4);
     }
 
     #[test]
-    fn test_zero_user_fracture_aperture_is_rejected() {
-        let options = add_before_clusters(&format!(
-            "{MESH_SECTIONS}user_fracture_aperture = {{ distribution = \"constant\", value = 0.0 }}\n"
-        ));
+    fn test_zero_and_nan_user_fracture_apertures_are_rejected() {
+        for aperture in [0., f64::NAN] {
+            let error = input_error(parse_with_triangles(&[triangle(aperture, None)]));
 
-        let error = input_error(parse_options_with_triangle(&options, &[]));
+            assert!(
+                matches!(
+                    error,
+                    DfngenError::UserFracture {
+                        fracture: 1,
+                        source: UserFractureError::Aperture { .. }
+                    }
+                ),
+                "{error}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_pieces_with_different_apertures_are_rejected() {
+        let error = input_error(parse_with_triangles(&[
+            triangle(2e-4, Some(4)),
+            triangle(2e-4, Some(5)),
+            triangle(3e-4, Some(4)),
+        ]));
 
         assert!(
-            matches!(error, DfngenError::UserFractureAperture(_)),
+            matches!(
+                error,
+                DfngenError::UserFracturePieceApertures {
+                    fracture_id: 4,
+                    first: 2e-4,
+                    other: 3e-4
+                }
+            ),
             "{error}"
         );
     }

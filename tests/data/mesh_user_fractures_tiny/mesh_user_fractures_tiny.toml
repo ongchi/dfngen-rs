@@ -25,7 +25,8 @@ enable = true
 
 [mesh]
 enable = true
-user_fracture_aperture = { distribution = "constant", value = 2e-4 }
+max_size_factor = 10.0
+slope = 0.5
 
 [clusters]
 keep_only_largest = false

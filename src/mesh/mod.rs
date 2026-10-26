@@ -47,11 +47,9 @@ pub struct MeshOptions {
     /// a boundary line
     pub slope: f64,
 
-    /// Aperture of each stochastic family, in the order of the families
+    /// Aperture of each stochastic family, in the order of the families.
+    /// A user-defined fracture has its own aperture (`Poly.user_fracture_aperture`).
     pub family_apertures: Vec<ApertureDistribution>,
-
-    /// Aperture of the user-defined fractures. `None` if there are none.
-    pub user_fracture_aperture: Option<ApertureDistribution>,
 }
 
 /// Triangle mesh of the final fractures
@@ -382,8 +380,9 @@ fn fracture_groups(polys: &[&Poly]) -> Vec<usize> {
         .collect()
 }
 
-/// The aperture of each final fracture. The apertures have their own
-/// generator from the seed, thus the network does not change.
+/// The aperture of each final fracture. The apertures of the families have their own
+/// generator from the seed, thus the network does not change. A user-defined
+/// fracture has the aperture of its file.
 fn sample_apertures(
     polys: &[&Poly],
     groups: &[usize],
@@ -399,18 +398,18 @@ fn sample_apertures(
             continue;
         }
 
-        let distribution = match poly.origin {
-            FractureOrigin::Family(index) => options.family_apertures.get(index),
-            FractureOrigin::UserDefined => options.user_fracture_aperture.as_ref(),
-        }
-        .ok_or_else(|| {
-            DfngenError::Mesh(format!(
-                "fracture {}: no aperture distribution",
-                position + 1
-            ))
-        })?;
+        let no_aperture = || DfngenError::Mesh(format!("fracture {}: no aperture", position + 1));
 
-        apertures.push(distribution.sample(poly.x_radius, &mut generator));
+        let aperture = match poly.origin {
+            FractureOrigin::Family(index) => options
+                .family_apertures
+                .get(index)
+                .ok_or_else(no_aperture)?
+                .sample(poly.x_radius, &mut generator),
+            FractureOrigin::UserDefined => poly.user_fracture_aperture.ok_or_else(no_aperture)?,
+        };
+
+        apertures.push(aperture);
     }
 
     Ok(apertures)

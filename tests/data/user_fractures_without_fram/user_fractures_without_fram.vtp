@@ -29,6 +29,11 @@
 4 8 12
 </DataArray>
 </Polys>
+<CellData>
+<DataArray type="Float64" Name="aperture" format="ascii">
+2e-4 2e-4 2e-4
+</DataArray>
+</CellData>
 </Piece>
 </PolyData>
 </VTKFile>

@@ -36,15 +36,14 @@ check_user_fractures = true        # default false; false = no FRAM for two user
 write_rejected_fractures = false   # default false; true = also write the fractures which FRAM rejected to fractures_rejected.vtp (see "Output files")
 rejects_per_fracture = 10          # default 10; FRAM rejects of a stochastic fracture before it is rejected; it moves after each reject
 
-# Optional section; each key is optional. Without it: no boundary lines.
+# Necessary section and key. fehm-rs needs the lines: they give the boundaries of the mesh.
 [region_boundaries]
-enable = true                      # default false; true = write the lines where the boundary of the region of each fracture crosses it (see "Boundary lines of the regions")
-# Optional section; each key is optional. Without it: no mesh.
+enable = true                      # true = write the lines where the boundary of the region of each fracture crosses it (see "Boundary lines of the regions"); false = no lines
+# Necessary section; each key is necessary. With enable = false, the other keys have no effect.
 [mesh]
-enable = true                      # default false; true = write the triangle mesh of the final fractures for fehm-rs (see "Triangle mesh for fehm-rs"); needs region_boundaries.enable = true
-max_size_factor = 10.0             # default 10; >= 1; largest triangle size = max_size_factor × min_feature_size
-slope = 0.5                        # default 0.5; > 0; growth of the triangle size with the distance from an intersection or a boundary line
-user_fracture_aperture = { distribution = "constant", value = 1e-3 } # necessary with mesh and user-defined fractures; see "Apertures"
+enable = true                      # true = write the triangle mesh of the final fractures for fehm-rs (see "Triangle mesh for fehm-rs"); needs region_boundaries.enable = true; false = no mesh
+max_size_factor = 10.0             # >= 1; largest triangle size = max_size_factor × min_feature_size
+slope = 0.5                        # > 0; growth of the triangle size with the distance from an intersection or a boundary line
 
 [clusters]
 keep_only_largest = false          # true = keep only the largest cluster; no effect with keep_isolated_fractures = true
@@ -58,7 +57,7 @@ aspect_ratio = 1.0                 # > 0; y radius / x radius
 region = "marble"                  # optional; a region of the mesh (see below). Without it: the whole mesh
 beta = 30.0                        # optional; without it the rotation is uniform
 p32_target = 0.5                   # necessary without n_poly; not allowed with n_poly
-aperture = { distribution = "constant", value = 1e-4 } # necessary with mesh.enable = true, else no effect; see "Apertures"
+aperture = { distribution = "constant", value = 1e-4 } # necessary; only the mesh uses it; see "Apertures"
 radius = { distribution = "truncated_power_law", alpha = 2.5, min = 1.0, max = 5.0 } # see "Radius distributions" below
 orientation = { theta = 0.0, phi = 0.0, kappa = 8.0 } # see "Orientation of a family" below
 ```
@@ -248,10 +247,11 @@ network is the same as without the option.
   another region) is in both arrays. fehm-rs gives such a point the pressure
   of the first of the two boundaries in its input file, with a warning.
 
-Apertures: each family has an `aperture`, and the user-defined fractures
-have `mesh.user_fracture_aperture`. The distributions (as the transmissivity
+Apertures: each family has an `aperture` distribution, and each user-defined
+fracture has the value of the cell data array `aperture` of its file (see
+"User-defined fractures"). The distributions (as the transmissivity
 options of dfnWorks, with the aperture in place of the transmissivity; r is
-the x radius, for a user-defined fracture the estimate from its vertices):
+the x radius):
 
 | `distribution` | Parameters | Aperture (m) |
 |---|---|---|
@@ -260,7 +260,7 @@ the x radius, for a user-defined fracture the estimate from its vertices):
 | `correlated` | `alpha` (> 0), `beta` | `alpha` × r^`beta` |
 | `semi_correlated` | `alpha` (> 0), `beta`, `sd` (>= 0) | `alpha` × r^`beta` × exp(`sd` × N(0, 1)) |
 
-The pieces of a user-defined fracture have one aperture. The permeability is
+The permeability is
 aperture² / 12 (cubic law). The random numbers of the apertures come from a
 separate generator with the seed, thus they do not change the network.
 
@@ -378,6 +378,9 @@ must be before the first table (`[generation]`) of the input file.
 - A polygon must have 3 points or more. The fractures are inserted in the
   order of the cells.
 - The coordinates are those of the mesh file.
+- The cell data array `aperture` (necessary) gives the aperture (m) of each
+  polygon: one number above 0 for each cell of the file. The pieces of one
+  fracture (same `fracture_id`, see below) must have the same aperture.
 - The cell data arrays `region__<name>` (optional) give the regions of each
   fracture, as in the mesh file: a polygon with a value above 0 in the array
   `region__<name>` has the region `<name>`. A fracture can have many regions,
@@ -418,7 +421,8 @@ must be before the first table (`[generation]`) of the input file.
   all FRAM checks. The network then does not obey the minimum feature size `min_feature_size`
   at the user-defined fractures.
 - The point data and the other cell data of the file are ignored. Thus
-  `fractures.vtp` of a run can be the user-defined fractures of a new run. It
+  `fractures.vtp` of a run can be the user-defined fractures of a new run,
+  after an `aperture` array is added to it. It
   has no `region__<name>` array, so its fractures have no region. Its `fracture_id`
   array has a different number for each polygon, so each polygon is one
   fracture.

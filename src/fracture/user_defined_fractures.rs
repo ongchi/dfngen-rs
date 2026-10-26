@@ -92,6 +92,9 @@ pub struct UserFracture {
     /// Value of the `fracture_id` array of the file. Polygons with the same
     /// value are pieces of one fracture. `None` if the file has no such array.
     pub fracture_id: Option<u64>,
+
+    /// Value of the `aperture` array of the file (m)
+    pub aperture: f64,
 }
 
 impl UserFracture {
@@ -99,6 +102,7 @@ impl UserFracture {
         let mut poly = Poly {
             origin: FractureOrigin::UserDefined,
             user_fracture_id: self.fracture_id,
+            user_fracture_aperture: Some(self.aperture),
             region_ids: self.region_ids.clone(),
             ..Default::default()
         };
@@ -159,6 +163,7 @@ mod tests {
             vertices: vec![[0., 0., 0.], [1., 0., 0.], [1., 1., 0.]],
             region_ids: Vec::new(),
             fracture_id: None,
+            aperture: 1e-4,
         };
 
         assert_eq!(triangle.to_poly().normal, Vector3::new(0., 0., 1.));

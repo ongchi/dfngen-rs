@@ -38,7 +38,16 @@ pub enum DfngenError {
     #[error("Invalid input file: user-defined fracture {fracture}: {source}")]
     UserFracture {
         fracture: usize,
-        source: RegionError,
+        source: UserFractureError,
+    },
+    /// The polygons of one fracture (same `fracture_id`) are one fracture of the mesh
+    #[error(
+        "Invalid input file: the pieces of the user-defined fracture with fracture_id {fracture_id} have different apertures ({first} and {other}). Give them one aperture."
+    )]
+    UserFracturePieceApertures {
+        fracture_id: u64,
+        first: f64,
+        other: f64,
     },
     /// `family` starts at 1, in the order of the input file
     #[error("Invalid input file: family {family}: {source}")]
@@ -51,12 +60,6 @@ pub enum DfngenError {
     MeshMaxSizeFactor,
     #[error("Invalid input file: mesh.slope must be greater than 0")]
     MeshSlope,
-    #[error(
-        "Invalid input file: mesh.user_fracture_aperture is necessary with user-defined fractures"
-    )]
-    UserFractureApertureMissing,
-    #[error("Invalid input file: mesh.user_fracture_aperture: {0}")]
-    UserFractureAperture(InvalidAperture),
     #[error("No fracture is defined. Add a fracture family or a user-defined fracture in the domain to the input file.")]
     NoFractureDefined,
     #[error("Mesh: {0}")]
@@ -74,6 +77,15 @@ pub enum RegionError {
     Empty { region: String },
 }
 
+/// A value of a user-defined fracture which is not valid
+#[derive(thiserror::Error, Debug)]
+pub enum UserFractureError {
+    #[error(transparent)]
+    Region(#[from] RegionError),
+    #[error("the aperture {aperture} of the aperture array must be above 0")]
+    Aperture { aperture: f64 },
+}
+
 /// A value of a fracture family which is not valid
 #[derive(thiserror::Error, Debug)]
 pub enum FamilyError {
@@ -89,8 +101,6 @@ pub enum FamilyError {
     P32TargetMissing,
     #[error("p32_target is not allowed when generation.n_poly is set")]
     P32TargetNotAllowed,
-    #[error("aperture is necessary with [mesh]")]
-    ApertureMissing,
     #[error(transparent)]
     Aperture(#[from] InvalidAperture),
     /// A value which the input code did not give to the family builder (a defect of the code)

@@ -17,6 +17,14 @@ triple_intersections = true
 write_rejected_fractures = true
 rejects_per_fracture = 10
 
+[region_boundaries]
+enable = false
+
+[mesh]
+enable = false
+max_size_factor = 10.0
+slope = 0.5
+
 [clusters]
 keep_only_largest = false
 keep_isolated_fractures = false
@@ -25,6 +33,7 @@ keep_isolated_fractures = false
 number_of_points = 8
 probability = 0.4
 aspect_ratio = 1.0
+aperture = { distribution = "constant", value = 1e-4 }
 radius = { distribution = "truncated_power_law", alpha = 2.5, min = 1.0, max = 3.0 }
 orientation = { theta = 0.0, phi = 0.0, kappa = 20.0 }
 
@@ -32,6 +41,7 @@ orientation = { theta = 0.0, phi = 0.0, kappa = 20.0 }
 number_of_points = 8
 probability = 0.3
 aspect_ratio = 1.0
+aperture = { distribution = "constant", value = 1e-4 }
 radius = { distribution = "truncated_power_law", alpha = 2.5, min = 1.0, max = 3.0 }
 orientation = { theta = 90.0, phi = 0.0, kappa = 20.0 }
 
@@ -39,5 +49,6 @@ orientation = { theta = 90.0, phi = 0.0, kappa = 20.0 }
 number_of_points = 8
 probability = 0.3
 aspect_ratio = 1.0
+aperture = { distribution = "constant", value = 1e-4 }
 radius = { distribution = "truncated_power_law", alpha = 2.5, min = 1.0, max = 3.0 }
 orientation = { theta = 90.0, phi = 90.0, kappa = 20.0 }

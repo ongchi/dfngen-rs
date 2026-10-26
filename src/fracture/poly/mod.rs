@@ -43,6 +43,10 @@ pub struct Poly {
     /// stochastic fracture and for a file without the array.
     pub user_fracture_id: Option<u64>,
 
+    /// Aperture (m) of a user-defined fracture, from the `aperture` array of
+    /// its file. `None` for a stochastic fracture: its family gives it.
+    pub user_fracture_aperture: Option<f64>,
+
     /// Cluster group of the fracture (see `ClusterGroups`). It keeps track of the fracture
     /// connectivity. A fracture gets the group of the first fracture which it intersects.
     /// A fracture which intersects no fracture gets a new group. When a fracture bridges
@@ -92,6 +96,7 @@ impl Default for Poly {
         Self {
             origin: FractureOrigin::Family(0),
             user_fracture_id: None,
+            user_fracture_aperture: None,
             group: None,
             area: 0.,
             x_radius: 0.,

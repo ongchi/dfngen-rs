@@ -24,6 +24,8 @@ enable = true
 
 [mesh]
 enable = true
+max_size_factor = 10.0
+slope = 0.5
 
 [clusters]
 keep_only_largest = false

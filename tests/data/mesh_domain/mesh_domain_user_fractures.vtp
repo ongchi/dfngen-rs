@@ -34,6 +34,9 @@
 </DataArray>
 </Polys>
 <CellData Scalars="region__north">
+<DataArray type="Float64" Name="aperture" format="ascii">
+2e-4 2e-4
+</DataArray>
 <DataArray type="Int32" Name="region__north" format="ascii">
 1 0
 </DataArray>

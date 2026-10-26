@@ -29,6 +29,9 @@
 </DataArray>
 </Polys>
 <CellData>
+<DataArray type="Float64" Name="aperture" format="ascii">
+2e-4 2e-4 2e-4
+</DataArray>
 <DataArray type="Int32" Name="fracture_id" format="ascii">
 7 7 8
 </DataArray>

@@ -1,5 +1,5 @@
-# Feature: triangle mesh of user-defined fractures ([mesh] with
-# mesh.user_fracture_aperture). The two pieces of fracture 7 share an edge,
+# Feature: triangle mesh of user-defined fractures ([mesh], with the
+# aperture array of the fracture file). The two pieces of fracture 7 share an edge,
 # and fracture 9 intersects both pieces along that edge. The mesh surface at
 # x = 5 crosses the second piece.
 
@@ -24,7 +24,8 @@ enable = true
 
 [mesh]
 enable = true
-user_fracture_aperture = { distribution = "constant", value = 2e-4 }
+max_size_factor = 10.0
+slope = 0.5
 
 [clusters]
 keep_only_largest = false

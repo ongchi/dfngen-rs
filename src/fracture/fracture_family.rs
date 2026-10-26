@@ -362,6 +362,7 @@ mod tests {
             probability = 1.0
             aspect_ratio = 1.5
             p32_target = {p32_target}
+            aperture = {{ distribution = "constant", value = 1e-4 }}
             radius = {radius}
             orientation = {{ theta = 0.0, phi = 0.0, kappa = 8.0 }}
             "#

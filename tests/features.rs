@@ -1048,7 +1048,8 @@ mod mesh {
     #[test]
     fn test_mesh_does_not_change_the_network() {
         let with_mesh = run("mesh");
-        let without_mesh = run_with_replaced_text("mesh", "[mesh]\nenable = true", "");
+        let without_mesh =
+            run_with_replaced_text("mesh", "[mesh]\nenable = true", "[mesh]\nenable = false");
         let vertices = |network: &Network| -> Vec<Vec<Point3<f64>>> {
             network
                 .dfn
@@ -1073,7 +1074,7 @@ mod mesh_user_fractures {
     }
 
     #[test]
-    fn test_user_fractures_have_the_user_fracture_aperture() {
+    fn test_user_fractures_have_the_aperture_of_their_file() {
         let network = run("mesh_user_fractures");
 
         assert!(network

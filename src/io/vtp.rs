@@ -1,4 +1,5 @@
 use std::path::Path;
+use std::str::FromStr;
 
 use roxmltree::{Document, Node};
 use tracing::warn;
@@ -16,11 +17,17 @@ const CELL_ELEMENTS_AFTER_POLYGONS: [&str; 1] = ["Strips"];
 /// Name of the cell data array which gives the fracture of each polygon
 const FRACTURE_ID_ARRAY: &str = "fracture_id";
 
+/// Name of the cell data array which gives the aperture of each polygon
+const APERTURE_ARRAY: &str = "aperture";
+
 /// A polygon cell of the user-defined fracture file
 #[derive(Debug)]
 pub struct FracturePolygon {
     /// Vertices in the coordinates of the file
     pub vertices: Vec<[f64; 3]>,
+
+    /// Value of the cell data array `aperture` (m)
+    pub aperture: f64,
 
     /// Names of the regions of the polygon: `<name>` of each cell data array
     /// `region__<name>` in which the polygon has a value above 0.
@@ -35,6 +42,7 @@ pub struct FracturePolygon {
 ///
 /// Each polygon cell is one fracture, with the points of the cell as its
 /// vertices. The fractures are in the order of the cells. The cell data array
+/// `aperture` (necessary) gives the aperture of each polygon. The cell data
 /// arrays `region__<name>` (optional) give the regions of each fracture. The cell data array
 /// `fracture_id` (optional) gives the fracture of each polygon, for a fracture
 /// of more than one polygon. The point data and the other cell data of the
@@ -101,8 +109,20 @@ fn read_piece(piece: Node, fracture_count: usize) -> Result<Vec<FracturePolygon>
 
     let user_fracture_ids = cell_data
         .and_then(|cell_data| find_data_array(cell_data, FRACTURE_ID_ARRAY).ok())
-        .map(|id_array| read_user_fracture_ids(id_array, cell_count))
+        .map(|id_array| read_cell_values(id_array, FRACTURE_ID_ARRAY, cell_count))
         .transpose()?;
+
+    let apertures: Vec<f64> = match cell_data
+        .and_then(|cell_data| find_data_array(cell_data, APERTURE_ARRAY).ok())
+    {
+        Some(aperture_array) => read_cell_values(aperture_array, APERTURE_ARRAY, cell_count)?,
+        None if offsets.is_empty() => Vec::new(),
+        None => {
+            return Err(format!(
+                "the cell data array {APERTURE_ARRAY} is necessary: it gives the aperture (m) of each fracture"
+            ))
+        }
+    };
 
     let mut fractures = Vec::with_capacity(offsets.len());
     let mut cell_start = 0;
@@ -127,6 +147,7 @@ fn read_piece(piece: Node, fracture_count: usize) -> Result<Vec<FracturePolygon>
 
         fractures.push(FracturePolygon {
             vertices: point_ids.iter().map(|&id| points[id]).collect(),
+            aperture: apertures[cell_count_before_polygons + cell],
             regions: region_arrays
                 .iter()
                 .filter(|region_array| {
@@ -145,26 +166,31 @@ fn read_piece(piece: Node, fracture_count: usize) -> Result<Vec<FracturePolygon>
     Ok(fractures)
 }
 
-/// Reads the `fracture_id` array: one integer of 0 or more for each cell.
-fn read_user_fracture_ids(id_array: Node, cell_count: usize) -> Result<Vec<u64>, String> {
-    if read_component_count(id_array)? != 1 {
+/// Reads a cell data array with one value for each cell (`fracture_id`:
+/// integers of 0 or more; `aperture`: numbers).
+fn read_cell_values<T: FromStr>(
+    data_array: Node,
+    name: &str,
+    cell_count: usize,
+) -> Result<Vec<T>, String> {
+    if read_component_count(data_array)? != 1 {
         return Err(format!(
-            "the {FRACTURE_ID_ARRAY} array must have one value for each fracture (NumberOfComponents=\"1\")"
+            "the {name} array must have one value for each fracture (NumberOfComponents=\"1\")"
         ));
     }
 
-    let ids: Vec<u64> = read_values(id_array)?;
+    let values: Vec<T> = read_values(data_array)?;
 
-    if ids.len() != cell_count {
+    if values.len() != cell_count {
         return Err(format!(
             "the {} array must have one value for each cell, but it has {} values for {} cells",
-            FRACTURE_ID_ARRAY,
-            ids.len(),
+            name,
+            values.len(),
             cell_count
         ));
     }
 
-    Ok(ids)
+    Ok(values)
 }
 
 /// Number of cells of the given kinds in the piece. These cells are not
@@ -232,13 +258,26 @@ mod tests {
         vtp_file("PolyData", "0 1 2 3  1 4 2", "4 7", other_elements)
     }
 
+    /// `aperture` array with the given values
+    fn aperture_array(values: &str) -> String {
+        format!(r#"<DataArray type="Float64" Name="aperture" format="ascii">{values}</DataArray>"#)
+    }
+
+    /// `CellData` element with the apertures of the square and the triangle, and the given arrays
+    fn cell_data(arrays: &str) -> String {
+        format!(
+            "<CellData>{}{arrays}</CellData>",
+            aperture_array("1e-4 2e-4")
+        )
+    }
+
     fn error_message(file: &str) -> String {
         parse_user_fractures(file).expect_err("the file must be rejected")
     }
 
     #[test]
     fn test_each_polygon_is_one_fracture_in_cell_order() {
-        let fractures = parse_user_fractures(&square_and_triangle_file("")).unwrap();
+        let fractures = parse_user_fractures(&square_and_triangle_file(&cell_data(""))).unwrap();
 
         let vertex_counts: Vec<usize> = fractures
             .iter()
@@ -249,7 +288,7 @@ mod tests {
 
     #[test]
     fn test_vertices_are_the_points_of_the_cell_in_its_order() {
-        let fractures = parse_user_fractures(&square_and_triangle_file("")).unwrap();
+        let fractures = parse_user_fractures(&square_and_triangle_file(&cell_data(""))).unwrap();
 
         assert_eq!(
             fractures[1].vertices,
@@ -258,12 +297,11 @@ mod tests {
     }
 
     #[test]
-    fn test_cell_data_is_ignored() {
-        let cell_data = r#"<CellData>
-            <DataArray type="Int64" Name="family" format="ascii">0 0</DataArray>
-            </CellData>"#;
+    fn test_other_cell_data_is_ignored() {
+        let cell_data =
+            cell_data(r#"<DataArray type="Int64" Name="family" format="ascii">0 0</DataArray>"#);
 
-        let fractures = parse_user_fractures(&square_and_triangle_file(cell_data)).unwrap();
+        let fractures = parse_user_fractures(&square_and_triangle_file(&cell_data)).unwrap();
 
         assert_eq!(fractures.len(), 2);
     }
@@ -271,14 +309,14 @@ mod tests {
     #[test]
     fn test_string_cell_data_of_fractures_rejected_is_ignored() {
         // "SamePlane" and "CloseToEdge", as in the reject_reason array
-        let cell_data = r#"<CellData>
-            <DataArray type="String" Name="reject_reason" format="ascii">
+        let cell_data = cell_data(
+            r#"<DataArray type="String" Name="reject_reason" format="ascii">
             83 97 109 101 80 108 97 110 101 0
             67 108 111 115 101 84 111 69 100 103 101 0
-            </DataArray>
-            </CellData>"#;
+            </DataArray>"#,
+        );
 
-        let fractures = parse_user_fractures(&square_and_triangle_file(cell_data)).unwrap();
+        let fractures = parse_user_fractures(&square_and_triangle_file(&cell_data)).unwrap();
 
         assert_eq!(fractures.len(), 2);
     }
@@ -292,7 +330,7 @@ mod tests {
 
     #[test]
     fn test_polygon_with_two_points_is_rejected() {
-        let message = error_message(&vtp_file("PolyData", "0 1 2 3  1 4", "4 6", ""));
+        let message = error_message(&vtp_file("PolyData", "0 1 2 3  1 4", "4 6", &cell_data("")));
 
         assert!(
             message.contains("fracture 2: a fracture must have 3 vertices or more"),
@@ -302,7 +340,8 @@ mod tests {
 
     #[test]
     fn test_point_which_is_not_in_the_file_is_rejected() {
-        let message = error_message(&vtp_file("PolyData", "0 1 5", "3", ""));
+        let one_aperture = format!("<CellData>{}</CellData>", aperture_array("1e-4"));
+        let message = error_message(&vtp_file("PolyData", "0 1 5", "3", &one_aperture));
 
         assert!(
             message.contains("fracture 1: there is no point 5"),
@@ -312,7 +351,8 @@ mod tests {
 
     #[test]
     fn test_offset_beyond_the_connectivity_is_rejected() {
-        let message = error_message(&vtp_file("PolyData", "0 1 2", "4", ""));
+        let one_aperture = format!("<CellData>{}</CellData>", aperture_array("1e-4"));
+        let message = error_message(&vtp_file("PolyData", "0 1 2", "4", &one_aperture));
 
         assert!(message.contains("the offset 4 is not valid"), "{message}");
     }
@@ -324,18 +364,21 @@ mod tests {
         assert!(message.contains("not a VTK PolyData"), "{message}");
     }
 
-    /// `CellData` element with a `region__<name>` array for each name and its values
-    fn region_cell_data(arrays: &[(&str, &str)]) -> String {
-        let data_arrays: String = arrays
+    /// A `region__<name>` array for each name and its values
+    fn region_arrays(arrays: &[(&str, &str)]) -> String {
+        arrays
             .iter()
             .map(|(name, values)| {
                 format!(
                     r#"<DataArray type="Int64" Name="region__{name}" format="ascii">{values}</DataArray>"#
                 )
             })
-            .collect();
+            .collect()
+    }
 
-        format!("<CellData>{data_arrays}</CellData>")
+    /// `CellData` element with the apertures and a `region__<name>` array for each name and its values
+    fn region_cell_data(arrays: &[(&str, &str)]) -> String {
+        cell_data(&region_arrays(arrays))
     }
 
     fn regions(file: &str) -> Vec<Vec<String>> {
@@ -362,7 +405,7 @@ mod tests {
 
     #[test]
     fn test_file_without_region_arrays_gives_no_region() {
-        assert!(regions(&square_and_triangle_file(""))
+        assert!(regions(&square_and_triangle_file(&cell_data("")))
             .iter()
             .all(Vec::is_empty));
     }
@@ -380,11 +423,9 @@ mod tests {
     }
 
     fn fracture_id_cell_data(values: &str) -> String {
-        format!(
-            r#"<CellData>
-            <DataArray type="Int64" Name="fracture_id" format="ascii">{values}</DataArray>
-            </CellData>"#
-        )
+        cell_data(&format!(
+            r#"<DataArray type="Int64" Name="fracture_id" format="ascii">{values}</DataArray>"#
+        ))
     }
 
     fn fracture_ids(file: &str) -> Vec<Option<u64>> {
@@ -404,7 +445,47 @@ mod tests {
 
     #[test]
     fn test_file_without_fracture_id_array_gives_no_fracture_id() {
-        assert_eq!(fracture_ids(&square_and_triangle_file("")), [None, None]);
+        assert_eq!(
+            fracture_ids(&square_and_triangle_file(&cell_data(""))),
+            [None, None]
+        );
+    }
+
+    fn apertures(file: &str) -> Vec<f64> {
+        parse_user_fractures(file)
+            .unwrap()
+            .iter()
+            .map(|fracture| fracture.aperture)
+            .collect()
+    }
+
+    #[test]
+    fn test_aperture_array_gives_the_aperture_of_each_polygon() {
+        assert_eq!(
+            apertures(&square_and_triangle_file(&cell_data(""))),
+            [1e-4, 2e-4]
+        );
+    }
+
+    #[test]
+    fn test_file_without_aperture_array_is_rejected() {
+        let message = error_message(&square_and_triangle_file(""));
+
+        assert!(
+            message.contains("the cell data array aperture is necessary"),
+            "{message}"
+        );
+    }
+
+    #[test]
+    fn test_aperture_array_with_one_value_for_two_cells_is_rejected() {
+        let one_aperture = format!("<CellData>{}</CellData>", aperture_array("1e-4"));
+        let message = error_message(&square_and_triangle_file(&one_aperture));
+
+        assert!(
+            message.contains("the aperture array must have one value for each cell"),
+            "{message}"
+        );
     }
 
     #[test]
@@ -441,21 +522,34 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_region_of_a_polygon_is_after_the_values_of_the_line_cells() {
-        let line_and_regions = format!(
+    /// A line cell before the polygons, and the cell data of the three cells
+    fn line_and_cell_data() -> String {
+        format!(
             r#"<Lines>
             <DataArray type="Int64" Name="connectivity" format="ascii">0 1</DataArray>
             <DataArray type="Int64" Name="offsets" format="ascii">2</DataArray>
             </Lines>
-            {}"#,
-            region_cell_data(&[("rock", "1 1 0")])
-        );
+            <CellData>{}{}</CellData>"#,
+            aperture_array("0 1e-4 2e-4"),
+            region_arrays(&[("rock", "1 1 0")])
+        )
+    }
+
+    #[test]
+    fn test_region_of_a_polygon_is_after_the_values_of_the_line_cells() {
         let expected: [&[&str]; 2] = [&["rock"], &[]];
 
         assert_eq!(
-            regions(&square_and_triangle_file(&line_and_regions)),
+            regions(&square_and_triangle_file(&line_and_cell_data())),
             expected
+        );
+    }
+
+    #[test]
+    fn test_aperture_of_a_polygon_is_after_the_values_of_the_line_cells() {
+        assert_eq!(
+            apertures(&square_and_triangle_file(&line_and_cell_data())),
+            [1e-4, 2e-4]
         );
     }
 }

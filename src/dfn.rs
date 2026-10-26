@@ -372,6 +372,7 @@ mod tests {
                 vertices: vertices.to_vec(),
                 region_ids: Vec::new(),
                 fracture_id: *fracture_id,
+                aperture: 1e-4,
             })
             .collect();
         let mut dfn = Dfn::new();

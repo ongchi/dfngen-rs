@@ -11,7 +11,7 @@ pub mod mesh;
 pub mod region_boundaries;
 pub mod stats;
 
-pub use error::{DfngenError, FamilyError, InvalidAperture, RegionError};
+pub use error::{DfngenError, FamilyError, InvalidAperture, RegionError, UserFractureError};
 pub use generation::{generate, Network, ProgressUpdate};
 pub use io::input::{build_input_from_text, read_input, read_input_file_names};
 pub use io::output::{write_output, write_output_to_folder};
