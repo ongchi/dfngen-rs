@@ -50,8 +50,10 @@ enum CellParts {
 /// optional) with the cell data arrays `boundary__<name>` give the boundary
 /// surfaces.
 pub fn read_domain_mesh(path: &Path) -> Result<DomainMesh, DfngenError> {
-    let invalid_mesh =
-        |message: String| DfngenError::InvalidInput(format!("{}: {}", path.display(), message));
+    let invalid_mesh = |message: String| DfngenError::InvalidFile {
+        file: path.display().to_string(),
+        message,
+    };
 
     let text = std::fs::read_to_string(path).map_err(|e| {
         invalid_mesh(format!(

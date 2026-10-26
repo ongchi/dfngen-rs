@@ -40,8 +40,10 @@ pub struct FracturePolygon {
 /// of more than one polygon. The point data and the other cell data of the
 /// file are ignored.
 pub fn read_user_fractures(path: &Path) -> Result<Vec<FracturePolygon>, DfngenError> {
-    let invalid_file =
-        |message: String| DfngenError::InvalidInput(format!("{}: {}", path.display(), message));
+    let invalid_file = |message: String| DfngenError::InvalidFile {
+        file: path.display().to_string(),
+        message,
+    };
 
     let text = std::fs::read_to_string(path).map_err(|e| {
         invalid_file(format!(

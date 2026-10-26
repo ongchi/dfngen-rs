@@ -1,3 +1,5 @@
+use crate::distribution::aperture::ApertureDistribution;
+
 #[derive(thiserror::Error, Debug)]
 pub enum DfngenError {
     #[error(transparent)]
@@ -17,12 +19,88 @@ pub enum DfngenError {
     },
     #[error("Too many fractures are being generated with radii less than minimum radius.")]
     InefficientSampling,
+    #[error("Invalid input file: cannot read {file}: {source}")]
+    ReadInput {
+        file: String,
+        source: std::io::Error,
+    },
+    /// The TOML text: syntax, an unknown or a missing key, a wrong type
     #[error("Invalid input file: {0}")]
-    InvalidInput(String),
+    InvalidToml(String),
+    /// The content of the domain mesh (`.vtu`) or of the user-defined fracture file (`.vtp`)
+    #[error("Invalid input file: {file}: {message}")]
+    InvalidFile { file: String, message: String },
+    #[error("Invalid input file: the text of the user-defined fracture file {file} is necessary")]
+    UserFractureFileMissing { file: String },
+    #[error("Invalid input file: min_feature_size must be greater than 0")]
+    MinFeatureSize,
+    /// `fracture` starts at 1, in the order of the user-defined fracture file
+    #[error("Invalid input file: user-defined fracture {fracture}: {source}")]
+    UserFracture {
+        fracture: usize,
+        source: RegionError,
+    },
+    /// `family` starts at 1, in the order of the input file
+    #[error("Invalid input file: family {family}: {source}")]
+    Family { family: usize, source: FamilyError },
+    #[error(
+        "Invalid input file: [mesh] needs [region_boundaries] with enable = true: its boundary lines give the boundaries of the mesh"
+    )]
+    MeshNeedsRegionBoundaries,
+    #[error("Invalid input file: mesh.max_size_factor must be 1 or more")]
+    MeshMaxSizeFactor,
+    #[error("Invalid input file: mesh.slope must be greater than 0")]
+    MeshSlope,
+    #[error(
+        "Invalid input file: mesh.user_fracture_aperture is necessary with user-defined fractures"
+    )]
+    UserFractureApertureMissing,
+    #[error("Invalid input file: mesh.user_fracture_aperture: {0}")]
+    UserFractureAperture(InvalidAperture),
     #[error("No fracture is defined. Add a fracture family or a user-defined fracture in the domain to the input file.")]
     NoFractureDefined,
     #[error("Mesh: {0}")]
     Mesh(String),
     #[error("There are no intersecting fractures. Increase the fracture density, or decrease the domain size.")]
     NoIntersectingFractures,
+}
+
+/// A region name of a family or of a user-defined fracture which the domain mesh cannot give
+#[derive(thiserror::Error, Debug)]
+pub enum RegionError {
+    #[error("the domain mesh has no region {region} (no cell data array region__{region})")]
+    Unknown { region: String },
+    #[error("no cell of the domain mesh is in the region {region}")]
+    Empty { region: String },
+}
+
+/// A value of a fracture family which is not valid
+#[derive(thiserror::Error, Debug)]
+pub enum FamilyError {
+    #[error(transparent)]
+    Region(#[from] RegionError),
+    #[error("number_of_points must be 3 or more")]
+    NumberOfPoints,
+    #[error("aspect_ratio must be greater than 0")]
+    AspectRatio,
+    #[error("orientation must have one pair: theta and phi, trend and plunge, or dip and strike")]
+    OrientationPair,
+    #[error("p32_target is necessary when generation.n_poly is not set")]
+    P32TargetMissing,
+    #[error("p32_target is not allowed when generation.n_poly is set")]
+    P32TargetNotAllowed,
+    #[error("aperture is necessary with [mesh]")]
+    ApertureMissing,
+    #[error(transparent)]
+    Aperture(#[from] InvalidAperture),
+    /// A value which the input code did not give to the family builder (a defect of the code)
+    #[error("{0} is required")]
+    MissingValue(&'static str),
+}
+
+/// An aperture distribution with a value out of its range
+#[derive(thiserror::Error, Debug)]
+#[error("aperture {aperture:?}: value and alpha must be above 0, sd must not be negative")]
+pub struct InvalidAperture {
+    pub aperture: ApertureDistribution,
 }

@@ -3,6 +3,8 @@ use rand_distr::StandardNormal;
 use rand_mt::Mt64;
 use serde::Deserialize;
 
+use crate::error::InvalidAperture;
+
 /// Distribution of the hydraulic aperture of a fracture (m), as the
 /// transmissivity options of dfnWorks, with the aperture in place of the
 /// transmissivity. r is the radius of the fracture.
@@ -21,7 +23,7 @@ pub enum ApertureDistribution {
 
 impl ApertureDistribution {
     /// Checks the parameters. The aperture must be finite and above 0.
-    pub fn validate(&self) -> Result<(), String> {
+    pub fn validate(&self) -> Result<(), InvalidAperture> {
         let is_positive = |value: f64| value.is_finite() && value > 0.;
         let is_valid_sd = |sd: f64| sd.is_finite() && sd >= 0.;
 
@@ -37,9 +39,9 @@ impl ApertureDistribution {
         if is_valid {
             Ok(())
         } else {
-            Err(format!(
-                "aperture {self:?}: value and alpha must be above 0, sd must not be negative"
-            ))
+            Err(InvalidAperture {
+                aperture: self.clone(),
+            })
         }
     }
 

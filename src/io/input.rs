@@ -7,7 +7,7 @@ use tracing::{debug, info, warn};
 
 use crate::distribution::{ApertureDistribution, Fisher, LogNormalSampling, RadiusDistribution};
 use crate::domain_mesh::{DomainMesh, MeshRegion};
-use crate::error::DfngenError;
+use crate::error::{DfngenError, FamilyError, RegionError};
 use crate::fracture::fracture_family::{
     FractureFamily, FractureFamilyBuilder, FractureFamilyCollection,
 };
@@ -263,18 +263,16 @@ struct OrientationSection {
     kappa: f64,
 }
 
-fn invalid_input(message: String) -> DfngenError {
-    DfngenError::InvalidInput(message)
-}
-
 /// Reads the TOML input file.
 ///
 /// Returns the input options and the stochastic fracture families.
 pub fn read_input(input_file: &str) -> Result<(Input, FractureFamilyCollection), DfngenError> {
     info!("DFN Generator Input File: {}", input_file);
 
-    let text = std::fs::read_to_string(input_file)
-        .map_err(|e| invalid_input(format!("cannot read {input_file}: {e}")))?;
+    let text = std::fs::read_to_string(input_file).map_err(|source| DfngenError::ReadInput {
+        file: input_file.to_string(),
+        source,
+    })?;
 
     let file = parse_input_file(&text)?;
     let input_folder = Path::new(input_file).parent().unwrap_or(Path::new(""));
@@ -325,18 +323,21 @@ pub fn build_input_from_text(
     user_fractures_text: Option<&str>,
 ) -> Result<(Input, FractureFamilyCollection), DfngenError> {
     let file = parse_input_file(toml_text)?;
-    let domain_mesh = parse_domain_mesh(domain_mesh_text)
-        .map_err(|message| invalid_input(format!("{}: {}", file.domain, message)))?;
+    let domain_mesh =
+        parse_domain_mesh(domain_mesh_text).map_err(|message| DfngenError::InvalidFile {
+            file: file.domain.clone(),
+            message,
+        })?;
     let user_fractures = match &file.user_fractures {
         Some(fracture_file) => {
-            let text = user_fractures_text.ok_or_else(|| {
-                invalid_input(format!(
-                    "the text of the user-defined fracture file {fracture_file} is necessary"
-                ))
+            let text = user_fractures_text.ok_or_else(|| DfngenError::UserFractureFileMissing {
+                file: fracture_file.clone(),
             })?;
 
-            parse_user_fractures(text)
-                .map_err(|message| invalid_input(format!("{fracture_file}: {message}")))?
+            parse_user_fractures(text).map_err(|message| DfngenError::InvalidFile {
+                file: fracture_file.clone(),
+                message,
+            })?
         }
         None => Vec::new(),
     };
@@ -345,7 +346,7 @@ pub fn build_input_from_text(
 }
 
 fn parse_input_file(text: &str) -> Result<InputFile, DfngenError> {
-    toml::from_str(text).map_err(|e| invalid_input(e.to_string()))
+    toml::from_str(text).map_err(|e| DfngenError::InvalidToml(e.to_string()))
 }
 
 /// Position in the mesh regions (starts at 1) of the region name of a family
@@ -353,7 +354,7 @@ fn parse_input_file(text: &str) -> Result<InputFile, DfngenError> {
 fn find_mesh_region_id(
     region_name: Option<&str>,
     mesh_regions: &[MeshRegion],
-) -> Result<usize, String> {
+) -> Result<usize, RegionError> {
     let Some(region_name) = region_name else {
         return Ok(0);
     };
@@ -363,12 +364,12 @@ fn find_mesh_region_id(
         .position(|region| region.name == region_name)
     {
         Some(position) if mesh_regions[position].volume > 0. => Ok(position + 1),
-        Some(_) => Err(format!(
-            "no cell of the domain mesh is in the region {region_name}"
-        )),
-        None => Err(format!(
-            "the domain mesh has no region {region_name} (no cell data array region__{region_name})"
-        )),
+        Some(_) => Err(RegionError::Empty {
+            region: region_name.to_string(),
+        }),
+        None => Err(RegionError::Unknown {
+            region: region_name.to_string(),
+        }),
     }
 }
 
@@ -386,9 +387,7 @@ fn build_input(
 ) -> Result<(Input, FractureFamilyCollection), DfngenError> {
     // Each radius is at least 3 times min_feature_size, thus never 0
     if file.min_feature_size.is_nan() || file.min_feature_size <= 0. {
-        return Err(invalid_input(
-            "min_feature_size must be greater than 0".to_string(),
-        ));
+        return Err(DfngenError::MinFeatureSize);
     }
 
     let eps = file.min_feature_size * 1e-8;
@@ -431,8 +430,9 @@ fn build_input(
         .iter()
         .enumerate()
         .map(|(i, polygon)| {
-            build_user_fracture(polygon, &domain_mesh).map_err(|message| {
-                invalid_input(format!("user-defined fracture {}: {}", i + 1, message))
+            build_user_fracture(polygon, &domain_mesh).map_err(|source| DfngenError::UserFracture {
+                fracture: i + 1,
+                source,
             })
         })
         .collect::<Result<Vec<_>, _>>()?;
@@ -447,8 +447,12 @@ fn build_input(
     let mut families = Vec::with_capacity(file.families.len());
     let mut probabilities = Vec::with_capacity(file.families.len());
     for (i, section) in file.families.iter().enumerate() {
-        let family = build_family(section, i + 1, &family_context)
-            .map_err(|message| invalid_input(format!("family {}: {}", i + 1, message)))?;
+        let family = build_family(section, i + 1, &family_context).map_err(|source| {
+            DfngenError::Family {
+                family: i + 1,
+                source,
+            }
+        })?;
         families.push(family);
         probabilities.push(section.probability);
     }
@@ -458,8 +462,7 @@ fn build_input(
         file,
         region_boundaries.is_some(),
         !user_fractures.is_empty(),
-    )
-    .map_err(invalid_input)?;
+    )?;
 
     if mesh.is_some() && fram.is_none() {
         warn!("[mesh] with FRAM off: features smaller than min_feature_size give bad triangles");
@@ -505,7 +508,7 @@ fn build_mesh_options(
     file: &InputFile,
     has_boundary_lines: bool,
     has_user_fractures: bool,
-) -> Result<Option<MeshOptions>, String> {
+) -> Result<Option<MeshOptions>, DfngenError> {
     let section = &file.mesh;
 
     if !section.enable {
@@ -513,40 +516,43 @@ fn build_mesh_options(
     }
 
     if !has_boundary_lines {
-        return Err(
-            "[mesh] needs [region_boundaries] with enable = true: its boundary lines give the boundaries of the mesh"
-                .to_string(),
-        );
+        return Err(DfngenError::MeshNeedsRegionBoundaries);
     }
     if !(section.max_size_factor.is_finite() && section.max_size_factor >= 1.) {
-        return Err("mesh.max_size_factor must be 1 or more".to_string());
+        return Err(DfngenError::MeshMaxSizeFactor);
     }
     if !(section.slope.is_finite() && section.slope > 0.) {
-        return Err("mesh.slope must be greater than 0".to_string());
+        return Err(DfngenError::MeshSlope);
     }
 
-    let family_apertures =
-        file.families
-            .iter()
-            .enumerate()
-            .map(|(i, family)| {
-                let aperture = family.aperture.clone().ok_or_else(|| {
-                    format!("family {}: aperture is necessary with [mesh]", i + 1)
-                })?;
-                aperture
-                    .validate()
-                    .map_err(|message| format!("family {}: {message}", i + 1))?;
-                Ok(aperture)
-            })
-            .collect::<Result<Vec<_>, String>>()?;
+    let family_apertures = file
+        .families
+        .iter()
+        .enumerate()
+        .map(|(i, family)| {
+            let family_error = |source| DfngenError::Family {
+                family: i + 1,
+                source,
+            };
+            let aperture = family
+                .aperture
+                .clone()
+                .ok_or_else(|| family_error(FamilyError::ApertureMissing))?;
+            aperture
+                .validate()
+                .map_err(|error| family_error(error.into()))?;
+            Ok(aperture)
+        })
+        .collect::<Result<Vec<_>, DfngenError>>()?;
 
     let user_fracture_aperture = if has_user_fractures {
-        let aperture = section.user_fracture_aperture.clone().ok_or_else(|| {
-            "mesh.user_fracture_aperture is necessary with user-defined fractures".to_string()
-        })?;
+        let aperture = section
+            .user_fracture_aperture
+            .clone()
+            .ok_or(DfngenError::UserFractureApertureMissing)?;
         aperture
             .validate()
-            .map_err(|message| format!("mesh.user_fracture_aperture: {message}"))?;
+            .map_err(DfngenError::UserFractureAperture)?;
         Some(aperture)
     } else {
         None
@@ -566,7 +572,7 @@ fn build_mesh_options(
 fn build_user_fracture(
     polygon: &FracturePolygon,
     domain_mesh: &DomainMesh,
-) -> Result<UserFracture, String> {
+) -> Result<UserFracture, RegionError> {
     let domain_center = domain_mesh.center();
 
     Ok(UserFracture {
@@ -596,7 +602,7 @@ fn build_family(
     section: &FamilySection,
     id: usize,
     context: &FamilyContext,
-) -> Result<FractureFamily, String> {
+) -> Result<FractureFamily, FamilyError> {
     let region_id = find_mesh_region_id(section.region.as_deref(), context.domain_mesh.regions())?;
 
     let mut builder = FractureFamilyBuilder::default();
@@ -622,10 +628,10 @@ fn build_family(
             builder.p32_target(p32_target);
         }
         (StopCondition::P32, None) => {
-            return Err("p32_target is necessary when generation.n_poly is not set".into());
+            return Err(FamilyError::P32TargetMissing);
         }
         (StopCondition::NPoly(_), Some(_)) => {
-            return Err("p32_target is not allowed when generation.n_poly is set".into());
+            return Err(FamilyError::P32TargetNotAllowed);
         }
         (StopCondition::NPoly(_), None) => {}
     }
@@ -690,7 +696,7 @@ fn build_radius_distribution(section: &RadiusSection, min_radius: f64) -> Radius
 }
 
 /// The angles of the section are in degrees.
-fn build_orientation(section: &OrientationSection, eps: f64) -> Result<Fisher, String> {
+fn build_orientation(section: &OrientationSection, eps: f64) -> Result<Fisher, FamilyError> {
     let kappa = section.kappa;
 
     match (
@@ -713,24 +719,21 @@ fn build_orientation(section: &OrientationSection, eps: f64) -> Result<Fisher, S
             kappa,
             eps,
         )),
-        _ => Err(
-            "orientation must have one pair: theta and phi, trend and plunge, or dip and strike"
-                .to_string(),
-        ),
+        _ => Err(FamilyError::OrientationPair),
     }
 }
 
-fn valid_number_of_points(number_of_points: usize) -> Result<usize, String> {
+fn valid_number_of_points(number_of_points: usize) -> Result<usize, FamilyError> {
     if number_of_points < 3 {
-        return Err("number_of_points must be 3 or more".to_string());
+        return Err(FamilyError::NumberOfPoints);
     }
     Ok(number_of_points)
 }
 
 /// The fracture area must be greater than 0. A NaN aspect ratio is rejected too.
-fn valid_aspect_ratio(aspect_ratio: f64) -> Result<f64, String> {
+fn valid_aspect_ratio(aspect_ratio: f64) -> Result<f64, FamilyError> {
     if aspect_ratio.is_nan() || aspect_ratio <= 0. {
-        return Err("aspect_ratio must be greater than 0".to_string());
+        return Err(FamilyError::AspectRatio);
     }
     Ok(aspect_ratio)
 }
@@ -796,10 +799,11 @@ mod tests {
     "#;
 
     fn error_message(result: Result<(Input, FractureFamilyCollection), DfngenError>) -> String {
-        result
-            .err()
-            .expect("the input must be rejected")
-            .to_string()
+        input_error(result).to_string()
+    }
+
+    fn input_error(result: Result<(Input, FractureFamilyCollection), DfngenError>) -> DfngenError {
+        result.err().expect("the input must be rejected")
     }
 
     /// Path of a file of the test case `mesh_domain`
@@ -849,15 +853,15 @@ mod tests {
         let read_text =
             |file_name| std::fs::read_to_string(mesh_domain_case_path(file_name)).unwrap();
 
-        let message = error_message(build_input_from_text(
+        let error = input_error(build_input_from_text(
             &read_text("mesh_domain.toml"),
             &read_text("mesh_domain.vtu"),
             None,
         ));
 
         assert!(
-            message.contains("mesh_domain_user_fractures.vtp is necessary"),
-            "{message}"
+            matches!(&error, DfngenError::UserFractureFileMissing { file } if file == "mesh_domain_user_fractures.vtp"),
+            "{error}"
         );
     }
 
@@ -928,11 +932,15 @@ mod tests {
     #[test]
     fn test_family_with_region_which_the_mesh_does_not_have_is_rejected() {
         let family = rectangle_family_with_region(r#""east""#);
-        let message = error_message(parse(&[GENERAL_OPTIONS, &family]));
+        let error = input_error(parse(&[GENERAL_OPTIONS, &family]));
 
         assert!(
-            message.contains("the domain mesh has no region east"),
-            "{message}"
+            matches!(
+                &error,
+                DfngenError::Family { family: 1, source: FamilyError::Region(RegionError::Unknown { region }) }
+                    if region == "east"
+            ),
+            "{error}"
         );
     }
 
@@ -950,17 +958,29 @@ mod tests {
         let mesh = DomainMesh::new(&tetrahedra, &region_names(&["empty"])).unwrap();
         let options = [GENERAL_OPTIONS, &rectangle_family_with_region(r#""empty""#)].concat();
 
-        let message = error_message(build_input(&parse_input_file(&options).unwrap(), mesh, &[]));
+        let error = input_error(build_input(&parse_input_file(&options).unwrap(), mesh, &[]));
 
         assert!(
-            message.contains("no cell of the domain mesh is in the region empty"),
-            "{message}"
+            matches!(
+                &error,
+                DfngenError::Family { family: 1, source: FamilyError::Region(RegionError::Empty { region }) }
+                    if region == "empty"
+            ),
+            "{error}"
         );
     }
 
     /// Builds the input with one triangle in the L-shaped mesh as the
     /// user-defined fracture. The first vertex is the center of the mesh.
     fn parse_with_triangle_of_regions(
+        regions: &[&str],
+    ) -> Result<(Input, FractureFamilyCollection), DfngenError> {
+        parse_options_with_triangle(GENERAL_OPTIONS, regions)
+    }
+
+    /// As `parse_with_triangle_of_regions`, with other options
+    fn parse_options_with_triangle(
+        options: &str,
         regions: &[&str],
     ) -> Result<(Input, FractureFamilyCollection), DfngenError> {
         let triangle = FracturePolygon {
@@ -970,7 +990,7 @@ mod tests {
         };
 
         build_input(
-            &parse_input_file(GENERAL_OPTIONS).unwrap(),
+            &parse_input_file(options).unwrap(),
             l_shaped_mesh(),
             &[triangle],
         )
@@ -999,11 +1019,15 @@ mod tests {
 
     #[test]
     fn test_user_fracture_with_region_which_the_mesh_does_not_have_is_rejected() {
-        let message = error_message(parse_with_triangle_of_regions(&["east"]));
+        let error = input_error(parse_with_triangle_of_regions(&["east"]));
 
         assert!(
-            message.contains("user-defined fracture 1: the domain mesh has no region east"),
-            "{message}"
+            matches!(
+                &error,
+                DfngenError::UserFracture { fracture: 1, source: RegionError::Unknown { region } }
+                    if region == "east"
+            ),
+            "{error}"
         );
     }
 
@@ -1274,9 +1298,18 @@ mod tests {
     fn test_orientation_with_two_angle_pairs_is_rejected() {
         let family = ELLIPSE_FAMILY.replace("theta = 0.0", "theta = 0.0, dip = 1.0, strike = 1.0");
 
-        let message = error_message(parse(&[GENERAL_OPTIONS, &family]));
+        let error = input_error(parse(&[GENERAL_OPTIONS, &family]));
 
-        assert!(message.contains("family 1: orientation"), "{}", message);
+        assert!(
+            matches!(
+                error,
+                DfngenError::Family {
+                    family: 1,
+                    source: FamilyError::OrientationPair
+                }
+            ),
+            "{error}"
+        );
     }
 
     #[test]
@@ -1293,18 +1326,36 @@ mod tests {
     fn test_p32_stop_condition_needs_family_target() {
         let options = GENERAL_OPTIONS.replace("n_poly = 60", "");
 
-        let message = error_message(parse(&[&options, ELLIPSE_FAMILY]));
+        let error = input_error(parse(&[&options, ELLIPSE_FAMILY]));
 
-        assert!(message.contains("p32_target is necessary"), "{}", message);
+        assert!(
+            matches!(
+                error,
+                DfngenError::Family {
+                    family: 1,
+                    source: FamilyError::P32TargetMissing
+                }
+            ),
+            "{error}"
+        );
     }
 
     #[test]
     fn test_family_target_with_n_poly_is_rejected() {
         let family = ELLIPSE_FAMILY.replace("beta = 90.0", "beta = 90.0\np32_target = 0.5");
 
-        let message = error_message(parse(&[GENERAL_OPTIONS, &family]));
+        let error = input_error(parse(&[GENERAL_OPTIONS, &family]));
 
-        assert!(message.contains("p32_target is not allowed"), "{}", message);
+        assert!(
+            matches!(
+                error,
+                DfngenError::Family {
+                    family: 1,
+                    source: FamilyError::P32TargetNotAllowed
+                }
+            ),
+            "{error}"
+        );
     }
 
     #[test]
@@ -1376,12 +1427,17 @@ mod tests {
     fn test_family_with_two_points_is_rejected() {
         let family = ELLIPSE_FAMILY.replace("number_of_points = 8", "number_of_points = 2");
 
-        let message = error_message(parse(&[GENERAL_OPTIONS, &family]));
+        let error = input_error(parse(&[GENERAL_OPTIONS, &family]));
 
         assert!(
-            message.contains("family 1: number_of_points must be 3 or more"),
-            "{}",
-            message
+            matches!(
+                error,
+                DfngenError::Family {
+                    family: 1,
+                    source: FamilyError::NumberOfPoints
+                }
+            ),
+            "{error}"
         );
     }
 
@@ -1389,11 +1445,17 @@ mod tests {
     fn test_family_with_zero_aspect_ratio_is_rejected() {
         let family = ELLIPSE_FAMILY.replace("aspect_ratio = 1.0", "aspect_ratio = 0.0");
 
-        let message = error_message(parse(&[GENERAL_OPTIONS, &family]));
+        let error = input_error(parse(&[GENERAL_OPTIONS, &family]));
 
         assert!(
-            message.contains("family 1: aspect_ratio must be greater than 0"),
-            "{message}"
+            matches!(
+                error,
+                DfngenError::Family {
+                    family: 1,
+                    source: FamilyError::AspectRatio
+                }
+            ),
+            "{error}"
         );
     }
 
@@ -1430,21 +1492,30 @@ mod tests {
         let family = ELLIPSE_FAMILY.replace("orientation", CONSTANT_APERTURE);
         let options = add_before_clusters("[mesh]\nenable = true\n");
 
-        let message = error_message(parse(&[&options, &family]));
+        let error = input_error(parse(&[&options, &family]));
 
-        assert!(message.contains("needs [region_boundaries]"), "{message}");
+        assert!(
+            matches!(error, DfngenError::MeshNeedsRegionBoundaries),
+            "{error}"
+        );
     }
 
     #[test]
     fn test_mesh_needs_the_aperture_of_each_family() {
-        let message = error_message(parse(&[
+        let error = input_error(parse(&[
             &add_before_clusters(MESH_SECTIONS),
             ELLIPSE_FAMILY,
         ]));
 
         assert!(
-            message.contains("family 1: aperture is necessary"),
-            "{message}"
+            matches!(
+                error,
+                DfngenError::Family {
+                    family: 1,
+                    source: FamilyError::ApertureMissing
+                }
+            ),
+            "{error}"
         );
     }
 
@@ -1464,9 +1535,18 @@ mod tests {
             "aperture = { distribution = \"log_normal\", log_mean = -8.0, sd = -1.0 }\norientation",
         );
 
-        let message = error_message(parse(&[&add_before_clusters(MESH_SECTIONS), &family]));
+        let error = input_error(parse(&[&add_before_clusters(MESH_SECTIONS), &family]));
 
-        assert!(message.contains("family 1: aperture"), "{message}");
+        assert!(
+            matches!(
+                error,
+                DfngenError::Family {
+                    family: 1,
+                    source: FamilyError::Aperture(_)
+                }
+            ),
+            "{error}"
+        );
     }
 
     #[test]
@@ -1474,20 +1554,54 @@ mod tests {
         let family = ELLIPSE_FAMILY.replace("orientation", CONSTANT_APERTURE);
         let options = add_before_clusters(&format!("{MESH_SECTIONS}slope = 0.0\n"));
 
-        let message = error_message(parse(&[&options, &family]));
+        let error = input_error(parse(&[&options, &family]));
 
-        assert!(message.contains("mesh.slope"), "{message}");
+        assert!(matches!(error, DfngenError::MeshSlope), "{error}");
+    }
+
+    #[test]
+    fn test_mesh_max_size_factor_below_one_is_rejected() {
+        let family = ELLIPSE_FAMILY.replace("orientation", CONSTANT_APERTURE);
+        let options = add_before_clusters(&format!("{MESH_SECTIONS}max_size_factor = 0.5\n"));
+
+        let error = input_error(parse(&[&options, &family]));
+
+        assert!(matches!(error, DfngenError::MeshMaxSizeFactor), "{error}");
+    }
+
+    #[test]
+    fn test_mesh_needs_the_aperture_of_the_user_fractures() {
+        let error = input_error(parse_options_with_triangle(
+            &add_before_clusters(MESH_SECTIONS),
+            &[],
+        ));
+
+        assert!(
+            matches!(error, DfngenError::UserFractureApertureMissing),
+            "{error}"
+        );
+    }
+
+    #[test]
+    fn test_zero_user_fracture_aperture_is_rejected() {
+        let options = add_before_clusters(&format!(
+            "{MESH_SECTIONS}user_fracture_aperture = {{ distribution = \"constant\", value = 0.0 }}\n"
+        ));
+
+        let error = input_error(parse_options_with_triangle(&options, &[]));
+
+        assert!(
+            matches!(error, DfngenError::UserFractureAperture(_)),
+            "{error}"
+        );
     }
 
     #[test]
     fn test_zero_min_feature_size_is_rejected() {
         let options = GENERAL_OPTIONS.replace("min_feature_size = 0.1", "min_feature_size = 0.0");
 
-        let message = error_message(parse(&[&options]));
+        let error = input_error(parse(&[&options]));
 
-        assert!(
-            message.contains("min_feature_size must be greater than 0"),
-            "{message}"
-        );
+        assert!(matches!(error, DfngenError::MinFeatureSize), "{error}");
     }
 }

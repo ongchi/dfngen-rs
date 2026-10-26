@@ -7,7 +7,7 @@ use rand_mt::Mt64;
 
 use crate::distribution::{Fisher, RadiusDistribution};
 use crate::domain_mesh::DomainMesh;
-use crate::error::DfngenError;
+use crate::error::{DfngenError, FamilyError};
 
 use super::poly::{FractureOrigin, Poly};
 
@@ -245,30 +245,35 @@ impl FractureFamilyBuilder {
         self
     }
 
-    pub fn build(&mut self) -> Result<FractureFamily, String> {
+    pub fn build(&mut self) -> Result<FractureFamily, FamilyError> {
         Ok(FractureFamily {
-            id: self.id.take().ok_or("id is required".to_string())?,
+            id: self.id.take().ok_or(FamilyError::MissingValue("id"))?,
             number_of_points: self
                 .number_of_points
-                .ok_or("number of points is required".to_string())?,
-            radius: self.radius.take().ok_or("radius is required".to_string())?,
+                .ok_or(FamilyError::MissingValue("number of points"))?,
+            radius: self
+                .radius
+                .take()
+                .ok_or(FamilyError::MissingValue("radius"))?,
             radii_index: 0,
             radii_list: Vec::new(),
-            region_id: self.region_id.ok_or("region_id is required".to_string())?,
+            region_id: self
+                .region_id
+                .ok_or(FamilyError::MissingValue("region_id"))?,
             aspect_ratio: self
                 .aspect_ratio
-                .ok_or("aspect ratio is required".to_string())?,
+                .ok_or(FamilyError::MissingValue("aspect ratio"))?,
             p32_target: self.p32_target.unwrap_or(0.),
             current_p32: 0.,
             beta: self.beta,
             orientation: self
                 .orientation
                 .take()
-                .ok_or("orientation is required".to_string())?,
+                .ok_or(FamilyError::MissingValue("orientation"))?,
             domain_mesh: self
                 .domain_mesh
                 .take()
-                .ok_or("domain mesh is required".to_string())?,
+                .ok_or(FamilyError::MissingValue("domain mesh"))?,
         })
     }
 }
