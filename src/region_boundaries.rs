@@ -37,13 +37,10 @@ const MAX_CROSSING_COSINE: f64 = 0.681_998_36;
 const END_DISTANCE_PART: f64 = 0.4;
 
 /// Options of the boundary lines (input section `[region_boundaries]`). The
-/// input has them only when the option is on.
+/// input has them only when the option is on. The region of a stochastic
+/// fracture is the whole mesh, also if its family has a region.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct RegionBoundaryOptions {
-    /// True: the region of a stochastic fracture is the region of its family.
-    /// False: the whole mesh.
-    pub use_family_region: bool,
-}
+pub struct RegionBoundaryOptions;
 
 /// What is on the other side of a boundary line
 #[derive(Clone, Debug, PartialEq, Eq)]

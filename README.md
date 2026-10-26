@@ -39,8 +39,6 @@ rejects_per_fracture = 10          # default 10; FRAM rejects of a stochastic fr
 # Optional section; each key is optional. Without it: no boundary lines.
 [region_boundaries]
 enable = true                      # default false; true = write the lines where the boundary of the region of each fracture crosses it (see "Boundary lines of the regions")
-use_family_region = true           # default true; false = the lines of each stochastic fracture are at the mesh surface, also if its family has a region (and its mesh can cross the region boundary)
-
 # Optional section; each key is optional. Without it: no mesh.
 [mesh]
 enable = true                      # default false; true = write the triangle mesh of the final fractures for fehm-rs (see "Triangle mesh for fehm-rs"); needs region_boundaries.enable = true
@@ -139,10 +137,8 @@ for example the point arrays `boundary__<name>` of fehm-rs.
 and `tests/data/region_boundaries_user_fractures` are examples.
 
 - The region of a fracture:
-  - A stochastic fracture: the cells of the region of its family (`region`).
-    A family without `region`: all cells of the mesh, thus the lines are at
-    the mesh surface. With `region_boundaries.use_family_region = false`: all
-    cells of the mesh, for each family.
+  - A stochastic fracture: all cells of the mesh, thus the lines are at the
+    mesh surface. The `region` of its family gives only its center.
   - A user-defined fracture: the cells of all its regions together (the arrays
     `region__<name>` of the fracture file). The faces between two of these
     cells give no line. A fracture with no region: all cells of the mesh.
@@ -196,9 +192,7 @@ network is the same as without the option.
 - Only the part of each fracture in the domain mesh, and in the regions of
   the fracture, is in the mesh: a user-defined fracture with regions (its
   `region__<name>` arrays) has no triangle outside them; a stochastic
-  fracture of a family with a `region` has no triangle outside that region
-  if `region_boundaries.use_family_region = true` (with `false` it can
-  cross the region boundary). The fractures stay whole in the network; the
+  fracture can cross the boundary of the `region` of its family. The fractures stay whole in the network; the
   mesh is cut along their boundary lines. The log gives the part of the
   area which is cut off.
 - Fractures which intersect share the points of their intersection. Two

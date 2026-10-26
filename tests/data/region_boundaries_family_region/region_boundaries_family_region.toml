@@ -1,9 +1,9 @@
-# Feature: boundary lines of the region of the family of each stochastic
-# fracture ([region_boundaries] enable = true, use_family_region = true).
-# Family 2 has the region "center" (the center cell), family 3
-# "center_and_east", and family 1 no region (the lines are at the mesh
-# surface). The other keys are those of family_regions. The mesh is
-# ../regions.vtu.
+# Feature: boundary lines of the stochastic fractures of families with a
+# region ([region_boundaries] enable = true). Family 2 has the region
+# "center" (the center cell), family 3 "center_and_east", and family 1 no
+# region. The region of a family gives only the fracture centers: the lines
+# of each family are at the mesh surface. The other keys are those of
+# family_regions. The mesh is ../regions.vtu.
 
 seed = 12345
 min_feature_size = 0.1
@@ -23,7 +23,6 @@ rejects_per_fracture = 10
 
 [region_boundaries]
 enable = true
-use_family_region = true
 
 [clusters]
 keep_only_largest = false

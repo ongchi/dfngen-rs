@@ -1,8 +1,8 @@
 # Feature: the mesh of each fracture is cut at its regions ([mesh] with
 # [region_boundaries]). The L-shaped mesh of ../mesh_domain/mesh_domain.vtu
 # has the regions south (y 20 to 25) and north (y 25 to 30, x 10 to 15). The
-# family is in the region south; with use_family_region = true its mesh has
-# no triangle in north. The user-defined fractures are those of
+# family is in the region south (the fracture centers only), and its mesh
+# crosses into north. The user-defined fractures are those of
 # ../region_boundaries_user_fractures: fracture 2 is in the region south and
 # goes across y = 25; fracture 3 has no region.
 # keep_isolated_fractures = true keeps all fractures.
@@ -26,7 +26,6 @@ rejects_per_fracture = 10
 
 [region_boundaries]
 enable = true
-use_family_region = true
 
 [mesh]
 enable = true

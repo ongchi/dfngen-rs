@@ -301,8 +301,6 @@ fn insert_stochastic_fractures(
             generator,
         )?;
 
-        let region_ids = boundary_region_ids(input, &family_collection.families[family_index]);
-        new_poly.region_ids = region_ids.clone();
         let mut reject_counter = 0;
 
         // Re-translate the polygon until it is accepted or reaches its reject limit
@@ -320,12 +318,13 @@ fn insert_stochastic_fractures(
 
             new_poly.assign_bounding_box();
 
+            // A stochastic fracture has no region: its lines are at the mesh surface
             if options.region_boundaries.is_some() {
                 new_poly.boundary_lines = boundary_lines(
                     &new_poly.vertices,
                     &new_poly.normal,
                     &options.domain_mesh,
-                    &region_ids,
+                    &new_poly.region_ids,
                 );
             }
 
@@ -404,18 +403,6 @@ fn insert_stochastic_fractures(
     }
 
     Ok(())
-}
-
-/// Regions of a stochastic fracture: its boundary lines are at their
-/// boundary, and its mesh has no triangle outside them. No region: all
-/// cells of the mesh.
-fn boundary_region_ids(input: &Input, family: &FractureFamily) -> Vec<usize> {
-    match &input.region_boundaries {
-        Some(options) if options.use_family_region && family.region_id > 0 => {
-            vec![family.region_id]
-        }
-        _ => Vec::new(),
-    }
 }
 
 /// Part of the stop condition which is complete, from 0 to 1

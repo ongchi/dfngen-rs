@@ -773,40 +773,9 @@ mod region_boundaries_mesh {
 mod region_boundaries_family_region {
     use super::*;
 
-    /// The region `center_and_east` is region 2 of `regions.vtu`
-    const CENTER_AND_EAST: usize = 2;
-
     #[test]
-    fn test_lines_of_a_family_are_on_the_surface_of_its_region() {
+    fn test_lines_of_a_family_with_a_region_are_on_the_mesh_surface() {
         let network = run("region_boundaries_family_region");
-        let segments = segments_of(&family_fractures(&network, 1));
-
-        // The region `center` is the center cell, from -3 to 3. The lines of
-        // the mesh surface (from -5 to 5) in other cells are also lines.
-        assert!(!segments.is_empty());
-        assert!(segments.iter().all(|segment| {
-            let half = match segment.side.other_side {
-                OtherSide::Cell(_) => [3.; 3],
-                OtherSide::MeshSurface => [5.; 3],
-            };
-            is_on_box_surface(&segment.start, half) && is_on_box_surface(&segment.end, half)
-        }));
-    }
-
-    #[test]
-    fn test_line_at_the_east_cell_has_its_region_on_the_other_side() {
-        let network = run("region_boundaries_family_region");
-
-        assert!(other_sides(&family_fractures(&network, 1))
-            .contains(&&OtherSide::Cell(vec![CENTER_AND_EAST])));
-    }
-
-    #[test]
-    fn test_lines_are_on_the_mesh_surface_without_use_family_region() {
-        let network = run_with_replacements(
-            "region_boundaries_family_region",
-            &[("use_family_region = true", "use_family_region = false")],
-        );
         let sides = other_sides(&family_fractures(&network, 1));
 
         assert!(!sides.is_empty());
@@ -1185,25 +1154,8 @@ mod mesh_regions {
     }
 
     #[test]
-    fn test_family_triangles_are_in_the_family_region() {
+    fn test_family_triangles_cross_the_family_region_boundary() {
         let network = run("mesh_regions");
-        let south = region_id(&network, "south");
-
-        let regions = triangle_regions(&network, |poly| poly.origin == FractureOrigin::Family(0));
-
-        assert!(!regions.is_empty());
-        assert!(regions
-            .iter()
-            .all(|cell_regions| cell_regions.contains(&south)));
-    }
-
-    #[test]
-    fn test_family_triangles_cross_the_region_boundary_without_use_family_region() {
-        let network = run_with_replaced_text(
-            "mesh_regions",
-            "use_family_region = true",
-            "use_family_region = false",
-        );
         let north = region_id(&network, "north");
 
         let regions = triangle_regions(&network, |poly| poly.origin == FractureOrigin::Family(0));

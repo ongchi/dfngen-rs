@@ -164,32 +164,18 @@ impl FramSection {
     }
 }
 
-#[derive(Deserialize)]
+/// Without the section or the key: no boundary lines
+#[derive(Deserialize, Default)]
 #[serde(deny_unknown_fields)]
 #[serde(default)]
 struct RegionBoundariesSection {
     enable: bool,
-    use_family_region: bool,
-}
-
-/// Without the section or a key: no boundary lines, and with `enable = true`
-/// the region of a stochastic fracture is the region of its family.
-impl Default for RegionBoundariesSection {
-    fn default() -> Self {
-        Self {
-            enable: false,
-            use_family_region: true,
-        }
-    }
 }
 
 impl RegionBoundariesSection {
-    /// The options of the boundary lines, or `None` if the option is off. The
-    /// other keys then have no effect.
+    /// The options of the boundary lines, or `None` if the option is off
     fn options(&self) -> Option<RegionBoundaryOptions> {
-        self.enable.then_some(RegionBoundaryOptions {
-            use_family_region: self.use_family_region,
-        })
+        self.enable.then_some(RegionBoundaryOptions)
     }
 }
 
@@ -1158,23 +1144,17 @@ mod tests {
     }
 
     #[test]
-    fn test_region_boundaries_section_with_only_enable_uses_the_family_region() {
+    fn test_region_boundaries_are_on_with_enable_true() {
         let options = add_before_clusters("[region_boundaries]\nenable = true\n");
 
         let (input, _) = parse(&[&options]).unwrap();
 
-        assert_eq!(
-            input.region_boundaries,
-            Some(RegionBoundaryOptions {
-                use_family_region: true
-            })
-        );
+        assert_eq!(input.region_boundaries, Some(RegionBoundaryOptions));
     }
 
     #[test]
     fn test_region_boundaries_are_off_with_enable_false() {
-        let options =
-            add_before_clusters("[region_boundaries]\nenable = false\nuse_family_region = false\n");
+        let options = add_before_clusters("[region_boundaries]\nenable = false\n");
 
         let (input, _) = parse(&[&options]).unwrap();
 
