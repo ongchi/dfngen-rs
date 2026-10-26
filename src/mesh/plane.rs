@@ -5,7 +5,7 @@ use parry3d_f64::na::Point3;
 
 use crate::fracture::poly::Poly;
 use crate::geometry::PlaneFrame;
-use crate::region_boundaries::{distance, distance_to_segment, OtherSide};
+use crate::region_boundaries::{distance, distance_to_segment, SegmentSide};
 
 /// A point in the plane of a fracture
 pub type Point2 = [f64; 2];
@@ -22,10 +22,10 @@ const MIN_WIDTH_SIZE_PART: f64 = 0.5;
 /// fracture (see `FracturePlane::width_at`)
 const OPPOSITE_ANGLE: f64 = 30.;
 
-/// A boundary line segment in the plane, with what is on its other side
+/// A boundary line segment in the plane, with what is beside it
 pub struct BoundarySegment2 {
     pub segment: [Point2; 2],
-    pub other_side: OtherSide,
+    pub side: SegmentSide,
 }
 
 /// A final fracture in its plane
@@ -69,7 +69,7 @@ impl FracturePlane {
                 .flat_map(|line| &line.segments)
                 .map(|segment| BoundarySegment2 {
                     segment: [frame.to_plane(&segment.start), frame.to_plane(&segment.end)],
-                    other_side: segment.other_side.clone(),
+                    side: segment.side.clone(),
                 })
                 .collect(),
             frame,

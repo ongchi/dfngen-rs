@@ -4,25 +4,51 @@ use std::str::FromStr;
 use parry3d_f64::na::Point3;
 use roxmltree::{Document, Node};
 
-use crate::domain_mesh::{DomainMesh, MeshTetrahedron};
+use crate::domain_mesh::{DomainMesh, MeshSurfaceTriangle, MeshTetrahedron};
 use crate::error::DfngenError;
 
 /// Prefix of the name of a cell data array which gives one region:
 /// `region__<name>`
 const REGION_ARRAY_PREFIX: &str = "region__";
 
-/// One cell data array `region__<name>`
-pub(super) struct RegionArray {
+/// Prefix of the name of a cell data array which gives one boundary surface:
+/// `boundary__<name>`
+const BOUNDARY_ARRAY_PREFIX: &str = "boundary__";
+
+/// Name of the boundary of the mesh surface in the output
+/// (`boundary__mesh_surface`): not a valid name of a boundary surface
+const MESH_SURFACE_BOUNDARY_NAME: &str = "mesh_surface";
+
+/// One cell data array `<prefix><name>`: `region__<name>` or `boundary__<name>`
+pub(super) struct MarkerArray {
     /// `<name>` of the array name
     pub name: String,
     /// For each cell of the piece: true if its value is above 0
-    pub is_cell_in_region: Vec<bool>,
+    pub is_cell_marked: Vec<bool>,
+}
+
+/// The cells of a piece, split into tetrahedra and triangles
+#[derive(Default)]
+struct MeshCells {
+    tetrahedra: Vec<MeshTetrahedron>,
+    surface_triangles: Vec<MeshSurfaceTriangle>,
+}
+
+/// The parts of one cell
+enum CellParts {
+    /// A volume cell: the 4 vertices of each tetrahedron
+    Volume(&'static [[usize; 4]]),
+    /// A surface cell: the 3 vertices of each triangle
+    Surface(&'static [[usize; 3]]),
 }
 
 /// Reads the domain from a VTK XML UnstructuredGrid file (`.vtu`, ASCII)
 ///
-/// The cells can be tetrahedra, voxels, hexahedra, wedges and pyramids. The
-/// cell data arrays `region__<name>` (optional) give the regions of each cell.
+/// The volume cells can be tetrahedra, voxels, hexahedra, wedges and
+/// pyramids. The cell data arrays `region__<name>` (optional) give the
+/// regions of each volume cell. The surface cells (triangles and quads,
+/// optional) with the cell data arrays `boundary__<name>` give the boundary
+/// surfaces.
 pub fn read_domain_mesh(path: &Path) -> Result<DomainMesh, DfngenError> {
     let invalid_mesh =
         |message: String| DfngenError::InvalidInput(format!("{}: {}", path.display(), message));
@@ -44,23 +70,84 @@ pub(super) fn parse_domain_mesh(text: &str) -> Result<DomainMesh, String> {
         return Err("the file is not a VTK UnstructuredGrid (.vtu) file".to_string());
     }
 
-    let mut tetrahedra = Vec::new();
-    let mut region_names = Vec::new();
+    let mut cells = MeshCells::default();
+    let mut names = MarkerNames::default();
 
     for piece in root.descendants().filter(|node| node.has_tag_name("Piece")) {
-        tetrahedra.extend(read_piece(piece, &mut region_names)?);
+        read_piece(piece, &mut names, &mut cells)?;
     }
 
-    DomainMesh::new(&tetrahedra, &region_names)
+    check_boundary_names(&names)?;
+
+    Ok(DomainMesh::new(&cells.tetrahedra, &names.regions)?
+        .with_boundary_surfaces(&cells.surface_triangles, &names.boundaries))
 }
 
-/// Reads the cells of one `Piece` element and splits them into tetrahedra.
+/// Names of the regions and of the boundary surfaces of the pieces, in the
+/// order of the file
+#[derive(Default)]
+struct MarkerNames {
+    regions: Vec<String>,
+    boundaries: Vec<String>,
+}
+
+/// A boundary surface must not have the name of a region or of the mesh
+/// surface: each of them is an array `boundary__<name>` of the output.
+fn check_boundary_names(names: &MarkerNames) -> Result<(), String> {
+    for name in &names.boundaries {
+        if name == MESH_SURFACE_BOUNDARY_NAME {
+            return Err(format!(
+                "the array {BOUNDARY_ARRAY_PREFIX}{name} has the name of the mesh surface boundary of the output. Use another name."
+            ));
+        }
+        if names.regions.contains(name) {
+            return Err(format!(
+                "the boundary surface {name} (array {BOUNDARY_ARRAY_PREFIX}{name}) has the name of the region {name} (array {REGION_ARRAY_PREFIX}{name}): both give the output array {BOUNDARY_ARRAY_PREFIX}{name}. Rename one of them."
+            ));
+        }
+    }
+
+    Ok(())
+}
+
+/// Position of each array in the names, with the new names added
+fn positions_in_names(
+    arrays: Vec<MarkerArray>,
+    names: &mut Vec<String>,
+) -> Vec<(usize, MarkerArray)> {
+    arrays
+        .into_iter()
+        .map(|array| {
+            let position = match names.iter().position(|name| *name == array.name) {
+                Some(position) => position,
+                None => {
+                    names.push(array.name.clone());
+                    names.len() - 1
+                }
+            };
+            (position, array)
+        })
+        .collect()
+}
+
+/// The positions in the names of the arrays which mark the cell
+fn marked_positions(arrays: &[(usize, MarkerArray)], cell: usize) -> Vec<usize> {
+    arrays
+        .iter()
+        .filter(|(_, array)| array.is_cell_marked[cell])
+        .map(|&(position, _)| position)
+        .collect()
+}
+
+/// Reads the cells of one `Piece` element and splits them into tetrahedra
+/// (volume cells) and triangles (surface cells).
 ///
 /// # Arguments
 ///
 /// * `piece` - `Piece` element
-/// * `region_names` - Names of the regions of the pieces before this one. The new names of this piece are added.
-fn read_piece(piece: Node, region_names: &mut Vec<String>) -> Result<Vec<MeshTetrahedron>, String> {
+/// * `names` - Names of the regions and boundaries of the pieces before this one. The new names of this piece are added.
+/// * `cells` - The cells of the pieces before this one. The cells of this piece are added.
+fn read_piece(piece: Node, names: &mut MarkerNames, cells: &mut MeshCells) -> Result<(), String> {
     let points_element = find_child(piece, "Points")?;
     let cells_element = find_child(piece, "Cells")?;
 
@@ -83,24 +170,14 @@ fn read_piece(piece: Node, region_names: &mut Vec<String>) -> Result<Vec<MeshTet
         .map(|&coordinates| Point3::from(coordinates))
         .collect();
 
-    // Each region array with its position in the region names
-    let mut region_arrays = Vec::new();
+    // Each array with its position in the names
+    let region_arrays =
+        positions_in_names(read_region_arrays(piece, types.len())?, &mut names.regions);
+    let boundary_arrays = positions_in_names(
+        read_marker_arrays(piece, types.len(), BOUNDARY_ARRAY_PREFIX, "boundary")?,
+        &mut names.boundaries,
+    );
 
-    for region_array in read_region_arrays(piece, types.len())? {
-        let position = match region_names
-            .iter()
-            .position(|name| *name == region_array.name)
-        {
-            Some(position) => position,
-            None => {
-                region_names.push(region_array.name.clone());
-                region_names.len() - 1
-            }
-        };
-        region_arrays.push((position, region_array));
-    }
-
-    let mut tetrahedra = Vec::new();
     let mut cell_start = 0;
 
     for (cell, (&cell_end, &cell_type)) in offsets.iter().zip(&types).enumerate() {
@@ -112,23 +189,46 @@ fn read_piece(piece: Node, region_names: &mut Vec<String>) -> Result<Vec<MeshTet
             return Err(format!("cell {cell}: there is no point {point_id}"));
         }
 
-        let local_tetrahedra = split_cell_into_tetrahedra(cell_type, point_ids.len())
+        let parts = split_cell(cell_type, point_ids.len())
             .map_err(|message| format!("cell {cell}: {message}"))?;
-        let cell_regions: Vec<usize> = region_arrays
-            .iter()
-            .filter(|(_, region_array)| region_array.is_cell_in_region[cell])
-            .map(|&(position, _)| position)
-            .collect();
+        let cell_regions = marked_positions(&region_arrays, cell);
+        let cell_boundaries = marked_positions(&boundary_arrays, cell);
 
-        tetrahedra.extend(local_tetrahedra.iter().map(|local_ids| MeshTetrahedron {
-            vertices: local_ids.map(|local_id| points[point_ids[local_id]]),
-            regions: cell_regions.clone(),
-        }));
+        match parts {
+            CellParts::Volume(local_tetrahedra) => {
+                if let Some(&position) = cell_boundaries.first() {
+                    return Err(format!(
+                        "cell {cell}: the array {BOUNDARY_ARRAY_PREFIX}{} has a value above 0 for a volume cell. Only surface cells (triangles, quads) can be on a boundary surface.",
+                        names.boundaries[position]
+                    ));
+                }
+                cells
+                    .tetrahedra
+                    .extend(local_tetrahedra.iter().map(|local_ids| MeshTetrahedron {
+                        vertices: local_ids.map(|local_id| points[point_ids[local_id]]),
+                        regions: cell_regions.clone(),
+                    }));
+            }
+            CellParts::Surface(local_triangles) => {
+                if let Some(&position) = cell_regions.first() {
+                    return Err(format!(
+                        "cell {cell}: the array {REGION_ARRAY_PREFIX}{} has a value above 0 for a surface cell. Only volume cells can be in a region.",
+                        names.regions[position]
+                    ));
+                }
+                cells
+                    .surface_triangles
+                    .extend(local_triangles.iter().map(|local_ids| MeshSurfaceTriangle {
+                        vertices: local_ids.map(|local_id| points[point_ids[local_id]]),
+                        boundaries: cell_boundaries.clone(),
+                    }));
+            }
+        }
 
         cell_start = cell_end;
     }
 
-    Ok(tetrahedra)
+    Ok(())
 }
 
 /// Reads the `NumberOfComponents` attribute of a `DataArray` element: the
@@ -159,25 +259,44 @@ pub(super) fn read_component_count(data_array: Node) -> Result<usize, String> {
 pub(super) fn read_region_arrays(
     piece: Node,
     cell_count: usize,
-) -> Result<Vec<RegionArray>, String> {
+) -> Result<Vec<MarkerArray>, String> {
+    read_marker_arrays(piece, cell_count, REGION_ARRAY_PREFIX, "region")
+}
+
+/// Reads the cell data arrays `<prefix><name>` of a piece, in the order of
+/// the file, with one value for each cell: a cell with a value above 0 is
+/// marked.
+///
+/// # Arguments
+///
+/// * `piece` - `Piece` element
+/// * `cell_count` - Number of cells of the piece
+/// * `prefix` - Prefix of the array names
+/// * `kind` - What an array gives, for the error messages: "region" or "boundary"
+fn read_marker_arrays(
+    piece: Node,
+    cell_count: usize,
+    prefix: &str,
+    kind: &str,
+) -> Result<Vec<MarkerArray>, String> {
     let Some(cell_data) = piece.children().find(|node| node.has_tag_name("CellData")) else {
         return Ok(Vec::new());
     };
 
-    let mut region_arrays = Vec::new();
+    let mut arrays = Vec::new();
 
     for data_array in cell_data
         .children()
         .filter(|node| node.has_tag_name("DataArray"))
     {
         let array_name = data_array.attribute("Name").unwrap_or_default();
-        let Some(name) = array_name.strip_prefix(REGION_ARRAY_PREFIX) else {
+        let Some(name) = array_name.strip_prefix(prefix) else {
             continue;
         };
 
         if name.is_empty() {
             return Err(format!(
-                "the array {array_name} has no region name after the prefix"
+                "the array {array_name} has no {kind} name after the prefix"
             ));
         }
         if read_component_count(data_array)? != 1 {
@@ -197,16 +316,16 @@ pub(super) fn read_region_arrays(
             ));
         }
 
-        region_arrays.push(RegionArray {
+        arrays.push(MarkerArray {
             name: name.to_string(),
-            is_cell_in_region: values.iter().map(|&value| value > 0.).collect(),
+            is_cell_marked: values.iter().map(|&value| value > 0.).collect(),
         });
     }
 
-    Ok(region_arrays)
+    Ok(arrays)
 }
 
-/// Splits a cell into tetrahedra.
+/// Splits a volume cell into tetrahedra, or a surface cell into triangles.
 ///
 /// # Arguments
 ///
@@ -215,43 +334,50 @@ pub(super) fn read_region_arrays(
 ///
 /// # Returns
 ///
-/// The 4 vertices of each tetrahedron, as positions in the point list of the cell
-fn split_cell_into_tetrahedra(
-    cell_type: u8,
-    point_count: usize,
-) -> Result<&'static [[usize; 4]], String> {
-    let (name, necessary_point_count, tetrahedra): (_, _, &[[usize; 4]]) = match cell_type {
-        10 => ("tetrahedron", 4, &[[0, 1, 2, 3]]),
+/// The vertices of each tetrahedron or triangle, as positions in the point list of the cell
+fn split_cell(cell_type: u8, point_count: usize) -> Result<CellParts, String> {
+    let (name, necessary_point_count, parts) = match cell_type {
+        5 => ("triangle", 3, CellParts::Surface(&[[0, 1, 2]])),
+        9 => ("quad", 4, CellParts::Surface(&[[0, 1, 2], [0, 2, 3]])),
+        10 => ("tetrahedron", 4, CellParts::Volume(&[[0, 1, 2, 3]])),
         // The 6 tetrahedra of a voxel or hexahedron have one diagonal in common
         11 => (
             "voxel",
             8,
-            &[
+            CellParts::Volume(&[
                 [0, 1, 3, 7],
                 [0, 3, 2, 7],
                 [0, 2, 6, 7],
                 [0, 6, 4, 7],
                 [0, 4, 5, 7],
                 [0, 5, 1, 7],
-            ],
+            ]),
         ),
         12 => (
             "hexahedron",
             8,
-            &[
+            CellParts::Volume(&[
                 [0, 1, 2, 6],
                 [0, 2, 3, 6],
                 [0, 3, 7, 6],
                 [0, 7, 4, 6],
                 [0, 4, 5, 6],
                 [0, 5, 1, 6],
-            ],
+            ]),
         ),
-        13 => ("wedge", 6, &[[0, 1, 2, 3], [1, 2, 4, 3], [2, 5, 4, 3]]),
-        14 => ("pyramid", 5, &[[0, 1, 2, 4], [0, 2, 3, 4]]),
+        13 => (
+            "wedge",
+            6,
+            CellParts::Volume(&[[0, 1, 2, 3], [1, 2, 4, 3], [2, 5, 4, 3]]),
+        ),
+        14 => (
+            "pyramid",
+            5,
+            CellParts::Volume(&[[0, 1, 2, 4], [0, 2, 3, 4]]),
+        ),
         _ => {
             return Err(format!(
-                "the cell type {cell_type} is not supported. Use tetrahedra (10), voxels (11), hexahedra (12), wedges (13) or pyramids (14)."
+                "the cell type {cell_type} is not supported. Use tetrahedra (10), voxels (11), hexahedra (12), wedges (13) or pyramids (14), and for boundary surfaces triangles (5) or quads (9)."
             ));
         }
     };
@@ -262,7 +388,7 @@ fn split_cell_into_tetrahedra(
         ));
     }
 
-    Ok(tetrahedra)
+    Ok(parts)
 }
 
 pub(super) fn find_child<'a, 'input>(
@@ -568,6 +694,128 @@ mod tests {
         let file = vtu_file(UNIT_CUBE_POINTS, "0 1 3 4", "5", "10", "");
 
         assert!(error_message(&file).contains("the offset 5 is not valid"));
+    }
+
+    /// A unit cube (cell 0) with its face at z = 0 as a quad (cell 1) and its
+    /// face at z = 1 as two triangles (cells 2 and 3), with the given `CellData`
+    /// content
+    fn cube_with_surface_cells_file(cell_data: &str) -> String {
+        vtu_file(
+            UNIT_CUBE_POINTS,
+            "0 1 2 3 4 5 6 7  0 1 2 3  4 5 6  4 6 7",
+            "8 12 15 18",
+            "12 9 5 5",
+            cell_data,
+        )
+    }
+
+    fn boundary_array(name: &str, values: &str) -> String {
+        format!(
+            r#"<DataArray type="Int32" Name="boundary__{name}" format="ascii">{values}</DataArray>"#
+        )
+    }
+
+    #[test]
+    fn test_surface_cells_do_not_change_the_volume() {
+        assert_volume(&cube_with_surface_cells_file(""), 1.);
+    }
+
+    #[test]
+    fn test_each_boundary_array_is_one_boundary_surface_in_the_order_of_the_file() {
+        let cell_data = boundary_array("top", "0 0 1 1") + &boundary_array("bottom", "0 1 0 0");
+        let mesh = parse_domain_mesh(&cube_with_surface_cells_file(&cell_data)).unwrap();
+        let names: Vec<&str> = mesh
+            .boundary_surfaces()
+            .iter()
+            .map(|surface| surface.name.as_str())
+            .collect();
+
+        assert_eq!(names, ["top", "bottom"]);
+    }
+
+    #[test]
+    fn test_point_on_a_marked_quad_has_its_boundary_surface() {
+        let cell_data = boundary_array("top", "0 0 1 1") + &boundary_array("bottom", "0 1 0 0");
+        let mesh = parse_domain_mesh(&cube_with_surface_cells_file(&cell_data)).unwrap();
+
+        // The center of the cube is at the origin
+        assert_eq!(
+            mesh.boundary_surfaces_at(&Point3::new(0.2, 0.3, -0.5), 1e-9),
+            [2]
+        );
+    }
+
+    #[test]
+    fn test_boundary_value_above_0_on_a_volume_cell_is_rejected() {
+        let file = cube_with_surface_cells_file(&boundary_array("top", "1 0 1 1"));
+        let message = error_message(&file);
+
+        assert!(
+            message.contains("boundary__top has a value above 0 for a volume cell"),
+            "{message}"
+        );
+    }
+
+    #[test]
+    fn test_region_value_above_0_on_a_surface_cell_is_rejected() {
+        let file = cube_with_surface_cells_file(&region_array("rock", "1 1 0 0"));
+        let message = error_message(&file);
+
+        assert!(
+            message.contains("region__rock has a value above 0 for a surface cell"),
+            "{message}"
+        );
+    }
+
+    #[test]
+    fn test_boundary_surface_with_the_name_of_a_region_is_rejected() {
+        let cell_data = region_array("west", "1 0 0 0") + &boundary_array("west", "0 1 0 0");
+        let message = error_message(&cube_with_surface_cells_file(&cell_data));
+
+        assert!(message.contains("Rename one of them"), "{message}");
+    }
+
+    #[test]
+    fn test_boundary_surface_with_the_name_mesh_surface_is_rejected() {
+        let file = cube_with_surface_cells_file(&boundary_array("mesh_surface", "0 1 0 0"));
+        let message = error_message(&file);
+
+        assert!(
+            message.contains("name of the mesh surface boundary"),
+            "{message}"
+        );
+    }
+
+    #[test]
+    fn test_boundary_array_without_a_boundary_name_is_rejected() {
+        let file = cube_with_surface_cells_file(&boundary_array("", "0 1 0 0"));
+        let message = error_message(&file);
+
+        assert!(message.contains("has no boundary name"), "{message}");
+    }
+
+    #[test]
+    fn test_quad_with_too_few_points_is_rejected() {
+        let message = error_message(&one_cell_file(9, "0 1 2"));
+
+        assert!(message.contains("a quad must have 4 points"), "{message}");
+    }
+
+    #[test]
+    fn test_polygon_cell_is_rejected() {
+        let message = error_message(&one_cell_file(7, "0 1 2 3 4"));
+
+        assert!(
+            message.contains("the cell type 7 is not supported"),
+            "{message}"
+        );
+    }
+
+    #[test]
+    fn test_mesh_of_surface_cells_only_is_rejected() {
+        let message = error_message(&one_cell_file(9, "0 1 2 3"));
+
+        assert!(message.contains("no cell with a volume"), "{message}");
     }
 
     #[test]

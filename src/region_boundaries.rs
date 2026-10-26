@@ -55,12 +55,21 @@ pub enum OtherSide {
     MeshSurface,
 }
 
+/// What is beside a boundary segment
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SegmentSide {
+    pub other_side: OtherSide,
+    /// The boundary surfaces of the mesh under the segment (N is boundary N
+    /// of `DomainMesh::boundary_surfaces`), sorted. Empty: no boundary surface.
+    pub surface_ids: Vec<usize>,
+}
+
 /// One straight segment of a boundary line
 #[derive(Clone, Debug, PartialEq)]
 pub struct BoundarySegment {
     pub start: Point3<f64>,
     pub end: Point3<f64>,
-    pub other_side: OtherSide,
+    pub side: SegmentSide,
 }
 
 /// Connected segments of the region boundary on a fracture, in order. An
@@ -125,7 +134,8 @@ impl BoundaryLine {
 /// Finds the boundary lines of a convex fracture: the lines where the
 /// boundary of the cells of one or more regions crosses it, and the lines
 /// where the mesh surface crosses it in cells of other regions. The faces
-/// between two cells of these regions give no line.
+/// between two cells of these regions give no line. A segment on a surface
+/// cell of the mesh gets the boundary surfaces of that cell.
 ///
 /// A line on the mesh surface in cells of other regions can end on a line of
 /// the regions, where the boundary of the regions meets the mesh surface.
@@ -203,7 +213,7 @@ pub fn boundary_lines(
         .iter()
         .flat_map(|contour| {
             boundary.lines_of_contour(contour, vertices, |start, end| {
-                boundary.other_side(start, end)
+                boundary.segment_side(start, end)
             })
         })
         .collect();
@@ -219,13 +229,13 @@ pub fn boundary_lines(
         };
         lines.extend(union(&pieces).iter().flat_map(|contour| {
             boundary.lines_of_contour(contour, vertices, |start, end| {
-                let other_side = boundary.other_side(start, end)?;
+                let side = boundary.segment_side(start, end)?;
                 let inner_cell = boundary
                     .mesh
                     .regions_at(&boundary.probe(start, end, Side::Inner));
-                let is_surface_of_other_regions = other_side == OtherSide::MeshSurface
+                let is_surface_of_other_regions = side.other_side == OtherSide::MeshSurface
                     && inner_cell.is_some_and(|cell_regions| !is_in_regions(cell_regions));
-                is_surface_of_other_regions.then_some(other_side)
+                is_surface_of_other_regions.then_some(side)
             })
         }));
     }
@@ -268,23 +278,23 @@ struct BoundarySide<'a> {
 
 impl BoundarySide<'_> {
     /// The boundary lines of one contour of the union: the runs of edges
-    /// which `line_side` accepts. Collinear edges with the same other side
-    /// become one segment.
+    /// which `line_side` accepts. Collinear edges with the same side become
+    /// one segment.
     ///
     /// # Arguments
     ///
     /// * `contour` - Contour of the union
     /// * `vertices` - Vertices of the fracture
-    /// * `line_side` - Other side of an edge of a line, from its start and
-    ///   end; `None` for an edge which is not on a line
+    /// * `line_side` - Side of an edge of a line, from its start and end;
+    ///   `None` for an edge which is not on a line
     fn lines_of_contour(
         &self,
         contour: &[[f64; 2]],
         vertices: &[Point3<f64>],
-        line_side: impl Fn([f64; 2], [f64; 2]) -> Option<OtherSide>,
+        line_side: impl Fn([f64; 2], [f64; 2]) -> Option<SegmentSide>,
     ) -> Vec<BoundaryLine> {
         let count = contour.len();
-        let other_sides: Vec<Option<OtherSide>> = (0..count)
+        let other_sides: Vec<Option<SegmentSide>> = (0..count)
             .map(|i| line_side(contour[i], contour[(i + 1) % count]))
             .collect();
 
@@ -300,11 +310,12 @@ impl BoundarySide<'_> {
             .iter()
             .map(|&i| self.to_space(contour[i], vertices))
             .collect();
-        let sides: Vec<Option<OtherSide>> = kept.iter().map(|&i| other_sides[i].clone()).collect();
-        let segment = |i: usize, other_side: OtherSide| BoundarySegment {
+        let sides: Vec<Option<SegmentSide>> =
+            kept.iter().map(|&i| other_sides[i].clone()).collect();
+        let segment = |i: usize, side: SegmentSide| BoundarySegment {
             start: points[i],
             end: points[(i + 1) % points.len()],
-            other_side,
+            side,
         };
 
         if sides.iter().all(Option::is_some) {
@@ -331,7 +342,7 @@ impl BoundarySide<'_> {
             let i = (first_outline_edge + offset) % edge_count;
 
             match &sides[i] {
-                Some(other_side) => current.push(segment(i, other_side.clone())),
+                Some(side) => current.push(segment(i, side.clone())),
                 None if !current.is_empty() => lines.push(BoundaryLine {
                     segments: std::mem::take(&mut current),
                     is_closed: false,
@@ -343,9 +354,10 @@ impl BoundarySide<'_> {
         lines
     }
 
-    /// What is on the other side of the edge from `start` to `end`. `None`
-    /// for an edge on the fracture outline.
-    fn other_side(&self, start: [f64; 2], end: [f64; 2]) -> Option<OtherSide> {
+    /// What is beside the edge from `start` to `end`: the cell on its other
+    /// side, and the boundary surfaces at its middle. `None` for an edge on
+    /// the fracture outline.
+    fn segment_side(&self, start: [f64; 2], end: [f64; 2]) -> Option<SegmentSide> {
         let is_on_outline_edge = (0..self.outline.len()).any(|i| {
             let edge = [self.outline[i], self.outline[(i + 1) % self.outline.len()]];
             distance_to_segment(start, edge) < self.outline_tolerance
@@ -356,12 +368,22 @@ impl BoundarySide<'_> {
             return None;
         }
 
-        Some(
-            match self.mesh.regions_at(&self.probe(start, end, Side::Outer)) {
-                Some(region_ids) => OtherSide::Cell(region_ids.to_vec()),
-                None => OtherSide::MeshSurface,
-            },
-        )
+        let other_side = match self.mesh.regions_at(&self.probe(start, end, Side::Outer)) {
+            Some(region_ids) => OtherSide::Cell(region_ids.to_vec()),
+            None => OtherSide::MeshSurface,
+        };
+        let middle = self
+            .frame
+            .to_space([0.5 * (start[0] + end[0]), 0.5 * (start[1] + end[1])]);
+        // The union rounds the coordinates to a part of the outline tolerance
+        let surface_ids = self
+            .mesh
+            .boundary_surfaces_at(&middle, self.outline_tolerance.max(self.mesh.tolerance()));
+
+        Some(SegmentSide {
+            other_side,
+            surface_ids,
+        })
     }
 
     /// A point a small distance from the middle of the edge from `start` to
@@ -666,7 +688,8 @@ pub(crate) fn distance_to_segment(point: [f64; 2], segment: [[f64; 2]; 2]) -> f6
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain_mesh::test_meshes::{box_tetrahedra, l_shaped_mesh};
+    use crate::domain_mesh::test_meshes::{box_tetrahedra, l_shaped_mesh, region_names};
+    use crate::domain_mesh::MeshSurfaceTriangle;
 
     const MIN_FEATURE_SIZE: f64 = 0.1;
     const EPS: f64 = 1e-9;
@@ -692,8 +715,48 @@ mod tests {
         lines
             .iter()
             .flat_map(|line| &line.segments)
-            .map(|segment| &segment.other_side)
+            .map(|segment| &segment.side.other_side)
             .collect()
+    }
+
+    /// The boundary surfaces of each segment of all lines
+    fn surface_ids(lines: &[BoundaryLine]) -> Vec<&[usize]> {
+        lines
+            .iter()
+            .flat_map(|line| &line.segments)
+            .map(|segment| segment.side.surface_ids.as_slice())
+            .collect()
+    }
+
+    /// A box of 10 x 10 x 10 with its center at the origin. Its face at
+    /// x = -5 has the surface triangles of the diagonal of its tetrahedra
+    /// (from (-5, -5, -5) to (-5, 5, 5)): the triangle where z > y is on the
+    /// boundary surface `west` (boundary 1) if `is_west_marked`, the
+    /// triangle where z < y on no boundary surface.
+    fn box_with_a_marked_triangle(is_west_marked: bool) -> DomainMesh {
+        let tetrahedra = box_tetrahedra([-5.; 3], [5.; 3], &[]);
+        let triangles = [
+            MeshSurfaceTriangle {
+                vertices: [
+                    Point3::new(-5., -5., -5.),
+                    Point3::new(-5., 5., 5.),
+                    Point3::new(-5., -5., 5.),
+                ],
+                boundaries: if is_west_marked { vec![0] } else { Vec::new() },
+            },
+            MeshSurfaceTriangle {
+                vertices: [
+                    Point3::new(-5., -5., -5.),
+                    Point3::new(-5., 5., -5.),
+                    Point3::new(-5., 5., 5.),
+                ],
+                boundaries: Vec::new(),
+            },
+        ];
+
+        DomainMesh::new(&tetrahedra, &[])
+            .unwrap()
+            .with_boundary_surfaces(&triangles, &region_names(&["west"]))
     }
 
     fn lengths(lines: &[BoundaryLine]) -> Vec<f64> {
@@ -720,7 +783,10 @@ mod tests {
             segments: vec![BoundarySegment {
                 start: Point3::new(x0, y0, 0.),
                 end: Point3::new(x1, y1, 0.),
-                other_side: OtherSide::MeshSurface,
+                side: SegmentSide {
+                    other_side: OtherSide::MeshSurface,
+                    surface_ids: Vec::new(),
+                },
             }],
             is_closed: false,
         }
@@ -795,6 +861,39 @@ mod tests {
         let lines = lines(&square(0., 0., 2.), &l_shaped_mesh(), &[1, 2]);
 
         assert_eq!(sides(&lines), [&OtherSide::MeshSurface; 2]);
+    }
+
+    #[test]
+    fn test_segment_on_a_marked_surface_cell_has_its_boundary_surface() {
+        // The line at x = -5 from y = -1 to y = 0 is in the triangle where z > y
+        let lines = lines(
+            &square(-5., -0.5, 0.5),
+            &box_with_a_marked_triangle(true),
+            &[],
+        );
+
+        assert_eq!(surface_ids(&lines), [&[1][..]]);
+    }
+
+    #[test]
+    fn test_segment_on_an_unmarked_surface_cell_has_no_boundary_surface() {
+        let lines = lines(
+            &square(-5., -0.5, 0.5),
+            &box_with_a_marked_triangle(false),
+            &[],
+        );
+
+        assert_eq!(surface_ids(&lines), [&[] as &[usize]]);
+    }
+
+    #[test]
+    fn test_line_across_two_surface_cells_has_a_segment_for_each() {
+        // The line at x = -5 from y = -1 to y = 1 crosses the diagonal at y = 0
+        let lines = lines(&square(-5., 0., 1.), &box_with_a_marked_triangle(true), &[]);
+        let mut ids = surface_ids(&lines);
+        ids.sort();
+
+        assert_eq!(ids, [&[] as &[usize], &[1]]);
     }
 
     #[test]

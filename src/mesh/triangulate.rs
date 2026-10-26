@@ -13,7 +13,7 @@ use spade::{
 use super::plane::{point_on_segment, FracturePlane, Point2};
 use super::shared_points::{Join, SharedNetwork};
 use super::{JOIN_DISTANCE_PART, MERGE_DISTANCE_PART};
-use crate::region_boundaries::{distance, distance_to_segment, position_on_segment, OtherSide};
+use crate::region_boundaries::{distance, distance_to_segment, position_on_segment, SegmentSide};
 
 /// A triangle gets a new point if its circumradius is above this part of the
 /// target size. An equilateral triangle with sides of the target size has
@@ -65,8 +65,8 @@ pub struct LocalMesh {
     pub vertices: Vec<LocalVertex>,
     /// Indices into `vertices`, counter-clockwise around the fracture normal
     pub triangles: Vec<[usize; 3]>,
-    /// The vertices on the boundary lines, with what is on the other side
-    pub boundary_sides: Vec<(usize, OtherSide)>,
+    /// The vertices on the boundary lines, with what is beside the lines
+    pub boundary_sides: Vec<(usize, SegmentSide)>,
     /// Number of constraint edges which crossed another one and were not added
     pub skipped_constraints: usize,
     /// Edges of shared lines (pairs of shared ids) which the refinement
@@ -327,15 +327,11 @@ pub fn mesh_fracture(
 
     let mut boundary_sides = Vec::new();
     for (boundary, polyline) in plane.boundary_segments.iter().zip(&boundary_polylines) {
-        boundary_sides.extend(
-            polyline
-                .iter()
-                .map(|&index| (index, boundary.other_side.clone())),
-        );
+        boundary_sides.extend(polyline.iter().map(|&index| (index, boundary.side.clone())));
         for pair in polyline.windows(2) {
             edges
                 .boundary
-                .insert(edge_key(pair[0], pair[1]), boundary.other_side.clone());
+                .insert(edge_key(pair[0], pair[1]), boundary.side.clone());
         }
     }
     polylines.extend(outline_polylines);
@@ -773,8 +769,8 @@ struct ConstraintEdges {
     /// Edges of the shared lines (local vertex indices, smaller first): only
     /// a split in all fractures of the line keeps the mesh connected
     shared: HashSet<(usize, usize)>,
-    /// Edges of the boundary lines, with what is on their other side
-    boundary: HashMap<(usize, usize), OtherSide>,
+    /// Edges of the boundary lines, with what is beside them
+    boundary: HashMap<(usize, usize), SegmentSide>,
 }
 
 fn edge_key(first: usize, second: usize) -> (usize, usize) {
@@ -807,7 +803,7 @@ fn refine(
     vertices: &mut LocalVertices,
     plane: &FracturePlane,
     edges: &mut ConstraintEdges,
-    boundary_sides: &mut Vec<(usize, OtherSide)>,
+    boundary_sides: &mut Vec<(usize, SegmentSide)>,
     skipped_constraints: &mut usize,
 ) -> Result<HashSet<(usize, usize)>, InsertionError> {
     let min_spacing = MIN_SPACING_PART * plane.min_size;
@@ -1007,7 +1003,7 @@ fn try_split(
     vertices: &mut LocalVertices,
     [from, to]: [FixedVertexHandle; 2],
     edges: &mut ConstraintEdges,
-    boundary_sides: &mut Vec<(usize, OtherSide)>,
+    boundary_sides: &mut Vec<(usize, SegmentSide)>,
     skipped_constraints: &mut usize,
     min_spacing: f64,
 ) -> Result<SplitResult, InsertionError> {
@@ -1194,7 +1190,7 @@ fn split_edge(
     vertices: &mut LocalVertices,
     [from, to]: [FixedVertexHandle; 2],
     edges: &mut ConstraintEdges,
-    boundary_sides: &mut Vec<(usize, OtherSide)>,
+    boundary_sides: &mut Vec<(usize, SegmentSide)>,
     skipped_constraints: &mut usize,
 ) -> Result<(), InsertionError> {
     let (first, second) = (cdt.vertex(from).data().index, cdt.vertex(to).data().index);
@@ -1229,14 +1225,10 @@ fn split_edge(
         }
     }
 
-    if let Some(other_side) = edges.boundary.remove(&edge_key(first, second)) {
-        edges
-            .boundary
-            .insert(edge_key(first, index), other_side.clone());
-        edges
-            .boundary
-            .insert(edge_key(index, second), other_side.clone());
-        boundary_sides.push((index, other_side));
+    if let Some(side) = edges.boundary.remove(&edge_key(first, second)) {
+        edges.boundary.insert(edge_key(first, index), side.clone());
+        edges.boundary.insert(edge_key(index, second), side.clone());
+        boundary_sides.push((index, side));
     }
 
     Ok(())

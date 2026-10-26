@@ -155,8 +155,13 @@ and `tests/data/region_boundaries_user_fractures` are examples.
   another line (where the boundary of the region meets the mesh surface), or
   it is a closed loop around a hole of the region. A
   line has one or more straight segments; a segment ends where the line
-  bends, or where the cell on its other side changes. The vertices are on
-  the cell faces.
+  bends, where the cell on its other side changes, or where its boundary
+  surfaces change. The vertices are on the cell faces.
+- A segment on a surface cell of the mesh with a boundary surface (see
+  "Domain mesh") has that boundary surface: its output array
+  `boundary__<name>` is 1. The surface cells only give names to the lines:
+  a surface cell inside the cells of the region of a fracture gives no line.
+  `tests/data/boundary_surfaces` is an example.
 - With FRAM, FRAM checks the lines of a new fracture (h = `min_feature_size`):
   - `ShortBoundaryLine`: a line is shorter than h.
   - `BoundaryCloseToEdge`: a vertex of a line which is not on the fracture
@@ -243,8 +248,8 @@ network is the same as without the option.
   a boundary array (see `dfn_mesh.vtu` below; for example, fully in one
   region and away from the mesh surface) is not in the mesh; the log gives
   the number of these fractures. The other output files keep them.
-- A line with a cell of no region on the other side gives no array: its
-  points are not boundary points.
+- A line with a cell of no region on the other side, and on no boundary
+  surface, gives no array: its points are not boundary points.
 - A point where a line of a region meets a line on the mesh surface (or of
   another region) is in both arrays. fehm-rs gives such a point the pressure
   of the first of the two boundaries in its input file, with a warning.
@@ -275,8 +280,11 @@ definition of the domain. `tests/data/mesh_domain` is an example, and
 
 - The file must be an ASCII `.vtu` file. In ParaView, select the data mode
   "Ascii" in the save dialog. In PyVista, use `mesh.save("domain.vtu", binary=False)`.
-- The cells can be tetrahedra, voxels, hexahedra, wedges and pyramids (VTK
-  types 10 to 14).
+- The volume cells can be tetrahedra, voxels, hexahedra, wedges and pyramids
+  (VTK types 10 to 14). The file can also have surface cells, triangles and
+  quads (VTK types 5 and 9), for the boundary surfaces (see below). The
+  surface cells have no effect on the volume, the bounding box, the regions
+  or the fracture centers.
 - The bounding box of the mesh is the box domain: a fracture with no part
   in this box is rejected. The mesh can be at any position.
 - The center of each stochastic fracture is in a cell of the mesh. The centers
@@ -312,6 +320,32 @@ the third cell has no region (`tests/data/regions.vtu` is an example):
 <DataArray type="Int32" Name="region__north" format="ascii">1 1 0</DataArray>
 </CellData>
 ```
+
+Boundary surfaces of the mesh: each cell data array with a name
+`boundary__<name>` (optional) is one boundary surface with the name `<name>`.
+A surface cell with a value above 0 is on the boundary surface; a surface
+cell can be on more than one boundary surface, and on none. The surface
+cells must be on faces of the volume cells: on the mesh surface, or between
+cells of two regions. With `[region_boundaries]`, a boundary line segment on
+such a cell gets the boundary surface, and the output files have the array
+`boundary__<name>` (see "Output files"); for fehm-rs, a boundary surface is a
+boundary as a region is. In this example, the first cell is a hexahedron, the
+second cell (a quad) is on the boundary surface `inflow`, and the third cell
+(a quad) is on no boundary surface (`tests/data/boundary_surfaces` is an
+example):
+
+```xml
+<CellData>
+<DataArray type="Int32" Name="boundary__inflow" format="ascii">0 1 0</DataArray>
+</CellData>
+```
+
+These are errors: a volume cell with a value above 0 in a `boundary__<name>`
+array, a surface cell with a value above 0 in a `region__<name>` array, a
+boundary surface with the name of a region (both give the output array
+`boundary__<name>`), and the name `mesh_surface`. The value 0 is allowed
+in both kinds of array (ParaView writes 0 for a missing value when it merges
+two meshes).
 
 A cell data array with the name `region` (the format of the versions before
 0.7.0) is ignored, as all other cell data.
@@ -544,6 +578,7 @@ fracture edge in `fractures.vtp`.
 | `line_id` | Number of the boundary line on its fracture, starts at 1. The segments of one line are in the order of the line. |
 | `mesh_surface` | 1 if no cell of the mesh is on the other side of the segment (the segment is on the surface of the mesh), else 0. |
 | `boundary__<name>` | One array for each region of the mesh, in the order of the mesh file: 1 if the cell on the other side of the segment is in the region `<name>`, else 0. All arrays are 0 for a segment with a cell of no region on the other side. |
+| `boundary__<name>` | Then one array for each boundary surface of the mesh, in the order of the mesh file: 1 if the segment is on a surface cell of the boundary surface `<name>`, else 0. |
 
 For example, a segment of a fracture of the region `south` with 1 in
 `boundary__north` is on the boundary between the regions `south` and `north`.
@@ -560,6 +595,7 @@ triangle (VTK type 5), counter-clockwise around the normal of its fracture.
 | `permeability` (cell) | aperture² / 12 (m²). |
 | `boundary__mesh_surface` (point) | 1 for a point on a boundary line on the mesh surface, else 0. |
 | `boundary__<name>` (point) | One array for each region of the mesh: 1 for a point on a boundary line with a cell of the region `<name>` on the other side, else 0. |
+| `boundary__<name>` (point) | Then one array for each boundary surface of the mesh: 1 for a point on a boundary line on a surface cell of the boundary surface `<name>`, else 0. |
 
 In the input file of fehm-rs, each `[[boundary]]` gives the pressure of one of
 these arrays by its name (`mesh_surface` or `<name>`).

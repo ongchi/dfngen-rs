@@ -15,6 +15,22 @@ pub struct MeshTetrahedron {
     pub regions: Vec<usize>,
 }
 
+/// One triangle of a surface cell of the mesh, in the coordinates of the mesh file
+pub struct MeshSurfaceTriangle {
+    pub vertices: [Point3<f64>; 3],
+    /// The boundary surfaces of the cell: positions in the boundary names
+    /// which `DomainMesh::with_boundary_surfaces` gets. Empty: the cell is on
+    /// no boundary surface.
+    pub boundaries: Vec<usize>,
+}
+
+/// The surface cells of the mesh which are on the boundary surface with this name
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BoundarySurface {
+    /// Name of the boundary: `<name>` of the cell data array `boundary__<name>`
+    pub name: String,
+}
+
 /// The cells of the mesh which are in the region with this name.
 /// A cell can be in more than one region.
 #[derive(Debug, Clone, PartialEq)]
@@ -140,6 +156,48 @@ impl Tetrahedron {
     }
 }
 
+#[derive(Debug)]
+struct SurfaceTriangle {
+    vertices: [Point3<f64>; 3],
+    normal: Vector3<f64>,
+    /// The boundary surfaces of the cell. N is boundary N of
+    /// `DomainMesh::boundary_surfaces`.
+    boundary_ids: Vec<usize>,
+}
+
+impl SurfaceTriangle {
+    /// `None` for a triangle with no area
+    fn new(vertices: &[Point3<f64>; 3], boundary_ids: Vec<usize>) -> Option<Self> {
+        let [a, b, c] = vertices;
+        let normal = (b - a).cross(&(c - a)).try_normalize(0.)?;
+
+        Some(Self {
+            vertices: *vertices,
+            normal,
+            boundary_ids,
+        })
+    }
+
+    /// True if the point is at most `tolerance` from the plane of the
+    /// triangle and inside its edges, or at most `tolerance` outside them
+    fn contains_point(&self, point: &Point3<f64>, tolerance: f64) -> bool {
+        let plane_distance = (point - self.vertices[0]).dot(&self.normal);
+
+        if plane_distance.abs() > tolerance {
+            return false;
+        }
+
+        let projected = point - self.normal * plane_distance;
+
+        (0..3).all(|i| {
+            let start = self.vertices[i];
+            let edge = self.vertices[(i + 1) % 3] - start;
+            // Distance inside the edge, positive in the triangle
+            edge.cross(&(projected - start)).dot(&self.normal) / edge.norm() >= -tolerance
+        })
+    }
+}
+
 fn tetrahedron_volume(vertices: &[Point3<f64>; 4]) -> f64 {
     let [a, b, c, d] = vertices;
     ((b - a).cross(&(c - a)).dot(&(d - a)) / 6.).abs()
@@ -172,19 +230,20 @@ impl VolumeTable {
 }
 
 /// Uniform grid over the bounding box of the mesh. Each grid cell has the
-/// indices of the tetrahedra which can have a point in that grid cell.
+/// indices of the items (tetrahedra or surface triangles) which can have a
+/// point in that grid cell.
 #[derive(Debug)]
 struct Grid {
     half_size: Vector3<f64>,
     cell_size: Vector3<f64>,
     cell_counts: [usize; 3],
-    tetrahedra_of_cell: Vec<Vec<usize>>,
+    items_of_cell: Vec<Vec<usize>>,
 }
 
 impl Grid {
-    /// Makes an empty grid with about one grid cell for each tetrahedron.
-    fn new(size: &Vector3<f64>, tetrahedron_count: usize) -> Self {
-        let cell_edge = (size.x * size.y * size.z / tetrahedron_count as f64).cbrt();
+    /// Makes an empty grid with about one grid cell for each item.
+    fn new(size: &Vector3<f64>, item_count: usize) -> Self {
+        let cell_edge = (size.x * size.y * size.z / item_count as f64).cbrt();
         let cell_counts =
             std::array::from_fn(|axis| ((size[axis] / cell_edge).ceil() as usize).max(1));
         let cell_size = Vector3::from_fn(|axis, _| size[axis] / cell_counts[axis] as f64);
@@ -193,7 +252,7 @@ impl Grid {
             half_size: size * 0.5,
             cell_size,
             cell_counts,
-            tetrahedra_of_cell: vec![Vec::new(); cell_counts.iter().product()],
+            items_of_cell: vec![Vec::new(); cell_counts.iter().product()],
         }
     }
 
@@ -210,7 +269,7 @@ impl Grid {
         (cell[2] * self.cell_counts[1] + cell[1]) * self.cell_counts[0] + cell[0]
     }
 
-    /// Indices in `tetrahedra_of_cell` of the grid cells which a box touches
+    /// Indices in `items_of_cell` of the grid cells which a box touches
     fn cells_in(&self, bounds: &Aabb) -> impl Iterator<Item = usize> + '_ {
         let first = self.cell_of(&bounds.mins);
         let last = self.cell_of(&bounds.maxs);
@@ -221,11 +280,11 @@ impl Grid {
         })
     }
 
-    fn insert(&mut self, tetrahedron: usize, bounds: &Aabb) {
+    fn insert(&mut self, item: usize, bounds: &Aabb) {
         let cells: Vec<usize> = self.cells_in(bounds).collect();
 
         for cell in cells {
-            self.tetrahedra_of_cell[cell].push(tetrahedron);
+            self.items_of_cell[cell].push(item);
         }
     }
 }
@@ -247,6 +306,9 @@ pub struct DomainMesh {
     volume_tables: Vec<VolumeTable>,
     grid: Grid,
     tolerance: f64,
+    boundary_surfaces: Vec<BoundarySurface>,
+    surface_triangles: Vec<SurfaceTriangle>,
+    surface_grid: Grid,
 }
 
 impl DomainMesh {
@@ -321,7 +383,46 @@ impl DomainMesh {
             volume_tables,
             grid,
             tolerance,
+            boundary_surfaces: Vec::new(),
+            surface_triangles: Vec::new(),
+            surface_grid: Grid::new(&size, 1),
         })
+    }
+
+    /// Adds the boundary surfaces: the triangles of the surface cells and
+    /// the names of the boundaries. Triangles with no area are ignored. The
+    /// surface cells do not change the volume, the bounding box or the regions.
+    pub fn with_boundary_surfaces(
+        mut self,
+        mesh_triangles: &[MeshSurfaceTriangle],
+        boundary_names: &[String],
+    ) -> Self {
+        self.boundary_surfaces = boundary_names
+            .iter()
+            .map(|name| BoundarySurface { name: name.clone() })
+            .collect();
+        self.surface_triangles = mesh_triangles
+            .iter()
+            .filter_map(|triangle| {
+                let boundary_ids = triangle
+                    .boundaries
+                    .iter()
+                    .map(|&position| position + 1)
+                    .collect();
+                SurfaceTriangle::new(
+                    &triangle.vertices.map(|vertex| vertex - self.center),
+                    boundary_ids,
+                )
+            })
+            .collect();
+        self.surface_grid = Grid::new(&self.size, self.surface_triangles.len().max(1));
+
+        for (i, triangle) in self.surface_triangles.iter().enumerate() {
+            let bounds = Aabb::from_points(&triangle.vertices).loosened(self.tolerance);
+            self.surface_grid.insert(i, &bounds);
+        }
+
+        self
     }
 
     /// Center of the bounding box, in the coordinates of the mesh file
@@ -345,12 +446,38 @@ impl DomainMesh {
         &self.regions
     }
 
+    /// The boundary surfaces of the mesh, in the order of their names in
+    /// `DomainMesh::with_boundary_surfaces`. Boundary N of a surface triangle
+    /// is `boundary_surfaces()[N - 1]`.
+    pub fn boundary_surfaces(&self) -> &[BoundarySurface] {
+        &self.boundary_surfaces
+    }
+
+    /// The boundary surfaces of the surface cells which have the point, at
+    /// most `tolerance` from it (N is boundary N of `boundary_surfaces`),
+    /// sorted. Empty: no surface cell of a boundary has the point.
+    pub fn boundary_surfaces_at(&self, point: &Point3<f64>, tolerance: f64) -> Vec<usize> {
+        let point_box = Aabb::new(*point, *point).loosened(tolerance);
+        let mut boundary_ids: Vec<usize> = self
+            .surface_grid
+            .cells_in(&point_box)
+            .flat_map(|cell| &self.surface_grid.items_of_cell[cell])
+            .map(|&i| &self.surface_triangles[i])
+            .filter(|triangle| triangle.contains_point(point, tolerance))
+            .flat_map(|triangle| triangle.boundary_ids.iter().copied())
+            .collect();
+        boundary_ids.sort_unstable();
+        boundary_ids.dedup();
+
+        boundary_ids
+    }
+
     /// True if the point is in a cell of the region.
     /// `region_id` 0 means a cell of any region.
     pub fn contains_point(&self, point: &Point3<f64>, region_id: usize) -> bool {
         let cell = self.grid.index_of(self.grid.cell_of(point));
 
-        self.grid.tetrahedra_of_cell[cell].iter().any(|&i| {
+        self.grid.items_of_cell[cell].iter().any(|&i| {
             let tetrahedron = &self.tetrahedra[i];
             tetrahedron.is_in_region(region_id) && tetrahedron.contains_point(point, self.tolerance)
         })
@@ -377,7 +504,7 @@ impl DomainMesh {
         let mut near_tetrahedra: Vec<usize> = self
             .grid
             .cells_in(bounds)
-            .flat_map(|cell| &self.grid.tetrahedra_of_cell[cell])
+            .flat_map(|cell| &self.grid.items_of_cell[cell])
             .copied()
             .collect();
         near_tetrahedra.sort();
@@ -421,7 +548,7 @@ impl DomainMesh {
     pub fn regions_at(&self, point: &Point3<f64>) -> Option<&[usize]> {
         let cell = self.grid.index_of(self.grid.cell_of(point));
 
-        self.grid.tetrahedra_of_cell[cell]
+        self.grid.items_of_cell[cell]
             .iter()
             .map(|&i| &self.tetrahedra[i])
             .find(|tetrahedron| tetrahedron.contains_point(point, self.tolerance))
@@ -763,6 +890,83 @@ mod tests {
             (4800..=5200).contains(&points_in_the_shared_cell),
             "{points_in_the_shared_cell} of 10000 points are in the cell with two regions"
         );
+    }
+
+    /// A unit cube with its face at z = 0 as two surface triangles: one on
+    /// the boundaries `bottom` and `all` (boundaries 1 and 2), one on `all`
+    fn cube_with_boundary_surfaces() -> DomainMesh {
+        let corner = |x: f64, y: f64| Point3::new(x, y, 0.);
+        let triangles = [
+            MeshSurfaceTriangle {
+                vertices: [corner(0., 0.), corner(1., 0.), corner(1., 1.)],
+                boundaries: vec![0, 1],
+            },
+            MeshSurfaceTriangle {
+                vertices: [corner(0., 0.), corner(1., 1.), corner(0., 1.)],
+                boundaries: vec![1],
+            },
+        ];
+
+        DomainMesh::new(&box_tetrahedra([0.; 3], [1.; 3], &[]), &[])
+            .unwrap()
+            .with_boundary_surfaces(&triangles, &region_names(&["bottom", "all"]))
+    }
+
+    #[test]
+    fn test_boundary_surfaces_are_in_the_order_of_their_names() {
+        let mesh = cube_with_boundary_surfaces();
+        let names: Vec<&str> = mesh
+            .boundary_surfaces()
+            .iter()
+            .map(|surface| surface.name.as_str())
+            .collect();
+
+        assert_eq!(names, ["bottom", "all"]);
+    }
+
+    #[test]
+    fn test_boundary_surfaces_do_not_change_the_volume() {
+        assert_close(cube_with_boundary_surfaces().volume(), 1.);
+    }
+
+    #[test]
+    fn test_point_on_a_surface_triangle_has_its_boundary_surfaces() {
+        // The mesh center (0.5, 0.5, 0.5) is at the origin
+        let point = Point3::new(0.3, -0.2, -0.5);
+
+        assert_eq!(
+            cube_with_boundary_surfaces().boundary_surfaces_at(&point, 1e-9),
+            [1, 2]
+        );
+    }
+
+    #[test]
+    fn test_point_on_the_edge_of_two_surface_triangles_has_the_boundaries_of_both() {
+        let point = Point3::new(0.1, 0.1, -0.5);
+
+        assert_eq!(
+            cube_with_boundary_surfaces().boundary_surfaces_at(&point, 1e-9),
+            [1, 2]
+        );
+    }
+
+    #[test]
+    fn test_point_on_the_other_surface_triangle_has_only_its_boundary() {
+        let point = Point3::new(-0.3, 0.2, -0.5);
+
+        assert_eq!(
+            cube_with_boundary_surfaces().boundary_surfaces_at(&point, 1e-9),
+            [2]
+        );
+    }
+
+    #[test]
+    fn test_point_in_the_volume_has_no_boundary_surface() {
+        let point = Point3::new(0.3, -0.2, -0.4);
+
+        assert!(cube_with_boundary_surfaces()
+            .boundary_surfaces_at(&point, 1e-9)
+            .is_empty());
     }
 
     #[test]

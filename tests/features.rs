@@ -10,7 +10,7 @@ use std::rc::Rc;
 use dfngen::fracture::poly::{FractureOrigin, Poly};
 use dfngen::io::input::StopCondition;
 use dfngen::mesh::FractureMesh;
-use dfngen::region_boundaries::{BoundarySegment, OtherSide};
+use dfngen::region_boundaries::{BoundarySegment, OtherSide, SegmentSide};
 use dfngen::stats::RejectionReasons;
 use dfngen::{
     build_input_from_text, generate, read_input, read_input_file_names, write_output, Network,
@@ -668,7 +668,7 @@ fn segments_of<'a>(polys: &[&'a Poly]) -> Vec<&'a BoundarySegment> {
 fn other_sides<'a>(polys: &[&'a Poly]) -> Vec<&'a OtherSide> {
     segments_of(polys)
         .into_iter()
-        .map(|segment| &segment.other_side)
+        .map(|segment| &segment.side.other_side)
         .collect()
 }
 
@@ -721,7 +721,7 @@ mod region_boundaries_mesh {
         // The box mesh goes from -5 to 5
         assert!(!segments.is_empty());
         assert!(segments.iter().all(|segment| {
-            segment.other_side == OtherSide::MeshSurface
+            segment.side.other_side == OtherSide::MeshSurface
                 && is_on_box_surface(&segment.start, [5.; 3])
                 && is_on_box_surface(&segment.end, [5.; 3])
         }));
@@ -785,7 +785,7 @@ mod region_boundaries_family_region {
         // the mesh surface (from -5 to 5) in other cells are also lines.
         assert!(!segments.is_empty());
         assert!(segments.iter().all(|segment| {
-            let half = match segment.other_side {
+            let half = match segment.side.other_side {
                 OtherSide::Cell(_) => [3.; 3],
                 OtherSide::MeshSurface => [5.; 3],
             };
@@ -1061,7 +1061,11 @@ mod mesh {
             .points
             .iter()
             .zip(&mesh.point_sides)
-            .filter(|(_, sides)| sides.contains(&OtherSide::MeshSurface))
+            .filter(|(_, sides)| {
+                sides
+                    .iter()
+                    .any(|side| side.other_side == OtherSide::MeshSurface)
+            })
             .map(|(point, _)| point)
             .collect();
 
@@ -1239,5 +1243,134 @@ mod mesh_regions {
         assert!(regions
             .iter()
             .any(|cell_regions| cell_regions.contains(&north)));
+    }
+}
+
+mod boundary_surfaces {
+    use super::*;
+
+    const TOLERANCE: f64 = 1e-9;
+
+    /// Boundary N of the boundary surface with the name
+    fn surface_id(network: &Network, name: &str) -> usize {
+        network
+            .input
+            .domain_mesh
+            .boundary_surfaces()
+            .iter()
+            .position(|surface| surface.name == name)
+            .expect("the mesh has the boundary surface")
+            + 1
+    }
+
+    fn is_at_x(point: &Point3<f64>, x: f64) -> bool {
+        (point.x - x).abs() < TOLERANCE
+    }
+
+    /// The segments of the final fractures with both ends at x
+    fn segments_at_x(network: &Network, x: f64) -> Vec<&BoundarySegment> {
+        segments_of(&final_polys(network))
+            .into_iter()
+            .filter(|segment| is_at_x(&segment.start, x) && is_at_x(&segment.end, x))
+            .collect()
+    }
+
+    #[test]
+    fn test_segments_on_the_west_face_are_on_the_boundary_west() {
+        let network = run("boundary_surfaces");
+        let west = surface_id(&network, "west");
+        let segments = segments_at_x(&network, -5.);
+
+        assert!(!segments.is_empty());
+        assert!(segments
+            .iter()
+            .all(|segment| segment.side.surface_ids == [west]));
+    }
+
+    #[test]
+    fn test_segments_on_the_east_face_are_on_the_boundary_east() {
+        let network = run("boundary_surfaces");
+        let east = surface_id(&network, "east");
+        let segments = segments_at_x(&network, 5.);
+
+        assert!(!segments.is_empty());
+        assert!(segments
+            .iter()
+            .all(|segment| segment.side.surface_ids == [east]));
+    }
+
+    #[test]
+    fn test_segments_on_the_other_faces_are_on_no_boundary_surface() {
+        let network = run("boundary_surfaces");
+        let segments: Vec<&BoundarySegment> = segments_of(&final_polys(&network))
+            .into_iter()
+            .filter(|segment| !is_at_x(&segment.start, -5.) && !is_at_x(&segment.start, 5.))
+            .collect();
+
+        assert!(!segments.is_empty());
+        assert!(segments
+            .iter()
+            .all(|segment| segment.side.surface_ids.is_empty()));
+    }
+
+    #[test]
+    fn test_box_mesh_without_surface_cells_gives_no_boundary_surface() {
+        let network = run_with_replaced_text(
+            "boundary_surfaces",
+            r#"domain = "boundary_surfaces.vtu""#,
+            r#"domain = "../box.vtu""#,
+        );
+
+        assert!(segments_of(&final_polys(&network))
+            .iter()
+            .all(|segment| segment.side.surface_ids.is_empty()));
+    }
+
+    #[test]
+    fn test_mesh_points_on_a_line_of_the_west_face_are_on_the_boundary_west() {
+        let network = run("boundary_surfaces");
+        let west = surface_id(&network, "west");
+        let mesh = network.mesh.as_ref().unwrap();
+        let west_sides: Vec<&Vec<SegmentSide>> = mesh
+            .points
+            .iter()
+            .zip(&mesh.point_sides)
+            .filter(|(point, sides)| is_at_x(point, -5.) && !sides.is_empty())
+            .map(|(_, sides)| sides)
+            .collect();
+
+        assert!(!west_sides.is_empty());
+        assert!(west_sides
+            .iter()
+            .all(|sides| sides.iter().any(|side| side.surface_ids == [west])));
+    }
+
+    /// The values of the data array with the name in the text of a VTK file
+    fn array_values(text: &str, name: &str) -> Vec<u8> {
+        let start = text
+            .find(&format!(r#"Name="{name}""#))
+            .unwrap_or_else(|| panic!("the file has no array {name}"));
+        let values_start = start + text[start..].find('>').unwrap() + 1;
+        let values_end = values_start + text[values_start..].find('<').unwrap();
+
+        text[values_start..values_end]
+            .split_whitespace()
+            .map(|value| value.parse().unwrap())
+            .collect()
+    }
+
+    #[test]
+    fn test_output_files_have_an_array_for_each_boundary_surface() {
+        let network = run("boundary_surfaces");
+
+        for file_name in ["fracture_boundaries.vtp", "dfn_mesh.vtu"] {
+            let text = output_file_text(&network, file_name);
+            for name in ["boundary__west", "boundary__east"] {
+                assert!(
+                    array_values(&text, name).contains(&1),
+                    "{file_name}: {name} has no 1"
+                );
+            }
+        }
     }
 }

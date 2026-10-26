@@ -128,7 +128,7 @@ fn read_piece(piece: Node, fracture_count: usize) -> Result<Vec<FracturePolygon>
             regions: region_arrays
                 .iter()
                 .filter(|region_array| {
-                    region_array.is_cell_in_region[cell_count_before_polygons + cell]
+                    region_array.is_cell_marked[cell_count_before_polygons + cell]
                 })
                 .map(|region_array| region_array.name.clone())
                 .collect(),

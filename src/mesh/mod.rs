@@ -19,7 +19,7 @@ use crate::distribution::ApertureDistribution;
 use crate::error::DfngenError;
 use crate::fracture::poly::{FractureOrigin, Poly};
 use crate::io::input::Input;
-use crate::region_boundaries::OtherSide;
+use crate::region_boundaries::{OtherSide, SegmentSide};
 use plane::FracturePlane;
 use shared_points::{build_shared_network, Join, LineOnFractures, PointOnFractures, SharedNetwork};
 use triangulate::{mesh_fracture, LocalMesh};
@@ -69,9 +69,9 @@ pub struct FractureMesh {
     /// fracture have one aperture.
     pub apertures: Vec<f64>,
 
-    /// For each point: what is on the other side of the boundary lines
-    /// through it. Empty for a point which is on no boundary line.
-    pub point_sides: Vec<Vec<OtherSide>>,
+    /// For each point: what is beside the boundary lines through it. Empty
+    /// for a point which is on no boundary line.
+    pub point_sides: Vec<Vec<SegmentSide>>,
 }
 
 /// Meshes the final fractures.
@@ -198,7 +198,7 @@ pub fn mesh_network(
         apertures,
         point_sides: Vec::new(),
     };
-    let mut point_sides: HashMap<usize, Vec<OtherSide>> = HashMap::new();
+    let mut point_sides: HashMap<usize, Vec<SegmentSide>> = HashMap::new();
     let mut skipped_constraints = 0;
     let mut degenerate_triangles = 0;
     let (mut total_area, mut trimmed_area) = (0., 0.);
@@ -226,10 +226,10 @@ pub fn mesh_network(
             })
             .collect();
 
-        for (index, other_side) in local.boundary_sides {
+        for (index, side) in local.boundary_sides {
             let sides = point_sides.entry(global_ids[index]).or_default();
-            if !sides.contains(&other_side) {
-                sides.push(other_side);
+            if !sides.contains(&side) {
+                sides.push(side);
             }
         }
 
@@ -472,11 +472,15 @@ fn piece_contacts(
 }
 
 /// True if the point is on a boundary of the mesh file: on the mesh surface,
-/// or beside a cell of a region (a cell of no region has no array)
-fn is_on_boundary(sides: &[OtherSide]) -> bool {
-    sides.iter().any(|side| match side {
-        OtherSide::MeshSurface => true,
-        OtherSide::Cell(region_ids) => !region_ids.is_empty(),
+/// beside a cell of a region (a cell of no region has no array), or on a
+/// boundary surface
+fn is_on_boundary(sides: &[SegmentSide]) -> bool {
+    sides.iter().any(|side| {
+        !side.surface_ids.is_empty()
+            || match &side.other_side {
+                OtherSide::MeshSurface => true,
+                OtherSide::Cell(region_ids) => !region_ids.is_empty(),
+            }
     })
 }
 

@@ -7,7 +7,16 @@ use crate::dfn::RejectedFracture;
 use crate::fracture::poly::Poly;
 use crate::io::output::to_output_coordinates;
 use crate::mesh::FractureMesh;
-use crate::region_boundaries::{BoundarySegment, OtherSide};
+use crate::region_boundaries::{BoundarySegment, OtherSide, SegmentSide};
+
+/// Names of the boundaries of the mesh file: one output array
+/// `boundary__<name>` for each
+pub struct BoundaryNames<'a> {
+    /// Names of the regions, in the order of `DomainMesh::regions`
+    pub regions: &'a [&'a str],
+    /// Names of the boundary surfaces, in the order of `DomainMesh::boundary_surfaces`
+    pub surfaces: &'a [&'a str],
+}
 
 /// Writes the final fractures as polygons in VTK XML PolyData format (`.vtp`, ASCII)
 ///
@@ -199,19 +208,21 @@ pub fn write_rejected_fractures_vtk(
 /// * `line_id` - Number of the boundary line, starts at 1 for each fracture
 /// * `mesh_surface` - 1 if no mesh cell is on the other side of the segment, else 0
 /// * `boundary__<name>` - For each region of the mesh: 1 if the cell on the
-///   other side of the segment is in the region, else 0
+///   other side of the segment is in the region, else 0. Then for each
+///   boundary surface of the mesh: 1 if the segment is on a surface cell of
+///   the boundary, else 0.
 ///
 /// # Arguments
 ///
 /// * `final_fractures` - Sorted indices of fractures left after isolated fracture removal
 /// * `accepted_polys` - All accepted fractures
-/// * `region_names` - Names of the regions of the mesh, in the order of `DomainMesh::regions`
+/// * `boundary_names` - Names of the regions and of the boundary surfaces of the mesh
 /// * `mesh_center` - Center of the domain mesh
 /// * `output` - File to write to
 pub fn write_fracture_boundaries_vtk(
     final_fractures: &[usize],
     accepted_polys: &[Poly],
-    region_names: &[&str],
+    boundary_names: &BoundaryNames,
     mesh_center: &Vector3<f64>,
     output: &mut impl Write,
 ) -> io::Result<()> {
@@ -293,28 +304,66 @@ pub fn write_fracture_boundaries_vtk(
         1,
         segments
             .iter()
-            .map(|(_, _, segment)| u8::from(segment.other_side == OtherSide::MeshSurface)),
+            .map(|(_, _, segment)| u8::from(segment.side.other_side == OtherSide::MeshSurface)),
     )?;
+    let segment_sides: Vec<&[SegmentSide]> = segments
+        .iter()
+        .map(|(_, _, segment)| std::slice::from_ref(&segment.side))
+        .collect();
+    write_boundary_arrays(output, boundary_names, &segment_sides)?;
+    writeln!(output, "</CellData>")?;
 
-    for (position, name) in region_names.iter().enumerate() {
+    write_file_end(output)
+}
+
+/// Writes one array `boundary__<name>` for each region, then for each
+/// boundary surface of the mesh, with one value for each item (a segment or
+/// a point): 1 if a side of the item has a cell of the region on the other
+/// side, or is on a surface cell of the boundary, else 0.
+///
+/// # Arguments
+///
+/// * `output` - File to write to
+/// * `boundary_names` - Names of the regions and of the boundary surfaces of the mesh
+/// * `item_sides` - The sides of each item
+fn write_boundary_arrays(
+    output: &mut impl Write,
+    boundary_names: &BoundaryNames,
+    item_sides: &[&[SegmentSide]],
+) -> io::Result<()> {
+    for (position, name) in boundary_names.regions.iter().enumerate() {
         let region_id = position + 1;
         write_data_array(
             output,
             &format!("boundary__{name}"),
             "Int32",
             1,
-            segments.iter().map(|(_, _, segment)| {
-                u8::from(matches!(
-                    &segment.other_side,
-                    OtherSide::Cell(region_ids) if region_ids.contains(&region_id)
-                ))
+            item_sides.iter().map(|sides| {
+                u8::from(sides.iter().any(|side| {
+                    matches!(&side.other_side, OtherSide::Cell(region_ids) if region_ids.contains(&region_id))
+                }))
             }),
         )?;
     }
 
-    writeln!(output, "</CellData>")?;
+    for (position, name) in boundary_names.surfaces.iter().enumerate() {
+        let surface_id = position + 1;
+        write_data_array(
+            output,
+            &format!("boundary__{name}"),
+            "Int32",
+            1,
+            item_sides.iter().map(|sides| {
+                u8::from(
+                    sides
+                        .iter()
+                        .any(|side| side.surface_ids.contains(&surface_id)),
+                )
+            }),
+        )?;
+    }
 
-    write_file_end(output)
+    Ok(())
 }
 
 /// VTK cell type of a triangle
@@ -327,16 +376,18 @@ const VTK_TRIANGLE: u8 = 5;
 /// `fractures.vtp`), `aperture` (m) and `permeability` (m², aperture² / 12).
 /// Point data: `boundary__mesh_surface` and `boundary__<name>` for each
 /// region: 1 for a point on a boundary line with that other side, else 0.
+/// Then `boundary__<name>` for each boundary surface: 1 for a point on a
+/// boundary line on a surface cell of the boundary, else 0.
 ///
 /// # Arguments
 ///
 /// * `mesh` - The mesh
-/// * `region_names` - Names of the regions of the mesh, in the order of `DomainMesh::regions`
+/// * `boundary_names` - Names of the regions and of the boundary surfaces of the mesh
 /// * `mesh_center` - Center of the domain mesh
 /// * `output` - File to write to
 pub fn write_mesh_vtu(
     mesh: &FractureMesh,
-    region_names: &[&str],
+    boundary_names: &BoundaryNames,
     mesh_center: &Vector3<f64>,
     output: &mut impl Write,
 ) -> io::Result<()> {
@@ -420,24 +471,16 @@ pub fn write_mesh_vtu(
         "boundary__mesh_surface",
         "Int32",
         1,
-        mesh.point_sides
-            .iter()
-            .map(|sides| u8::from(sides.contains(&OtherSide::MeshSurface))),
+        mesh.point_sides.iter().map(|sides| {
+            u8::from(
+                sides
+                    .iter()
+                    .any(|side| side.other_side == OtherSide::MeshSurface),
+            )
+        }),
     )?;
-    for (position, name) in region_names.iter().enumerate() {
-        let region_id = position + 1;
-        write_data_array(
-            output,
-            &format!("boundary__{name}"),
-            "Int32",
-            1,
-            mesh.point_sides.iter().map(|sides| {
-                u8::from(sides.iter().any(|side| {
-                    matches!(side, OtherSide::Cell(region_ids) if region_ids.contains(&region_id))
-                }))
-            }),
-        )?;
-    }
+    let point_sides: Vec<&[SegmentSide]> = mesh.point_sides.iter().map(Vec::as_slice).collect();
+    write_boundary_arrays(output, boundary_names, &point_sides)?;
     writeln!(output, "</PointData>")?;
 
     writeln!(output, "</Piece>")?;

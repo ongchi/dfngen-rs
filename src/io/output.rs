@@ -13,7 +13,7 @@ use crate::generation::Network;
 use crate::io::input::Input;
 use crate::io::vtk::{
     write_fracture_boundaries_vtk, write_fractures_vtk, write_mesh_vtu,
-    write_rejected_fractures_vtk, write_removed_fractures_vtk,
+    write_rejected_fractures_vtk, write_removed_fractures_vtk, BoundaryNames,
 };
 use crate::stats::Stats;
 
@@ -80,13 +80,23 @@ pub fn write_output(network: &Network, create_file: &mut CreateFile) -> io::Resu
         .iter()
         .map(|region| region.name.as_str())
         .collect();
+    let surface_names: Vec<&str> = input
+        .domain_mesh
+        .boundary_surfaces()
+        .iter()
+        .map(|surface| surface.name.as_str())
+        .collect();
+    let boundary_names = BoundaryNames {
+        regions: &region_names,
+        surfaces: &surface_names,
+    };
 
     if input.region_boundaries.is_some() {
         let mut boundaries_file = create_file("fracture_boundaries.vtp")?;
         write_fracture_boundaries_vtk(
             final_fractures,
             accepted_polys,
-            &region_names,
+            &boundary_names,
             mesh_center,
             &mut boundaries_file,
         )?;
@@ -95,7 +105,7 @@ pub fn write_output(network: &Network, create_file: &mut CreateFile) -> io::Resu
 
     if let Some(mesh) = &network.mesh {
         let mut mesh_file = create_file("dfn_mesh.vtu")?;
-        write_mesh_vtu(mesh, &region_names, mesh_center, &mut mesh_file)?;
+        write_mesh_vtu(mesh, &boundary_names, mesh_center, &mut mesh_file)?;
         mesh_file.flush()?;
     }
 
