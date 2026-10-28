@@ -617,6 +617,76 @@ mod clusters {
             .all(|&index| polys[index].group == final_group));
         assert_eq!(network.final_fractures.len(), largest_size);
     }
+
+    /// The clusters of the final fractures which do not touch each boundary surface
+    fn clusters_not_on_all_surfaces(network: &Network) -> Vec<Option<usize>> {
+        let surface_count = network.input.domain_mesh.boundary_surfaces().len();
+        let polys = final_polys(network);
+        let mut groups: Vec<Option<usize>> = polys.iter().map(|poly| poly.group).collect();
+        groups.sort_unstable();
+        groups.dedup();
+        groups.retain(|&group| {
+            let cluster: Vec<&Poly> = polys
+                .iter()
+                .copied()
+                .filter(|poly| poly.group == group)
+                .collect();
+            (1..=surface_count).any(|surface_id| {
+                !segments_of(&cluster)
+                    .iter()
+                    .any(|segment| segment.side.surface_ids.contains(&surface_id))
+            })
+        });
+        groups
+    }
+
+    #[test]
+    fn test_keep_only_connected_to_surfaces_keeps_the_clusters_on_all_surfaces() {
+        let network = run("clusters_connect_surfaces");
+
+        assert_eq!(clusters_not_on_all_surfaces(&network), []);
+    }
+
+    #[test]
+    fn test_a_cluster_on_all_surfaces_does_not_set_the_flag() {
+        let network = run("clusters_connect_surfaces");
+
+        assert!(!network.is_without_cluster_on_all_surfaces);
+    }
+
+    #[test]
+    fn test_with_no_cluster_on_all_surfaces_all_clusters_stay_with_the_flag() {
+        // With 100 fractures, no cluster connects the faces west and east
+        let network = run_with_replaced_text(
+            "clusters_connect_surfaces",
+            "\nn_poly = 300",
+            "\nn_poly = 100",
+        );
+        let unchecked = run_with_replacements(
+            "clusters_connect_surfaces",
+            &[
+                ("\nn_poly = 300", "\nn_poly = 100"),
+                (
+                    "keep_only_connected_to_surfaces = true",
+                    "keep_only_connected_to_surfaces = false",
+                ),
+            ],
+        );
+
+        assert!(network.is_without_cluster_on_all_surfaces);
+        assert_eq!(network.final_fractures, unchecked.final_fractures);
+    }
+
+    #[test]
+    fn test_without_keep_only_connected_to_surfaces_other_clusters_stay() {
+        let network = run_with_replaced_text(
+            "clusters_connect_surfaces",
+            "keep_only_connected_to_surfaces = true",
+            "keep_only_connected_to_surfaces = false",
+        );
+
+        assert_ne!(clusters_not_on_all_surfaces(&network), []);
+    }
 }
 
 mod generation_options {

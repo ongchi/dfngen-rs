@@ -28,6 +28,7 @@ slope = 0.5
 [clusters]
 keep_only_largest = true
 keep_isolated_fractures = false
+keep_only_connected_to_surfaces = false
 
 [[family]]
 number_of_points = 8

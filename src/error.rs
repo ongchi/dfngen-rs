@@ -56,6 +56,14 @@ pub enum DfngenError {
         "Invalid input file: [mesh] needs [region_boundaries] with enable = true: its boundary lines give the boundaries of the mesh"
     )]
     MeshNeedsRegionBoundaries,
+    #[error(
+        "Invalid input file: clusters.keep_only_connected_to_surfaces needs [region_boundaries] with enable = true: its boundary lines give the boundary surfaces which a fracture touches"
+    )]
+    ClustersNeedRegionBoundaries,
+    #[error(
+        "Invalid input file: clusters.keep_only_connected_to_surfaces needs a domain mesh with boundary surfaces (cell data arrays boundary__<name>)"
+    )]
+    ClustersNeedBoundarySurfaces,
     #[error("Invalid input file: mesh.max_size_factor must be 1 or more")]
     MeshMaxSizeFactor,
     #[error("Invalid input file: mesh.slope must be greater than 0")]

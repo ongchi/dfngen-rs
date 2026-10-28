@@ -1,0 +1,50 @@
+# keep_only_connected_to_surfaces = true: only the clusters which touch
+# each boundary surface (west and east) stay. The domain is the mesh of
+# boundary_surfaces, and [region_boundaries] is on (the option needs it).
+# n_poly = 300: with 100, no cluster connects the faces of the box.
+# Else as base.
+
+seed = 12345
+min_feature_size = 0.1
+domain = "../boundary_surfaces/boundary_surfaces.vtu"
+
+[generation]
+n_poly = 300
+force_large_fractures = false
+remove_fractures_less_than = 0.0
+
+[fram]
+enable = true
+relaxed = false
+triple_intersections = true
+write_rejected_fractures = false
+rejects_per_fracture = 10
+
+[region_boundaries]
+enable = true
+
+[mesh]
+enable = false
+max_size_factor = 10.0
+slope = 0.5
+
+[clusters]
+keep_only_largest = false
+keep_isolated_fractures = false
+keep_only_connected_to_surfaces = true
+
+[[family]]
+number_of_points = 8
+probability = 0.5
+aspect_ratio = 1.0
+aperture = { distribution = "constant", value = 1e-4 }
+radius = { distribution = "truncated_power_law", alpha = 2.5, min = 1.0, max = 4.0 }
+orientation = { theta = 0.0, phi = 0.0, kappa = 10.0 }
+
+[[family]]
+number_of_points = 8
+probability = 0.5
+aspect_ratio = 1.0
+aperture = { distribution = "constant", value = 1e-4 }
+radius = { distribution = "truncated_power_law", alpha = 2.5, min = 1.0, max = 4.0 }
+orientation = { theta = 90.0, phi = 0.0, kappa = 10.0 }

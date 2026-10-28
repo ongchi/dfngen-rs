@@ -48,6 +48,7 @@ slope = 0.5                        # > 0; growth of the triangle size with the d
 [clusters]
 keep_only_largest = false          # true = keep only the largest cluster; no effect with keep_isolated_fractures = true
 keep_isolated_fractures = false    # true = keep all accepted fractures; false = remove the fractures with no intersection
+keep_only_connected_to_surfaces = false # true = keep only the clusters which touch each boundary surface of the domain mesh (see below); no effect with keep_isolated_fractures = true
 
 # One table for each stochastic fracture family (optional)
 [[family]]
@@ -341,6 +342,16 @@ boundary surface with the name of a region (both give the output array
 in both kinds of array (ParaView writes 0 for a missing value when it merges
 two meshes).
 
+`clusters.keep_only_connected_to_surfaces = true` keeps only the clusters
+which touch each boundary surface of the mesh (as `boundaryFaces` of
+dfnGen, with all surfaces selected). A cluster touches a surface if a
+boundary line segment of one of its fractures is on it. Thus the option
+needs `[region_boundaries]` with `enable = true` and a mesh with boundary
+surfaces; else it is an error. `keep_only_largest` then keeps the largest
+of these clusters. If there are clusters but none touches each surface, all
+clusters stay (as in dfnGen), with a warning in the log, and the library
+result `Network` has `is_without_cluster_on_all_surfaces = true`.
+
 A cell data array with the name `region` (the format of the versions before
 0.7.0) is ignored, as all other cell data.
 
@@ -444,7 +455,9 @@ It writes the box domain of dfnGen as a mesh of one hexahedron to
 defines by parameters, it calculates the vertices as for a stochastic fracture. It stops with an error if the dfnGen file has layers, regions
 or a polygon boundary. A rectangle of dfnGen becomes a polygon with 4
 points, and its radius values are multiplied by sqrt(2) (in dfnGen, the radius
-of a rectangle is half the side). Angles in radians are changed to degrees. The ellipses do not have the same vertices
+of a rectangle is half the side). Angles in radians are changed to degrees.
+The box mesh has no boundary surfaces, thus `boundaryFaces` is not converted
+(`keep_only_connected_to_surfaces = false`). The ellipses do not have the same vertices
 as in dfnGen, and the fracture centers are always in the domain (dfnGen can
 put them in a larger box, `domainSizeIncrease`). Thus the network is not the
 same as that of dfnGen for the same seed.

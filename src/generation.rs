@@ -6,6 +6,7 @@ use tracing::{debug, info};
 use crate::dfn::{Dfn, PolyOptions, RejectedFracture};
 use crate::distribution::RadiusFunction;
 use crate::error::DfngenError;
+use crate::fracture::cluster_groups::SurfaceContacts;
 use crate::fracture::family_probability::{
     cumulative_sum, index_from_probability, index_from_probability_and_p32_status,
     p32_progress_fraction, remove_family_probability,
@@ -30,6 +31,9 @@ pub struct Network {
     /// Sorted indices into `dfn.accepted_polys` of the fractures which remain
     /// after the cluster analysis
     pub final_fractures: Vec<usize>,
+    /// True if `clusters.keep_only_connected_to_surfaces` found no cluster
+    /// which touches each boundary surface: then all clusters stay (as dfnWorks)
+    pub is_without_cluster_on_all_surfaces: bool,
     /// Triangle mesh of the final fractures. `None` without `[mesh]`.
     pub mesh: Option<FractureMesh>,
 }
@@ -138,15 +142,18 @@ pub fn generate(
         );
     }
 
-    // Remove any isolated fractures and return
-    // a list of polygon indices. If input option
-    // `keep_only_largest_cluster` is true, return largest
-    // cluster. DFN will keep all fractures with intersections.
-    let mut final_fractures = dfn.clusters.final_fractures(
-        input.keep_isolated_fractures,
-        input.keep_only_largest_cluster,
-        dfn.stats.accepted_count,
-    );
+    // Remove any isolated fractures and return a list of polygon indices.
+    // With `keep_only_connected_to_surfaces`, only the clusters which touch
+    // each boundary surface; with `keep_only_largest`, the largest cluster.
+    let contacts = SurfaceContacts {
+        accepted_polys: &dfn.accepted_polys,
+        surface_count: input.domain_mesh.boundary_surfaces().len(),
+    };
+    let selection =
+        dfn.clusters
+            .final_fractures(&input.clusters, dfn.stats.accepted_count, &contacts);
+    let is_without_cluster_on_all_surfaces = selection.is_without_cluster_on_all_surfaces;
+    let mut final_fractures = selection.fractures;
     // Sort fracture indices to retain order by acceptance
     final_fractures.sort();
 
@@ -182,6 +189,7 @@ pub fn generate(
         families: family_collection,
         dfn,
         final_fractures,
+        is_without_cluster_on_all_surfaces,
         mesh,
     })
 }

@@ -9,6 +9,7 @@ use tracing::{debug, info, warn};
 use crate::distribution::{ApertureDistribution, Fisher, LogNormalSampling, RadiusDistribution};
 use crate::domain_mesh::{DomainMesh, MeshRegion};
 use crate::error::{DfngenError, FamilyError, RegionError, UserFractureError};
+use crate::fracture::cluster_groups::ClusterOptions;
 use crate::fracture::fracture_family::{
     FractureFamily, FractureFamilyBuilder, FractureFamilyCollection,
 };
@@ -59,13 +60,8 @@ pub struct Input {
     /// Options of the triangle mesh of the network. `None`: no mesh.
     pub mesh: Option<MeshOptions>,
 
-    /// 0 - Keep each cluster of 2 or more fractures
-    /// 1 - Keep only the largest cluster
-    pub keep_only_largest_cluster: bool,
-
-    /// 0 - remove isolated fractures and clusters
-    /// 1 - Keep isolated fractures and clusters
-    pub keep_isolated_fractures: bool,
+    /// Which clusters stay in the network
+    pub clusters: ClusterOptions,
 
     /// Inserts the largest possible fracture for each defined fracture family,
     /// defined by the user-defined maxium radius
@@ -192,6 +188,7 @@ struct MeshSection {
 struct ClustersSection {
     keep_only_largest: bool,
     keep_isolated_fractures: bool,
+    keep_only_connected_to_surfaces: bool,
 }
 
 #[derive(Deserialize)]
@@ -450,6 +447,9 @@ fn build_input(
         warn!("[mesh] with FRAM off: features smaller than min_feature_size give bad triangles");
     }
 
+    let clusters =
+        build_cluster_options(&file.clusters, region_boundaries.is_some(), &domain_mesh)?;
+
     let input = Input {
         stop_condition,
         domain_size: domain_mesh.size(),
@@ -460,8 +460,7 @@ fn build_input(
         fram,
         region_boundaries,
         mesh,
-        keep_only_largest_cluster: file.clusters.keep_only_largest,
-        keep_isolated_fractures: file.clusters.keep_isolated_fractures,
+        clusters,
         force_large_fractures: file.generation.force_large_fractures,
         seed: file.seed,
         remove_fractures_less_than: file.generation.remove_fractures_less_than,
@@ -514,6 +513,36 @@ fn build_mesh_options(
             .map(|family| family.aperture.clone())
             .collect(),
     }))
+}
+
+/// The options of `[clusters]`. `keep_only_connected_to_surfaces` needs the
+/// boundary lines (they give the surfaces which a fracture touches) and a
+/// domain mesh with boundary surfaces.
+///
+/// # Arguments
+///
+/// * `section` - The `[clusters]` section of the input file
+/// * `has_boundary_lines` - True if `[region_boundaries]` is on
+/// * `domain_mesh` - The domain, with its boundary surfaces
+fn build_cluster_options(
+    section: &ClustersSection,
+    has_boundary_lines: bool,
+    domain_mesh: &DomainMesh,
+) -> Result<ClusterOptions, DfngenError> {
+    if section.keep_only_connected_to_surfaces {
+        if !has_boundary_lines {
+            return Err(DfngenError::ClustersNeedRegionBoundaries);
+        }
+        if domain_mesh.boundary_surfaces().is_empty() {
+            return Err(DfngenError::ClustersNeedBoundarySurfaces);
+        }
+    }
+
+    Ok(ClusterOptions {
+        keep_isolated_fractures: section.keep_isolated_fractures,
+        keep_only_largest: section.keep_only_largest,
+        keep_only_connected_to_surfaces: section.keep_only_connected_to_surfaces,
+    })
 }
 
 /// Moves a polygon of the user-defined fracture file to the coordinates of
@@ -755,6 +784,7 @@ pub mod test_inputs {
         [clusters]
         keep_only_largest = false
         keep_isolated_fractures = false
+        keep_only_connected_to_surfaces = false
     "#;
 
     /// Reads the sections with the L-shaped mesh as the domain. The mesh has
@@ -1551,6 +1581,41 @@ mod tests {
                 "{message}"
             );
         }
+    }
+
+    /// `GENERAL_OPTIONS` with `keep_only_connected_to_surfaces = true`
+    fn keep_only_connected_to_surfaces(options: &str) -> String {
+        options.replace(
+            "keep_only_connected_to_surfaces = false",
+            "keep_only_connected_to_surfaces = true",
+        )
+    }
+
+    #[test]
+    fn test_clusters_connected_to_surfaces_need_region_boundaries() {
+        let options = keep_only_connected_to_surfaces(GENERAL_OPTIONS);
+
+        let error = input_error(parse(&[&options, ELLIPSE_FAMILY]));
+
+        assert!(
+            matches!(error, DfngenError::ClustersNeedRegionBoundaries),
+            "{error}"
+        );
+    }
+
+    #[test]
+    fn test_clusters_connected_to_surfaces_need_boundary_surfaces() {
+        // The L-shaped mesh has no boundary surfaces
+        let options = keep_only_connected_to_surfaces(&replace_region_boundaries_section(
+            "[region_boundaries]\nenable = true\n",
+        ));
+
+        let error = input_error(parse(&[&options, ELLIPSE_FAMILY]));
+
+        assert!(
+            matches!(error, DfngenError::ClustersNeedBoundarySurfaces),
+            "{error}"
+        );
     }
 
     #[test]
