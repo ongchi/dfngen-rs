@@ -1,0 +1,35 @@
+<?xml version="1.0"?>
+<!-- Fracture 1: rectangle normal to z at z = 0, x -6 to 6, y -2 to 7. Fracture 2:
+     rectangle in the plane y = 6 + z, x -1 to 1, z -3 to 0.5 (y 3 to 6.5): it
+     intersects fracture 1 at y = 6, outside the box (y -5 to 5). -->
+<VTKFile type="PolyData" version="1.0" byte_order="LittleEndian">
+<PolyData>
+<Piece NumberOfPoints="8" NumberOfVerts="0" NumberOfLines="0" NumberOfStrips="0" NumberOfPolys="2">
+<Points>
+<DataArray type="Float64" Name="points" NumberOfComponents="3" format="ascii">
+-6.0 -2.0 0.0
+6.0 -2.0 0.0
+6.0 7.0 0.0
+-6.0 7.0 0.0
+-1.0 3.0 -3.0
+1.0 3.0 -3.0
+1.0 6.5 0.5
+-1.0 6.5 0.5
+</DataArray>
+</Points>
+<Polys>
+<DataArray type="Int64" Name="connectivity" format="ascii">
+0 1 2 3 4 5 6 7
+</DataArray>
+<DataArray type="Int64" Name="offsets" format="ascii">
+4 8
+</DataArray>
+</Polys>
+<CellData>
+<DataArray type="Float64" Name="aperture" format="ascii">
+2e-4 2e-4
+</DataArray>
+</CellData>
+</Piece>
+</PolyData>
+</VTKFile>

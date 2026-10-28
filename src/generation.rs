@@ -152,7 +152,7 @@ pub fn generate(
     let selection =
         dfn.clusters
             .final_fractures(&input.clusters, dfn.stats.accepted_count, &contacts);
-    let is_without_cluster_on_all_surfaces = selection.is_without_cluster_on_all_surfaces;
+    let selection_is_without_cluster_on_all_surfaces = selection.is_without_cluster_on_all_surfaces;
     let mut final_fractures = selection.fractures;
     // Sort fracture indices to retain order by acceptance
     final_fractures.sort();
@@ -178,11 +178,34 @@ pub fn generate(
 
     info!("Seed: {}", input.seed);
 
-    let mesh = input
+    let mut mesh = input
         .mesh
         .as_ref()
         .map(|options| mesh_network(&input, options, &dfn, &final_fractures))
         .transpose()?;
+
+    // The clusters connect also outside the domain (the fractures are not
+    // cut): the mesh has the connections which a flow can use
+    let mut is_without_cluster_on_all_surfaces = selection_is_without_cluster_on_all_surfaces;
+    if let Some(mesh) = mesh
+        .as_mut()
+        .filter(|_| input.clusters.keep_only_connected_to_surfaces)
+    {
+        is_without_cluster_on_all_surfaces |= mesh.is_without_part_on_all_surfaces;
+        let kept_positions = mesh.remove_fractures_without_triangles();
+        let removed_count = final_fractures.len() - kept_positions.len();
+        if removed_count > 0 {
+            info!(
+                "Final fractures: {} fractures with no part in the mesh are removed; final fractures: {}",
+                removed_count,
+                kept_positions.len()
+            );
+        }
+        final_fractures = kept_positions
+            .iter()
+            .map(|&position| final_fractures[position])
+            .collect();
+    }
 
     Ok(Network {
         input,

@@ -647,6 +647,88 @@ mod clusters {
         assert_eq!(clusters_not_on_all_surfaces(&network), []);
     }
 
+    /// The case `clusters_connect_surfaces_mesh`, with the option on or off
+    fn run_with_mesh(keep_only_connected_to_surfaces: bool) -> Network {
+        run_with_replaced_text(
+            "clusters_connect_surfaces_mesh",
+            "keep_only_connected_to_surfaces = true",
+            &format!("keep_only_connected_to_surfaces = {keep_only_connected_to_surfaces}"),
+        )
+    }
+
+    /// The number of connected parts of the mesh which do not have a point
+    /// on each boundary surface
+    fn mesh_parts_not_on_all_surfaces(network: &Network) -> usize {
+        let mesh = network.mesh.as_ref().unwrap();
+        let mut parent: Vec<usize> = (0..mesh.points.len()).collect();
+        fn root(parent: &[usize], mut point: usize) -> usize {
+            while parent[point] != point {
+                point = parent[point];
+            }
+            point
+        }
+        for triangle in &mesh.triangles {
+            for pair in [[triangle[0], triangle[1]], [triangle[1], triangle[2]]] {
+                let (first, second) = (root(&parent, pair[0]), root(&parent, pair[1]));
+                parent[first] = second;
+            }
+        }
+
+        let surface_count = network.input.domain_mesh.boundary_surfaces().len();
+        let mut parts: Vec<usize> = mesh
+            .triangles
+            .iter()
+            .map(|triangle| root(&parent, triangle[0]))
+            .collect();
+        parts.sort_unstable();
+        parts.dedup();
+        parts
+            .into_iter()
+            .filter(|&part| {
+                (1..=surface_count).any(|surface_id| {
+                    !mesh.point_sides.iter().enumerate().any(|(point, sides)| {
+                        root(&parent, point) == part
+                            && sides
+                                .iter()
+                                .any(|side| side.surface_ids.contains(&surface_id))
+                    })
+                })
+            })
+            .count()
+    }
+
+    #[test]
+    fn test_each_part_of_the_mesh_touches_all_surfaces() {
+        let network = run_with_mesh(true);
+
+        assert_eq!(mesh_parts_not_on_all_surfaces(&network), 0);
+    }
+
+    #[test]
+    fn test_without_the_option_the_mesh_has_parts_not_on_all_surfaces() {
+        let network = run_with_mesh(false);
+
+        assert!(mesh_parts_not_on_all_surfaces(&network) > 0);
+    }
+
+    #[test]
+    fn test_each_final_fracture_has_triangles_in_the_mesh() {
+        let network = run_with_mesh(true);
+        let mut fractures = network.mesh.as_ref().unwrap().triangle_fractures.clone();
+        fractures.sort_unstable();
+        fractures.dedup();
+
+        assert_eq!(fractures.len(), network.final_fractures.len());
+    }
+
+    #[test]
+    fn test_a_fracture_connected_only_outside_the_domain_is_not_final() {
+        let network = run_with_mesh(true);
+
+        // Fracture 2 meets fracture 1 only outside the box
+        assert_eq!(network.final_fractures, [0]);
+    }
+
     #[test]
     fn test_a_cluster_on_all_surfaces_does_not_set_the_flag() {
         let network = run("clusters_connect_surfaces");

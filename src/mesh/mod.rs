@@ -70,6 +70,43 @@ pub struct FractureMesh {
     /// For each point: what is beside the boundary lines through it. Empty
     /// for a point which is on no boundary line.
     pub point_sides: Vec<Vec<SegmentSide>>,
+
+    /// True if `clusters.keep_only_connected_to_surfaces` found no connected
+    /// part of the mesh with a point on each boundary surface: then the parts
+    /// with a point on a boundary stay
+    pub is_without_part_on_all_surfaces: bool,
+}
+
+impl FractureMesh {
+    /// Removes the final fractures which have no triangle, and numbers the
+    /// others again in the same order.
+    ///
+    /// # Returns
+    ///
+    /// The old position of each fracture which stays, in the new order
+    pub fn remove_fractures_without_triangles(&mut self) -> Vec<usize> {
+        let mut has_triangle = vec![false; self.apertures.len()];
+        for &fracture in &self.triangle_fractures {
+            has_triangle[fracture] = true;
+        }
+        let kept: Vec<usize> = (0..self.apertures.len())
+            .filter(|&fracture| has_triangle[fracture])
+            .collect();
+
+        let mut new_position = vec![None; self.apertures.len()];
+        for (position, &fracture) in kept.iter().enumerate() {
+            new_position[fracture] = Some(position);
+        }
+        for fracture in &mut self.triangle_fractures {
+            *fracture = new_position[*fracture].expect("a fracture with a triangle stays");
+        }
+        self.apertures = kept
+            .iter()
+            .map(|&fracture| self.apertures[fracture])
+            .collect();
+
+        kept
+    }
 }
 
 /// Meshes the final fractures.
@@ -195,6 +232,7 @@ pub fn mesh_network(
         triangle_fractures: Vec::new(),
         apertures,
         point_sides: Vec::new(),
+        is_without_part_on_all_surfaces: false,
     };
     let mut point_sides: HashMap<usize, Vec<SegmentSide>> = HashMap::new();
     let mut skipped_constraints = 0;
@@ -287,11 +325,25 @@ pub fn mesh_network(
         .map(|id| point_sides.remove(&id).unwrap_or_default())
         .collect();
 
-    let omitted_fractures = remove_parts_without_boundary(&mut mesh);
-    if omitted_fractures > 0 {
+    let required_surface_count = input
+        .clusters
+        .keep_only_connected_to_surfaces
+        .then(|| input.domain_mesh.boundary_surfaces().len());
+    let removed = remove_unusable_parts(&mut mesh, required_surface_count);
+    mesh.is_without_part_on_all_surfaces = removed.is_without_part_on_all_surfaces;
+    if removed.is_without_part_on_all_surfaces {
+        warn!("Mesh: no connected part of the mesh connects all boundary surfaces: the parts with a point on a boundary stay");
+    }
+    if removed.fracture_count > 0 {
+        let reason = if required_surface_count.is_some() && !removed.is_without_part_on_all_surfaces
+        {
+            "their connected parts of the mesh do not touch each boundary surface"
+        } else {
+            "their clusters have no point on a boundary (fehm-rs needs one)"
+        };
         info!(
-            "Mesh: {} fractures are not in the mesh: their clusters have no point on a boundary (fehm-rs needs one)",
-            omitted_fractures
+            "Mesh: {} fractures are not in the mesh: {}",
+            removed.fracture_count, reason
         );
     }
 
@@ -483,10 +535,8 @@ fn is_on_boundary(sides: &[SegmentSide]) -> bool {
     })
 }
 
-/// Removes the triangles of each connected part of the mesh which has no
-/// point on a boundary. Returns the number of fractures which are then not
-/// in the mesh.
-fn remove_parts_without_boundary(mesh: &mut FractureMesh) -> usize {
+/// The connected part of the mesh of each point: the number of one of its points
+fn connected_parts(mesh: &FractureMesh) -> Vec<usize> {
     let mut parent: Vec<usize> = (0..mesh.points.len()).collect();
     fn root(parent: &mut [usize], mut point: usize) -> usize {
         while parent[point] != point {
@@ -503,12 +553,67 @@ fn remove_parts_without_boundary(mesh: &mut FractureMesh) -> usize {
         }
     }
 
+    (0..mesh.points.len())
+        .map(|point| root(&mut parent, point))
+        .collect()
+}
+
+/// What `remove_unusable_parts` removed
+struct RemovedParts {
+    /// Number of fractures which are then not in the mesh
+    fracture_count: usize,
+    /// True if a part on each boundary surface was required, but no part has
+    /// a point on each surface: then only the parts with no boundary point
+    /// were removed
+    is_without_part_on_all_surfaces: bool,
+}
+
+/// Removes the triangles of the connected parts of the mesh which a flow
+/// cannot use. Each part needs a point on a boundary. With
+/// `required_surface_count` (`clusters.keep_only_connected_to_surfaces`: the
+/// number of boundary surfaces), a part needs a point on each boundary
+/// surface, if a part has one: the fractures are not cut to the domain, thus
+/// the clusters of `ClusterGroups` can connect outside the mesh.
+fn remove_unusable_parts(
+    mesh: &mut FractureMesh,
+    required_surface_count: Option<usize>,
+) -> RemovedParts {
+    let part_of_point = connected_parts(mesh);
+
     let mut has_boundary = vec![false; mesh.points.len()];
+    let mut part_surfaces: HashMap<usize, Vec<usize>> = HashMap::new();
     for (point, sides) in mesh.point_sides.iter().enumerate() {
+        let part = part_of_point[point];
         if is_on_boundary(sides) {
-            has_boundary[root(&mut parent, point)] = true;
+            has_boundary[part] = true;
+        }
+        for side in sides {
+            part_surfaces
+                .entry(part)
+                .or_default()
+                .extend(&side.surface_ids);
         }
     }
+    // Boundary N is `DomainMesh::boundary_surfaces()[N - 1]`: a part on each
+    // surface has all the numbers 1 to the surface count
+    let is_on_all_surfaces = |part: usize| {
+        required_surface_count.is_some_and(|surface_count| {
+            part_surfaces.get(&part).is_some_and(|surfaces| {
+                (1..=surface_count).all(|surface_id| surfaces.contains(&surface_id))
+            })
+        })
+    };
+    let has_part_on_all_surfaces = mesh
+        .triangles
+        .iter()
+        .any(|triangle| is_on_all_surfaces(part_of_point[triangle[0]]));
+    let is_kept = |part: usize| {
+        if has_part_on_all_surfaces {
+            is_on_all_surfaces(part)
+        } else {
+            has_boundary[part]
+        }
+    };
 
     let fracture_count = |fractures: &[usize]| {
         let mut fractures = fractures.to_vec();
@@ -522,13 +627,17 @@ fn remove_parts_without_boundary(mesh: &mut FractureMesh) -> usize {
         .triangles
         .iter()
         .zip(&mesh.triangle_fractures)
-        .filter(|(triangle, _)| has_boundary[root(&mut parent, triangle[0])])
+        .filter(|(triangle, _)| is_kept(part_of_point[triangle[0]]))
         .map(|(triangle, fracture)| (*triangle, *fracture))
         .unzip();
     mesh.triangles = triangles;
     mesh.triangle_fractures = fractures;
 
-    count_before - fracture_count(&mesh.triangle_fractures)
+    RemovedParts {
+        fracture_count: count_before - fracture_count(&mesh.triangle_fractures),
+        is_without_part_on_all_surfaces: required_surface_count.is_some()
+            && !has_part_on_all_surfaces,
+    }
 }
 
 /// Removes the points which are in no triangle, and numbers the others again.
@@ -553,5 +662,94 @@ fn remove_unused_points(mesh: &mut FractureMesh) {
 
     for id in mesh.triangles.iter_mut().flatten() {
         *id = new_ids[*id].expect("each point of a triangle is used");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A point beside the mesh surface on the given boundary surfaces
+    fn side_on_surfaces(surface_ids: &[usize]) -> Vec<SegmentSide> {
+        vec![SegmentSide {
+            other_side: OtherSide::MeshSurface,
+            surface_ids: surface_ids.to_vec(),
+        }]
+    }
+
+    /// Two separate triangles, fracture 0 and fracture 1. The points of
+    /// triangle N have the given sides.
+    fn two_parts(sides: [[Vec<SegmentSide>; 3]; 2]) -> FractureMesh {
+        let [first, second] = sides;
+        FractureMesh {
+            points: vec![Point3::origin(); 6],
+            triangles: vec![[0, 1, 2], [3, 4, 5]],
+            triangle_fractures: vec![0, 1],
+            apertures: vec![1e-4, 2e-4],
+            point_sides: first.into_iter().chain(second).collect(),
+            is_without_part_on_all_surfaces: false,
+        }
+    }
+
+    #[test]
+    fn test_part_on_one_of_two_surfaces_is_removed() {
+        let mut mesh = two_parts([
+            [side_on_surfaces(&[1]), side_on_surfaces(&[2]), vec![]],
+            [side_on_surfaces(&[1]), vec![], vec![]],
+        ]);
+
+        remove_unusable_parts(&mut mesh, Some(2));
+
+        assert_eq!(mesh.triangle_fractures, [0]);
+    }
+
+    #[test]
+    fn test_with_no_part_on_all_surfaces_the_parts_on_a_boundary_stay() {
+        let mut mesh = two_parts([
+            [side_on_surfaces(&[1]), vec![], vec![]],
+            [side_on_surfaces(&[2]), vec![], vec![]],
+        ]);
+
+        let removed = remove_unusable_parts(&mut mesh, Some(2));
+
+        assert_eq!(
+            (
+                mesh.triangle_fractures,
+                removed.is_without_part_on_all_surfaces
+            ),
+            (vec![0, 1], true)
+        );
+    }
+
+    #[test]
+    fn test_without_required_surfaces_a_part_needs_only_a_boundary_point() {
+        let mut mesh = two_parts([
+            [side_on_surfaces(&[1]), vec![], vec![]],
+            [vec![], vec![], vec![]],
+        ]);
+
+        let removed = remove_unusable_parts(&mut mesh, None);
+
+        assert_eq!(
+            (
+                mesh.triangle_fractures,
+                removed.is_without_part_on_all_surfaces
+            ),
+            (vec![0], false)
+        );
+    }
+
+    #[test]
+    fn test_fractures_without_triangles_are_numbered_again() {
+        let mut mesh = two_parts([[vec![], vec![], vec![]], [vec![], vec![], vec![]]]);
+        mesh.triangles.remove(0);
+        mesh.triangle_fractures.remove(0);
+
+        let kept = mesh.remove_fractures_without_triangles();
+
+        assert_eq!(
+            (kept, mesh.triangle_fractures, mesh.apertures),
+            (vec![1], vec![0], vec![2e-4])
+        );
     }
 }

@@ -241,7 +241,8 @@ network is the same as without the option.
 - fehm-rs needs a boundary point in each cluster. A cluster with no point on
   a boundary array (see `dfn_mesh.vtu` below; for example, fully in one
   region and away from the mesh surface) is not in the mesh; the log gives
-  the number of these fractures. The other output files keep them.
+  the number of these fractures. The other output files keep them, except
+  with `clusters.keep_only_connected_to_surfaces` (see "Domain mesh").
 - A line with a cell of no region on the other side, and on no boundary
   surface, gives no array: its points are not boundary points.
 - A point where a line of a region meets a line on the mesh surface (or of
@@ -351,6 +352,16 @@ surfaces; else it is an error. `keep_only_largest` then keeps the largest
 of these clusters. If there are clusters but none touches each surface, all
 clusters stay (as in dfnGen), with a warning in the log, and the library
 result `Network` has `is_without_cluster_on_all_surfaces = true`.
+
+The fractures are not cut to the domain, thus two fractures of a cluster can
+intersect only outside the mesh. With `[mesh]`, the option thus also applies
+to the triangle mesh: only the connected parts of the mesh which have a
+point on each boundary surface stay, and a final fracture with no triangle
+left is removed from the final fractures (it goes to
+`fractures_removed.vtp`). If no part of the mesh has a point on each
+surface, the parts with a point on a boundary stay, with a warning, and
+`is_without_cluster_on_all_surfaces = true`
+(`tests/data/clusters_connect_surfaces_mesh` is an example).
 
 A cell data array with the name `region` (the format of the versions before
 0.7.0) is ignored, as all other cell data.
