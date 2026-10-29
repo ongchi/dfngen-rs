@@ -188,7 +188,8 @@ struct MeshSection {
 struct ClustersSection {
     keep_only_largest: bool,
     keep_isolated_fractures: bool,
-    keep_only_connected_to_surfaces: bool,
+    /// Groups of boundary surface names; empty = off
+    keep_only_connected_to: Vec<Vec<String>>,
 }
 
 #[derive(Deserialize)]
@@ -515,9 +516,10 @@ fn build_mesh_options(
     }))
 }
 
-/// The options of `[clusters]`. `keep_only_connected_to_surfaces` needs the
-/// boundary lines (they give the surfaces which a fracture touches) and a
-/// domain mesh with boundary surfaces.
+/// The options of `[clusters]`. A non-empty `keep_only_connected_to` needs
+/// the boundary lines (they give the surfaces which a fracture touches) and
+/// a domain mesh with boundary surfaces; each group needs a surface, and each
+/// name must be a boundary surface of the mesh.
 ///
 /// # Arguments
 ///
@@ -529,7 +531,7 @@ fn build_cluster_options(
     has_boundary_lines: bool,
     domain_mesh: &DomainMesh,
 ) -> Result<ClusterOptions, DfngenError> {
-    if section.keep_only_connected_to_surfaces {
+    if !section.keep_only_connected_to.is_empty() {
         if !has_boundary_lines {
             return Err(DfngenError::ClustersNeedRegionBoundaries);
         }
@@ -538,10 +540,33 @@ fn build_cluster_options(
         }
     }
 
+    let surfaces = domain_mesh.boundary_surfaces();
+    let connected_surface_groups = section
+        .keep_only_connected_to
+        .iter()
+        .enumerate()
+        .map(|(index, names)| {
+            if names.is_empty() {
+                return Err(DfngenError::EmptyClusterSurfaceGroup { group: index + 1 });
+            }
+            names
+                .iter()
+                .map(|name| {
+                    // Boundary N is `DomainMesh::boundary_surfaces()[N - 1]`
+                    surfaces
+                        .iter()
+                        .position(|surface| &surface.name == name)
+                        .map(|position| position + 1)
+                        .ok_or_else(|| DfngenError::UnknownClusterSurface { name: name.clone() })
+                })
+                .collect()
+        })
+        .collect::<Result<_, _>>()?;
+
     Ok(ClusterOptions {
         keep_isolated_fractures: section.keep_isolated_fractures,
         keep_only_largest: section.keep_only_largest,
-        keep_only_connected_to_surfaces: section.keep_only_connected_to_surfaces,
+        connected_surface_groups,
     })
 }
 
@@ -784,7 +809,7 @@ pub mod test_inputs {
         [clusters]
         keep_only_largest = false
         keep_isolated_fractures = false
-        keep_only_connected_to_surfaces = false
+        keep_only_connected_to = []
     "#;
 
     /// Reads the sections with the L-shaped mesh as the domain. The mesh has
@@ -1583,17 +1608,96 @@ mod tests {
         }
     }
 
-    /// `GENERAL_OPTIONS` with `keep_only_connected_to_surfaces = true`
-    fn keep_only_connected_to_surfaces(options: &str) -> String {
+    /// The options with this value of `keep_only_connected_to`
+    fn keep_only_connected_to(options: &str, groups: &str) -> String {
         options.replace(
-            "keep_only_connected_to_surfaces = false",
-            "keep_only_connected_to_surfaces = true",
+            "keep_only_connected_to = []",
+            &format!("keep_only_connected_to = {groups}"),
+        )
+    }
+
+    /// The options with the boundary lines on, read with the mesh
+    /// `tests/data/boundary_surfaces/boundary_surfaces.vtu` (boundary
+    /// surfaces `west` and `east`)
+    fn parse_with_boundary_surfaces(
+        options: &str,
+    ) -> Result<(Input, FractureFamilyCollection), DfngenError> {
+        let options = replace_section(
+            options,
+            "region_boundaries",
+            "[region_boundaries]\nenable = true\n",
+        );
+        build_input_from_text(
+            &[&options, ELLIPSE_FAMILY].concat(),
+            include_str!("../../tests/data/boundary_surfaces/boundary_surfaces.vtu"),
+            None,
         )
     }
 
     #[test]
+    fn test_clusters_connected_to_surface_groups_are_boundary_numbers() {
+        let options = keep_only_connected_to(GENERAL_OPTIONS, r#"[["east"], ["west", "east"]]"#);
+
+        let (input, _) = parse_with_boundary_surfaces(&options).unwrap();
+
+        // Boundary N is boundary_surfaces()[N - 1]: west is 1, east 2 in the mesh
+        let names: Vec<&str> = input
+            .domain_mesh
+            .boundary_surfaces()
+            .iter()
+            .map(|surface| surface.name.as_str())
+            .collect();
+        let group_names: Vec<Vec<&str>> = input
+            .clusters
+            .connected_surface_groups
+            .iter()
+            .map(|group| group.iter().map(|&id| names[id - 1]).collect())
+            .collect();
+        assert_eq!(group_names, [vec!["east"], vec!["west", "east"]]);
+    }
+
+    #[test]
+    fn test_clusters_connected_to_an_unknown_surface_is_rejected() {
+        let options = keep_only_connected_to(GENERAL_OPTIONS, r#"[["west"], ["north"]]"#);
+
+        let error = input_error(parse_with_boundary_surfaces(&options));
+
+        assert!(
+            matches!(&error, DfngenError::UnknownClusterSurface { name } if name == "north"),
+            "{error}"
+        );
+    }
+
+    #[test]
+    fn test_clusters_connected_to_an_empty_group_is_rejected() {
+        let options = keep_only_connected_to(GENERAL_OPTIONS, r#"[["west"], []]"#);
+
+        let error = input_error(parse_with_boundary_surfaces(&options));
+
+        assert!(
+            matches!(error, DfngenError::EmptyClusterSurfaceGroup { group: 2 }),
+            "{error}"
+        );
+    }
+
+    #[test]
+    fn test_old_clusters_key_is_rejected() {
+        let options = GENERAL_OPTIONS.replace(
+            "keep_only_connected_to = []",
+            "keep_only_connected_to_surfaces = true",
+        );
+
+        let message = error_message(parse(&[&options]));
+
+        assert!(
+            message.contains("unknown field `keep_only_connected_to_surfaces`"),
+            "{message}"
+        );
+    }
+
+    #[test]
     fn test_clusters_connected_to_surfaces_need_region_boundaries() {
-        let options = keep_only_connected_to_surfaces(GENERAL_OPTIONS);
+        let options = keep_only_connected_to(GENERAL_OPTIONS, r#"[["west"], ["east"]]"#);
 
         let error = input_error(parse(&[&options, ELLIPSE_FAMILY]));
 
@@ -1606,9 +1710,10 @@ mod tests {
     #[test]
     fn test_clusters_connected_to_surfaces_need_boundary_surfaces() {
         // The L-shaped mesh has no boundary surfaces
-        let options = keep_only_connected_to_surfaces(&replace_region_boundaries_section(
-            "[region_boundaries]\nenable = true\n",
-        ));
+        let options = keep_only_connected_to(
+            &replace_region_boundaries_section("[region_boundaries]\nenable = true\n"),
+            r#"[["west"], ["east"]]"#,
+        );
 
         let error = input_error(parse(&[&options, ELLIPSE_FAMILY]));
 

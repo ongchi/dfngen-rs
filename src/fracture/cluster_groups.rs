@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use tracing::{info, warn};
 
 use super::poly::Poly;
@@ -9,40 +11,43 @@ pub struct ClusterOptions {
     pub keep_isolated_fractures: bool,
     /// Keep only the cluster with the most fractures
     pub keep_only_largest: bool,
-    /// Keep only the clusters which touch each boundary surface of the domain mesh
-    pub keep_only_connected_to_surfaces: bool,
+    /// Keep only the clusters which touch a boundary surface of each group
+    /// (`keep_only_connected_to`; empty = all clusters). Boundary N is
+    /// `DomainMesh::boundary_surfaces()[N - 1]`.
+    pub connected_surface_groups: Vec<Vec<usize>>,
 }
 
 /// The fractures which stay in the network (`ClusterGroups::final_fractures`)
 pub struct ClusterSelection {
     /// Indices of the accepted fractures, in no special order
     pub fractures: Vec<usize>,
-    /// True if `keep_only_connected_to_surfaces` found clusters but none
-    /// which touches each boundary surface: then all clusters stay
-    pub is_without_cluster_on_all_surfaces: bool,
+    /// True if `connected_surface_groups` found clusters but none which
+    /// touches a surface of each group: then all clusters stay
+    pub is_without_connecting_cluster: bool,
 }
 
 /// The boundary surfaces which the accepted fractures touch: the surfaces of
 /// the segments of their boundary lines
 pub struct SurfaceContacts<'a> {
     pub accepted_polys: &'a [Poly],
-    /// Number of boundary surfaces of the domain mesh
-    pub surface_count: usize,
 }
 
 impl SurfaceContacts<'_> {
-    /// True if the fractures together touch each boundary surface
-    fn touch_all_surfaces<'b>(&self, fractures: impl Iterator<Item = &'b usize>) -> bool {
-        let mut is_touched = vec![false; self.surface_count];
-        let surface_ids = fractures
+    /// True if the fractures together touch a surface of each group
+    fn touch_each_group<'b>(
+        &self,
+        fractures: impl Iterator<Item = &'b usize>,
+        groups: &[Vec<usize>],
+    ) -> bool {
+        let touched: HashSet<usize> = fractures
             .flat_map(|&fracture| &self.accepted_polys[fracture].boundary_lines)
             .flat_map(|line| &line.segments)
-            .flat_map(|segment| &segment.side.surface_ids);
-        for &surface_id in surface_ids {
-            // Boundary N is `DomainMesh::boundary_surfaces()[N - 1]`
-            is_touched[surface_id - 1] = true;
-        }
-        is_touched.iter().all(|&touched| touched)
+            .flat_map(|segment| &segment.side.surface_ids)
+            .copied()
+            .collect();
+        groups
+            .iter()
+            .all(|group| group.iter().any(|surface_id| touched.contains(surface_id)))
     }
 }
 
@@ -156,22 +161,23 @@ impl ClusterGroups {
     }
 
     /// Selects the fractures which stay in the network. Port of `getCluster`
-    /// (`clusterGroups.cpp`) of dfnWorks; its `boundaryFaces` are the
-    /// boundary surfaces of the domain mesh here, all of them selected.
+    /// (`clusterGroups.cpp`) of dfnWorks; its `boundaryFaces` are the groups
+    /// of boundary surfaces here (each face in its own group gives the rule of
+    /// dfnWorks).
     ///
     /// # Arguments
     ///
     /// * `options` - Which clusters stay
     /// * `accepted_count` - Number of accepted fractures
     /// * `contacts` - The boundary surfaces of the accepted fractures, for
-    ///   `keep_only_connected_to_surfaces`
+    ///   `connected_surface_groups`
     ///
     /// # Returns
     ///
     /// The fractures in the groups of 2 or more fractures, or all accepted
-    /// fractures. With `keep_only_connected_to_surfaces` and clusters of which
-    /// none touches each boundary surface, all clusters stay (as dfnWorks),
-    /// with a warning and `is_without_cluster_on_all_surfaces`.
+    /// fractures. With `connected_surface_groups` and clusters of which none
+    /// touches a surface of each group, all clusters stay (as dfnWorks), with
+    /// a warning and `is_without_connecting_cluster`.
     pub fn final_fractures(
         &self,
         options: &ClusterOptions,
@@ -186,7 +192,7 @@ impl ClusterGroups {
             info!("Number of fractures: {}", accepted_count);
             return ClusterSelection {
                 fractures: (0..accepted_count).collect(),
-                is_without_cluster_on_all_surfaces: false,
+                is_without_connecting_cluster: false,
             };
         }
 
@@ -200,23 +206,24 @@ impl ClusterGroups {
             .map(|(number, _)| number)
             .collect();
 
-        let mut is_without_cluster_on_all_surfaces = false;
-        if options.keep_only_connected_to_surfaces {
-            let groups_on_all_surfaces: Vec<usize> = connected_groups
+        let mut is_without_connecting_cluster = false;
+        let surface_groups = &options.connected_surface_groups;
+        if !surface_groups.is_empty() {
+            let connecting_groups: Vec<usize> = connected_groups
                 .iter()
                 .copied()
-                .filter(|&group| contacts.touch_all_surfaces(self.members(group)))
+                .filter(|&group| contacts.touch_each_group(self.members(group), surface_groups))
                 .collect();
             info!(
-                "Number of clusters which connect all boundary surfaces: {}",
-                groups_on_all_surfaces.len()
+                "Number of clusters which connect the boundary surface groups: {}",
+                connecting_groups.len()
             );
             // No cluster at all: the caller reports that no fractures intersect
-            if groups_on_all_surfaces.is_empty() && !connected_groups.is_empty() {
-                warn!("No cluster connects all boundary surfaces: all clusters stay");
-                is_without_cluster_on_all_surfaces = true;
+            if connecting_groups.is_empty() && !connected_groups.is_empty() {
+                warn!("No cluster connects the boundary surface groups: all clusters stay");
+                is_without_connecting_cluster = true;
             } else {
-                connected_groups = groups_on_all_surfaces;
+                connected_groups = connecting_groups;
             }
         }
 
@@ -232,7 +239,7 @@ impl ClusterGroups {
                 .flat_map(|&group| self.members(group))
                 .copied()
                 .collect(),
-            is_without_cluster_on_all_surfaces,
+            is_without_connecting_cluster,
         }
     }
 
@@ -266,19 +273,26 @@ mod tests {
     const KEEP_CLUSTERS: ClusterOptions = ClusterOptions {
         keep_isolated_fractures: false,
         keep_only_largest: false,
-        keep_only_connected_to_surfaces: false,
-    };
-
-    const KEEP_CLUSTERS_ON_ALL_SURFACES: ClusterOptions = ClusterOptions {
-        keep_only_connected_to_surfaces: true,
-        ..KEEP_CLUSTERS
+        connected_surface_groups: Vec::new(),
     };
 
     /// No boundary surface: for the options which do not look at the surfaces
     const NO_CONTACTS: SurfaceContacts = SurfaceContacts {
         accepted_polys: &[],
-        surface_count: 0,
     };
+
+    /// Keep the clusters which touch a surface of each group
+    fn keep_clusters_connected_to(groups: &[&[usize]]) -> ClusterOptions {
+        ClusterOptions {
+            connected_surface_groups: groups.iter().map(|group| group.to_vec()).collect(),
+            ..KEEP_CLUSTERS
+        }
+    }
+
+    /// Surface 1 in one group, surface 2 in the other (as in-flow and out-flow)
+    fn keep_clusters_connected_to_one_and_two() -> ClusterOptions {
+        keep_clusters_connected_to(&[&[1], &[2]])
+    }
 
     /// A fracture with one boundary segment on the given boundary surfaces
     fn fracture_on_surfaces(surface_ids: &[usize]) -> Poly {
@@ -315,15 +329,11 @@ mod tests {
         (clusters, fractures)
     }
 
-    /// The selection of clusters on 2 boundary surfaces, with sorted fractures
-    fn select_on_two_surfaces(
-        fracture_surfaces: &[&[&[usize]]],
-        options: &ClusterOptions,
-    ) -> ClusterSelection {
+    /// The selection of clusters, with sorted fractures
+    fn select(fracture_surfaces: &[&[&[usize]]], options: &ClusterOptions) -> ClusterSelection {
         let (clusters, fractures) = clusters_of(fracture_surfaces);
         let contacts = SurfaceContacts {
             accepted_polys: &fractures,
-            surface_count: 2,
         };
         let mut selection = clusters.final_fractures(options, fractures.len(), &contacts);
         selection.fractures.sort_unstable();
@@ -331,64 +341,83 @@ mod tests {
     }
 
     #[test]
-    fn test_cluster_which_touches_one_of_two_surfaces_is_removed() {
+    fn test_cluster_which_touches_one_of_two_groups_is_removed() {
         // Cluster 0: fractures 0, 1 on surfaces 1 and 2; cluster 1: fractures 2, 3 on surface 1
-        let selection = select_on_two_surfaces(
+        let selection = select(
             &[&[&[1], &[2]], &[&[1], &[]]],
-            &KEEP_CLUSTERS_ON_ALL_SURFACES,
+            &keep_clusters_connected_to_one_and_two(),
         );
 
         assert_eq!(selection.fractures, [0, 1]);
     }
 
     #[test]
-    fn test_a_cluster_on_all_surfaces_clears_the_flag() {
-        let selection = select_on_two_surfaces(
-            &[&[&[1], &[2]], &[&[1], &[]]],
-            &KEEP_CLUSTERS_ON_ALL_SURFACES,
-        );
+    fn test_surface_in_no_group_is_not_needed() {
+        // Cluster 0 touches surfaces 1 and 2, not surface 3
+        let selection = select(&[&[&[1], &[2]]], &keep_clusters_connected_to_one_and_two());
 
-        assert!(!selection.is_without_cluster_on_all_surfaces);
+        assert_eq!(selection.fractures, [0, 1]);
     }
 
     #[test]
-    fn test_all_clusters_stay_when_no_cluster_touches_all_surfaces() {
+    fn test_one_surface_of_a_group_is_enough() {
+        // Group 1: surfaces 1 and 3; cluster 0 touches surfaces 3 and 2
+        let selection = select(
+            &[&[&[3], &[2]], &[&[1], &[]]],
+            &keep_clusters_connected_to(&[&[1, 3], &[2]]),
+        );
+
+        assert_eq!(selection.fractures, [0, 1]);
+    }
+
+    #[test]
+    fn test_a_connecting_cluster_clears_the_flag() {
+        let selection = select(
+            &[&[&[1], &[2]], &[&[1], &[]]],
+            &keep_clusters_connected_to_one_and_two(),
+        );
+
+        assert!(!selection.is_without_connecting_cluster);
+    }
+
+    #[test]
+    fn test_all_clusters_stay_when_no_cluster_connects_the_groups() {
         // Cluster 0 touches only surface 1, cluster 1 only surface 2
-        let selection = select_on_two_surfaces(
+        let selection = select(
             &[&[&[1], &[]], &[&[], &[2]]],
-            &KEEP_CLUSTERS_ON_ALL_SURFACES,
+            &keep_clusters_connected_to_one_and_two(),
         );
 
         assert_eq!(selection.fractures, [0, 1, 2, 3]);
     }
 
     #[test]
-    fn test_no_cluster_on_all_surfaces_sets_the_flag() {
-        let selection = select_on_two_surfaces(
+    fn test_no_connecting_cluster_sets_the_flag() {
+        let selection = select(
             &[&[&[1], &[]], &[&[], &[2]]],
-            &KEEP_CLUSTERS_ON_ALL_SURFACES,
+            &keep_clusters_connected_to_one_and_two(),
         );
 
-        assert!(selection.is_without_cluster_on_all_surfaces);
+        assert!(selection.is_without_connecting_cluster);
     }
 
     #[test]
     fn test_no_cluster_at_all_does_not_set_the_flag() {
         // One fracture with no intersection: the caller reports NoIntersectingFractures
-        let selection = select_on_two_surfaces(&[&[&[1, 2]]], &KEEP_CLUSTERS_ON_ALL_SURFACES);
+        let selection = select(&[&[&[1, 2]]], &keep_clusters_connected_to_one_and_two());
 
-        assert!(!selection.is_without_cluster_on_all_surfaces);
+        assert!(!selection.is_without_connecting_cluster);
     }
 
     #[test]
-    fn test_keep_only_largest_selects_among_the_clusters_on_all_surfaces() {
+    fn test_keep_only_largest_selects_among_the_connecting_clusters() {
         // Cluster 0 (3 fractures) touches only surface 1; cluster 1 (2 fractures) both
         let options = ClusterOptions {
             keep_only_largest: true,
-            ..KEEP_CLUSTERS_ON_ALL_SURFACES
+            ..keep_clusters_connected_to_one_and_two()
         };
 
-        let selection = select_on_two_surfaces(&[&[&[1], &[], &[1]], &[&[1, 2], &[]]], &options);
+        let selection = select(&[&[&[1], &[], &[1]], &[&[1, 2], &[]]], &options);
 
         assert_eq!(selection.fractures, [3, 4]);
     }

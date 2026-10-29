@@ -618,9 +618,33 @@ mod clusters {
         assert_eq!(network.final_fractures.len(), largest_size);
     }
 
-    /// The clusters of the final fractures which do not touch each boundary surface
-    fn clusters_not_on_all_surfaces(network: &Network) -> Vec<Option<usize>> {
+    /// Groups of `keep_only_connected_to` of the cases: west (1) and east (2)
+    const WEST_AND_EAST: &str = r#"keep_only_connected_to = [["west"], ["east"]]"#;
+
+    /// Each boundary surface in its own group
+    fn each_surface(network: &Network) -> Vec<Vec<usize>> {
         let surface_count = network.input.domain_mesh.boundary_surfaces().len();
+        (1..=surface_count)
+            .map(|surface_id| vec![surface_id])
+            .collect()
+    }
+
+    /// True if the segments touch a surface of each group
+    fn touch_each_group(segments: &[&BoundarySegment], groups: &[Vec<usize>]) -> bool {
+        groups.iter().all(|group| {
+            segments.iter().any(|segment| {
+                group
+                    .iter()
+                    .any(|surface_id| segment.side.surface_ids.contains(surface_id))
+            })
+        })
+    }
+
+    /// The clusters of the final fractures which do not touch a surface of each group
+    fn clusters_not_connected_to(
+        network: &Network,
+        surface_groups: &[Vec<usize>],
+    ) -> Vec<Option<usize>> {
         let polys = final_polys(network);
         let mut groups: Vec<Option<usize>> = polys.iter().map(|poly| poly.group).collect();
         groups.sort_unstable();
@@ -631,29 +655,55 @@ mod clusters {
                 .copied()
                 .filter(|poly| poly.group == group)
                 .collect();
-            (1..=surface_count).any(|surface_id| {
-                !segments_of(&cluster)
-                    .iter()
-                    .any(|segment| segment.side.surface_ids.contains(&surface_id))
-            })
+            !touch_each_group(&segments_of(&cluster), surface_groups)
         });
         groups
     }
 
     #[test]
-    fn test_keep_only_connected_to_surfaces_keeps_the_clusters_on_all_surfaces() {
+    fn test_keep_only_connected_to_keeps_the_clusters_on_west_and_east() {
         let network = run("clusters_connect_surfaces");
 
-        assert_eq!(clusters_not_on_all_surfaces(&network), []);
+        assert_eq!(
+            clusters_not_connected_to(&network, &each_surface(&network)),
+            []
+        );
+    }
+
+    /// The case `clusters_connect_surfaces` with west and east in one group
+    fn run_with_one_group() -> Network {
+        run_with_replaced_text(
+            "clusters_connect_surfaces",
+            WEST_AND_EAST,
+            r#"keep_only_connected_to = [["west", "east"]]"#,
+        )
+    }
+
+    #[test]
+    fn test_one_group_keeps_the_clusters_on_one_of_its_surfaces() {
+        let network = run_with_one_group();
+
+        assert_eq!(clusters_not_connected_to(&network, &[vec![1, 2]]), []);
+    }
+
+    #[test]
+    fn test_one_group_keeps_clusters_which_do_not_touch_each_surface() {
+        let network = run_with_one_group();
+
+        assert_ne!(
+            clusters_not_connected_to(&network, &each_surface(&network)),
+            []
+        );
     }
 
     /// The case `clusters_connect_surfaces_mesh`, with the option on or off
-    fn run_with_mesh(keep_only_connected_to_surfaces: bool) -> Network {
-        run_with_replaced_text(
-            "clusters_connect_surfaces_mesh",
-            "keep_only_connected_to_surfaces = true",
-            &format!("keep_only_connected_to_surfaces = {keep_only_connected_to_surfaces}"),
-        )
+    fn run_with_mesh(is_on: bool) -> Network {
+        let groups = if is_on {
+            WEST_AND_EAST
+        } else {
+            "keep_only_connected_to = []"
+        };
+        run_with_replaced_text("clusters_connect_surfaces_mesh", WEST_AND_EAST, groups)
     }
 
     /// The number of connected parts of the mesh which do not have a point
@@ -730,14 +780,14 @@ mod clusters {
     }
 
     #[test]
-    fn test_a_cluster_on_all_surfaces_does_not_set_the_flag() {
+    fn test_a_connecting_cluster_does_not_set_the_flag() {
         let network = run("clusters_connect_surfaces");
 
-        assert!(!network.is_without_cluster_on_all_surfaces);
+        assert!(!network.is_without_connecting_cluster);
     }
 
     #[test]
-    fn test_with_no_cluster_on_all_surfaces_all_clusters_stay_with_the_flag() {
+    fn test_with_no_connecting_cluster_all_clusters_stay_with_the_flag() {
         // With 100 fractures, no cluster connects the faces west and east
         let network = run_with_replaced_text(
             "clusters_connect_surfaces",
@@ -748,26 +798,26 @@ mod clusters {
             "clusters_connect_surfaces",
             &[
                 ("\nn_poly = 300", "\nn_poly = 100"),
-                (
-                    "keep_only_connected_to_surfaces = true",
-                    "keep_only_connected_to_surfaces = false",
-                ),
+                (WEST_AND_EAST, "keep_only_connected_to = []"),
             ],
         );
 
-        assert!(network.is_without_cluster_on_all_surfaces);
+        assert!(network.is_without_connecting_cluster);
         assert_eq!(network.final_fractures, unchecked.final_fractures);
     }
 
     #[test]
-    fn test_without_keep_only_connected_to_surfaces_other_clusters_stay() {
+    fn test_without_keep_only_connected_to_other_clusters_stay() {
         let network = run_with_replaced_text(
             "clusters_connect_surfaces",
-            "keep_only_connected_to_surfaces = true",
-            "keep_only_connected_to_surfaces = false",
+            WEST_AND_EAST,
+            "keep_only_connected_to = []",
         );
 
-        assert_ne!(clusters_not_on_all_surfaces(&network), []);
+        assert_ne!(
+            clusters_not_connected_to(&network, &each_surface(&network)),
+            []
+        );
     }
 }
 

@@ -57,13 +57,20 @@ pub enum DfngenError {
     )]
     MeshNeedsRegionBoundaries,
     #[error(
-        "Invalid input file: clusters.keep_only_connected_to_surfaces needs [region_boundaries] with enable = true: its boundary lines give the boundary surfaces which a fracture touches"
+        "Invalid input file: clusters.keep_only_connected_to needs [region_boundaries] with enable = true: its boundary lines give the boundary surfaces which a fracture touches"
     )]
     ClustersNeedRegionBoundaries,
     #[error(
-        "Invalid input file: clusters.keep_only_connected_to_surfaces needs a domain mesh with boundary surfaces (cell data arrays boundary__<name>)"
+        "Invalid input file: clusters.keep_only_connected_to needs a domain mesh with boundary surfaces (cell data arrays boundary__<name>)"
     )]
     ClustersNeedBoundarySurfaces,
+    /// `group` starts at 1, in the order of the input file
+    #[error("Invalid input file: group {group} of clusters.keep_only_connected_to has no boundary surface. Add one.")]
+    EmptyClusterSurfaceGroup { group: usize },
+    #[error(
+        "Invalid input file: clusters.keep_only_connected_to: the domain mesh has no boundary surface {name} (cell data array boundary__{name})"
+    )]
+    UnknownClusterSurface { name: String },
     #[error("Invalid input file: mesh.max_size_factor must be 1 or more")]
     MeshMaxSizeFactor,
     #[error("Invalid input file: mesh.slope must be greater than 0")]

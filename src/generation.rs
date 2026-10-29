@@ -31,9 +31,10 @@ pub struct Network {
     /// Sorted indices into `dfn.accepted_polys` of the fractures which remain
     /// after the cluster analysis
     pub final_fractures: Vec<usize>,
-    /// True if `clusters.keep_only_connected_to_surfaces` found no cluster
-    /// which touches each boundary surface: then all clusters stay (as dfnWorks)
-    pub is_without_cluster_on_all_surfaces: bool,
+    /// True if `clusters.keep_only_connected_to` found no cluster which
+    /// touches a boundary surface of each group: then all clusters stay (as
+    /// dfnWorks)
+    pub is_without_connecting_cluster: bool,
     /// Triangle mesh of the final fractures. `None` without `[mesh]`.
     pub mesh: Option<FractureMesh>,
 }
@@ -143,16 +144,16 @@ pub fn generate(
     }
 
     // Remove any isolated fractures and return a list of polygon indices.
-    // With `keep_only_connected_to_surfaces`, only the clusters which touch
-    // each boundary surface; with `keep_only_largest`, the largest cluster.
+    // With `keep_only_connected_to`, only the clusters which touch a
+    // boundary surface of each group; with `keep_only_largest`, the largest
+    // cluster.
     let contacts = SurfaceContacts {
         accepted_polys: &dfn.accepted_polys,
-        surface_count: input.domain_mesh.boundary_surfaces().len(),
     };
     let selection =
         dfn.clusters
             .final_fractures(&input.clusters, dfn.stats.accepted_count, &contacts);
-    let selection_is_without_cluster_on_all_surfaces = selection.is_without_cluster_on_all_surfaces;
+    let selection_is_without_connecting_cluster = selection.is_without_connecting_cluster;
     let mut final_fractures = selection.fractures;
     // Sort fracture indices to retain order by acceptance
     final_fractures.sort();
@@ -186,12 +187,12 @@ pub fn generate(
 
     // The clusters connect also outside the domain (the fractures are not
     // cut): the mesh has the connections which a flow can use
-    let mut is_without_cluster_on_all_surfaces = selection_is_without_cluster_on_all_surfaces;
+    let mut is_without_connecting_cluster = selection_is_without_connecting_cluster;
     if let Some(mesh) = mesh
         .as_mut()
-        .filter(|_| input.clusters.keep_only_connected_to_surfaces)
+        .filter(|_| !input.clusters.connected_surface_groups.is_empty())
     {
-        is_without_cluster_on_all_surfaces |= mesh.is_without_part_on_all_surfaces;
+        is_without_connecting_cluster |= mesh.is_without_connecting_part;
         let kept_positions = mesh.remove_fractures_without_triangles();
         let removed_count = final_fractures.len() - kept_positions.len();
         if removed_count > 0 {
@@ -212,7 +213,7 @@ pub fn generate(
         families: family_collection,
         dfn,
         final_fractures,
-        is_without_cluster_on_all_surfaces,
+        is_without_connecting_cluster,
         mesh,
     })
 }

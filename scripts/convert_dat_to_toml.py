@@ -221,7 +221,7 @@ def convert_general_options(
         f"keep_only_largest = {boolean(dat.flag('keepOnlyLargestCluster'))}",
         f"keep_isolated_fractures = {boolean(dat.flag('keepIsolatedFractures'))}",
         # The box mesh has no boundary surfaces: boundaryFaces is not converted
-        "keep_only_connected_to_surfaces = false",
+        "keep_only_connected_to = []",
     ]
     return lines
 

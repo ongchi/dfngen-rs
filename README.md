@@ -48,7 +48,7 @@ slope = 0.5                        # > 0; growth of the triangle size with the d
 [clusters]
 keep_only_largest = false          # true = keep only the largest cluster; no effect with keep_isolated_fractures = true
 keep_isolated_fractures = false    # true = keep all accepted fractures; false = remove the fractures with no intersection
-keep_only_connected_to_surfaces = false # true = keep only the clusters which touch each boundary surface of the domain mesh (see below); no effect with keep_isolated_fractures = true
+keep_only_connected_to = []        # groups of boundary surface names, e.g. [["west"], ["east"]]: keep only the clusters which touch a surface of each group (see below); [] = off; no effect with keep_isolated_fractures = true
 
 # One table for each stochastic fracture family (optional)
 [[family]]
@@ -242,7 +242,7 @@ network is the same as without the option.
   a boundary array (see `dfn_mesh.vtu` below; for example, fully in one
   region and away from the mesh surface) is not in the mesh; the log gives
   the number of these fractures. The other output files keep them, except
-  with `clusters.keep_only_connected_to_surfaces` (see "Domain mesh").
+  with `clusters.keep_only_connected_to` (see "Domain mesh").
 - A line with a cell of no region on the other side, and on no boundary
   surface, gives no array: its points are not boundary points.
 - A point where a line of a region meets a line on the mesh surface (or of
@@ -343,24 +343,28 @@ boundary surface with the name of a region (both give the output array
 in both kinds of array (ParaView writes 0 for a missing value when it merges
 two meshes).
 
-`clusters.keep_only_connected_to_surfaces = true` keeps only the clusters
-which touch each boundary surface of the mesh (as `boundaryFaces` of
-dfnGen, with all surfaces selected). A cluster touches a surface if a
-boundary line segment of one of its fractures is on it. Thus the option
-needs `[region_boundaries]` with `enable = true` and a mesh with boundary
-surfaces; else it is an error. `keep_only_largest` then keeps the largest
-of these clusters. If there are clusters but none touches each surface, all
-clusters stay (as in dfnGen), with a warning in the log, and the library
-result `Network` has `is_without_cluster_on_all_surfaces = true`.
+`clusters.keep_only_connected_to` is a list of groups of boundary surface
+names. A cluster stays only if it touches at least one surface of each
+group. For example, `[["west", "north"], ["east"]]` keeps the clusters which
+connect west or north (in-flow) with east (out-flow); a surface in no group
+does not matter. Each surface in its own group gives `boundaryFaces` of
+dfnGen. A cluster touches a surface if a boundary line segment of one of its
+fractures is on it. Thus a non-empty list needs `[region_boundaries]` with
+`enable = true` and a mesh with boundary surfaces; else it is an error. An
+empty group and a name which is not a boundary surface of the mesh are also
+errors. `[]` turns the option off. `keep_only_largest` then keeps the
+largest of these clusters. If there are clusters but none touches a surface
+of each group, all clusters stay (as in dfnGen), with a warning in the log,
+and the library result `Network` has `is_without_connecting_cluster = true`.
 
 The fractures are not cut to the domain, thus two fractures of a cluster can
 intersect only outside the mesh. With `[mesh]`, the option thus also applies
 to the triangle mesh: only the connected parts of the mesh which have a
-point on each boundary surface stay, and a final fracture with no triangle
+point on a surface of each group stay, and a final fracture with no triangle
 left is removed from the final fractures (it goes to
-`fractures_removed.vtp`). If no part of the mesh has a point on each
-surface, the parts with a point on a boundary stay, with a warning, and
-`is_without_cluster_on_all_surfaces = true`
+`fractures_removed.vtp`). If no part of the mesh has such points, the parts
+with a point on a boundary stay, with a warning, and
+`is_without_connecting_cluster = true`
 (`tests/data/clusters_connect_surfaces_mesh` is an example).
 
 A cell data array with the name `region` (the format of the versions before
@@ -468,7 +472,7 @@ or a polygon boundary. A rectangle of dfnGen becomes a polygon with 4
 points, and its radius values are multiplied by sqrt(2) (in dfnGen, the radius
 of a rectangle is half the side). Angles in radians are changed to degrees.
 The box mesh has no boundary surfaces, thus `boundaryFaces` is not converted
-(`keep_only_connected_to_surfaces = false`). The ellipses do not have the same vertices
+(`keep_only_connected_to = []`). The ellipses do not have the same vertices
 as in dfnGen, and the fracture centers are always in the domain (dfnGen can
 put them in a larger box, `domainSizeIncrease`). Thus the network is not the
 same as that of dfnGen for the same seed.

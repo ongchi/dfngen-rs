@@ -1,5 +1,5 @@
-# keep_only_connected_to_surfaces = true with [mesh]: the mesh keeps only its
-# connected parts which touch each boundary surface. The domain is the mesh of
+# keep_only_connected_to = [["west"], ["east"]] with [mesh]: the mesh keeps
+# only its connected parts which touch a boundary surface of each group. The domain is the mesh of
 # boundary_surfaces (box of 10 m, faces west at x = -5 and east at x = 5).
 # Fracture 1 crosses the box from west to east. Fracture 2 intersects
 # fracture 1 only at y = 6, outside the box: the cluster analysis puts them
@@ -34,4 +34,4 @@ slope = 0.5
 [clusters]
 keep_only_largest = false
 keep_isolated_fractures = false
-keep_only_connected_to_surfaces = true
+keep_only_connected_to = [["west"], ["east"]]

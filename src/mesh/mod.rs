@@ -71,10 +71,10 @@ pub struct FractureMesh {
     /// for a point which is on no boundary line.
     pub point_sides: Vec<Vec<SegmentSide>>,
 
-    /// True if `clusters.keep_only_connected_to_surfaces` found no connected
-    /// part of the mesh with a point on each boundary surface: then the parts
-    /// with a point on a boundary stay
-    pub is_without_part_on_all_surfaces: bool,
+    /// True if `clusters.keep_only_connected_to` found no connected part of
+    /// the mesh with a point on a boundary surface of each group: then the
+    /// parts with a point on a boundary stay
+    pub is_without_connecting_part: bool,
 }
 
 impl FractureMesh {
@@ -232,7 +232,7 @@ pub fn mesh_network(
         triangle_fractures: Vec::new(),
         apertures,
         point_sides: Vec::new(),
-        is_without_part_on_all_surfaces: false,
+        is_without_connecting_part: false,
     };
     let mut point_sides: HashMap<usize, Vec<SegmentSide>> = HashMap::new();
     let mut skipped_constraints = 0;
@@ -325,19 +325,15 @@ pub fn mesh_network(
         .map(|id| point_sides.remove(&id).unwrap_or_default())
         .collect();
 
-    let required_surface_count = input
-        .clusters
-        .keep_only_connected_to_surfaces
-        .then(|| input.domain_mesh.boundary_surfaces().len());
-    let removed = remove_unusable_parts(&mut mesh, required_surface_count);
-    mesh.is_without_part_on_all_surfaces = removed.is_without_part_on_all_surfaces;
-    if removed.is_without_part_on_all_surfaces {
-        warn!("Mesh: no connected part of the mesh connects all boundary surfaces: the parts with a point on a boundary stay");
+    let surface_groups = &input.clusters.connected_surface_groups;
+    let removed = remove_unusable_parts(&mut mesh, surface_groups);
+    mesh.is_without_connecting_part = removed.is_without_connecting_part;
+    if removed.is_without_connecting_part {
+        warn!("Mesh: no connected part of the mesh connects the boundary surface groups: the parts with a point on a boundary stay");
     }
     if removed.fracture_count > 0 {
-        let reason = if required_surface_count.is_some() && !removed.is_without_part_on_all_surfaces
-        {
-            "their connected parts of the mesh do not touch each boundary surface"
+        let reason = if !surface_groups.is_empty() && !removed.is_without_connecting_part {
+            "their connected parts of the mesh do not touch a boundary surface of each group"
         } else {
             "their clusters have no point on a boundary (fehm-rs needs one)"
         };
@@ -562,22 +558,19 @@ fn connected_parts(mesh: &FractureMesh) -> Vec<usize> {
 struct RemovedParts {
     /// Number of fractures which are then not in the mesh
     fracture_count: usize,
-    /// True if a part on each boundary surface was required, but no part has
-    /// a point on each surface: then only the parts with no boundary point
-    /// were removed
-    is_without_part_on_all_surfaces: bool,
+    /// True if a part on a surface of each group was required, but no part
+    /// has such points: then only the parts with no boundary point were
+    /// removed
+    is_without_connecting_part: bool,
 }
 
 /// Removes the triangles of the connected parts of the mesh which a flow
-/// cannot use. Each part needs a point on a boundary. With
-/// `required_surface_count` (`clusters.keep_only_connected_to_surfaces`: the
-/// number of boundary surfaces), a part needs a point on each boundary
-/// surface, if a part has one: the fractures are not cut to the domain, thus
-/// the clusters of `ClusterGroups` can connect outside the mesh.
-fn remove_unusable_parts(
-    mesh: &mut FractureMesh,
-    required_surface_count: Option<usize>,
-) -> RemovedParts {
+/// cannot use. Each part needs a point on a boundary. With `surface_groups`
+/// (`clusters.keep_only_connected_to`; empty = off), a part needs a point on
+/// a boundary surface of each group, if a part has such points: the
+/// fractures are not cut to the domain, thus the clusters of `ClusterGroups`
+/// can connect outside the mesh.
+fn remove_unusable_parts(mesh: &mut FractureMesh, surface_groups: &[Vec<usize>]) -> RemovedParts {
     let part_of_point = connected_parts(mesh);
 
     let mut has_boundary = vec![false; mesh.points.len()];
@@ -594,22 +587,21 @@ fn remove_unusable_parts(
                 .extend(&side.surface_ids);
         }
     }
-    // Boundary N is `DomainMesh::boundary_surfaces()[N - 1]`: a part on each
-    // surface has all the numbers 1 to the surface count
-    let is_on_all_surfaces = |part: usize| {
-        required_surface_count.is_some_and(|surface_count| {
-            part_surfaces.get(&part).is_some_and(|surfaces| {
-                (1..=surface_count).all(|surface_id| surfaces.contains(&surface_id))
+    let is_connecting = |part: usize| {
+        !surface_groups.is_empty()
+            && part_surfaces.get(&part).is_some_and(|surfaces| {
+                surface_groups
+                    .iter()
+                    .all(|group| group.iter().any(|surface_id| surfaces.contains(surface_id)))
             })
-        })
     };
-    let has_part_on_all_surfaces = mesh
+    let has_connecting_part = mesh
         .triangles
         .iter()
-        .any(|triangle| is_on_all_surfaces(part_of_point[triangle[0]]));
+        .any(|triangle| is_connecting(part_of_point[triangle[0]]));
     let is_kept = |part: usize| {
-        if has_part_on_all_surfaces {
-            is_on_all_surfaces(part)
+        if has_connecting_part {
+            is_connecting(part)
         } else {
             has_boundary[part]
         }
@@ -635,8 +627,7 @@ fn remove_unusable_parts(
 
     RemovedParts {
         fracture_count: count_before - fracture_count(&mesh.triangle_fractures),
-        is_without_part_on_all_surfaces: required_surface_count.is_some()
-            && !has_part_on_all_surfaces,
+        is_without_connecting_part: !surface_groups.is_empty() && !has_connecting_part,
     }
 }
 
@@ -687,54 +678,48 @@ mod tests {
             triangle_fractures: vec![0, 1],
             apertures: vec![1e-4, 2e-4],
             point_sides: first.into_iter().chain(second).collect(),
-            is_without_part_on_all_surfaces: false,
+            is_without_connecting_part: false,
         }
     }
 
     #[test]
-    fn test_part_on_one_of_two_surfaces_is_removed() {
+    fn test_part_on_one_of_two_groups_is_removed() {
         let mut mesh = two_parts([
             [side_on_surfaces(&[1]), side_on_surfaces(&[2]), vec![]],
             [side_on_surfaces(&[1]), vec![], vec![]],
         ]);
 
-        remove_unusable_parts(&mut mesh, Some(2));
+        remove_unusable_parts(&mut mesh, &[vec![1], vec![2]]);
 
         assert_eq!(mesh.triangle_fractures, [0]);
     }
 
     #[test]
-    fn test_with_no_part_on_all_surfaces_the_parts_on_a_boundary_stay() {
+    fn test_with_no_connecting_part_the_parts_on_a_boundary_stay() {
         let mut mesh = two_parts([
             [side_on_surfaces(&[1]), vec![], vec![]],
             [side_on_surfaces(&[2]), vec![], vec![]],
         ]);
 
-        let removed = remove_unusable_parts(&mut mesh, Some(2));
+        let removed = remove_unusable_parts(&mut mesh, &[vec![1], vec![2]]);
 
         assert_eq!(
-            (
-                mesh.triangle_fractures,
-                removed.is_without_part_on_all_surfaces
-            ),
+            (mesh.triangle_fractures, removed.is_without_connecting_part),
             (vec![0, 1], true)
         );
     }
 
     #[test]
-    fn test_without_required_surfaces_a_part_needs_only_a_boundary_point() {
+    fn test_without_surface_groups_a_part_needs_only_a_boundary_point() {
         let mut mesh = two_parts([
             [side_on_surfaces(&[1]), vec![], vec![]],
             [vec![], vec![], vec![]],
         ]);
 
-        let removed = remove_unusable_parts(&mut mesh, None);
+        let removed = remove_unusable_parts(&mut mesh, &[]);
 
         assert_eq!(
-            (
-                mesh.triangle_fractures,
-                removed.is_without_part_on_all_surfaces
-            ),
+            (mesh.triangle_fractures, removed.is_without_connecting_part),
             (vec![0], false)
         );
     }

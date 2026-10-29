@@ -1,5 +1,5 @@
-# keep_only_connected_to_surfaces = true: only the clusters which touch
-# each boundary surface (west and east) stay. The domain is the mesh of
+# keep_only_connected_to = [["west"], ["east"]]: only the clusters which
+# touch a boundary surface of each group (west and east) stay. The domain is the mesh of
 # boundary_surfaces, and [region_boundaries] is on (the option needs it).
 # n_poly = 300: with 100, no cluster connects the faces of the box.
 # Else as base.
@@ -31,7 +31,7 @@ slope = 0.5
 [clusters]
 keep_only_largest = false
 keep_isolated_fractures = false
-keep_only_connected_to_surfaces = true
+keep_only_connected_to = [["west"], ["east"]]
 
 [[family]]
 number_of_points = 8
