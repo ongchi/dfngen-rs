@@ -8,6 +8,38 @@ Rust implementation of discrete fracture networks (DFN) generator based on DFNGe
 cargo run --release -- <input_file.toml> <output_folder>
 ```
 
+### Checkpoints and restart
+
+During the insertion of the stochastic fractures, the binary writes a
+checkpoint each 60 seconds (`--checkpoint-every <seconds>` changes it), and
+after the last accepted fracture. Each checkpoint replaces two files of the
+output folder:
+
+- `checkpoint.bin`: the state of the insertion (binary).
+- `fractures_partial.vtp`: the accepted fractures until the checkpoint, with
+  the cell data of `fractures_removed.vtp` (for a view in ParaView).
+
+A complete run removes the two files. Ctrl-C writes a checkpoint at the next
+accepted fracture, then stops the run (exit code 130). A second Ctrl-C, or a
+Ctrl-C after the insertion (clusters, mesh), stops at once.
+
+```bash
+# Continue the run: the network is that of a run with no stop
+dfngen <input_file.toml> <output_folder> --resume <old_output_folder>/checkpoint.bin
+# No more insertion: the network has the fractures of the checkpoint
+dfngen <input_file.toml> <output_folder> --resume <old_output_folder>/checkpoint.bin --finish
+```
+
+The input files must be those of the stopped run: a checkpoint has a hash of
+their texts, and another input is an error. A restart uses the seed of the
+checkpoint (also with `seed = 0`). The checkpoint has the accepted stochastic
+fractures. The restart reads the input again (radii lists, user-defined
+fractures) and checks the saved fractures again against the network, in
+their order: a rejected attempt does not change the network, thus this gives
+the intersections and the clusters of the stopped run. The random generator
+continues from its last 312 outputs (`Mt64::recover`). A checkpoint is for
+the version of dfngen which wrote it.
+
 ## Input file
 
 The input is one TOML file, one mesh file for the domain, and an optional file
@@ -665,7 +697,14 @@ fn generate_from_text(toml_text: &str, load: impl Fn(&str) -> String) -> Result<
 - `generate` uses `seed` as it is. Only the binary replaces `seed = 0` with
   the system time.
 - `generate` calls the progress function after each accepted stochastic
-  fracture. `fraction` goes from 0 to 1.
+  fracture. `fraction` goes from 0 to 1, and `fracture` is the accepted
+  fracture. `checkpoint()` gives the `Checkpoint` of the state after it
+  (`to_bytes`, `Checkpoint::from_bytes`), and `write_accepted_fractures`
+  writes the accepted fractures until then.
+- `resume(input, families, Resume { checkpoint, mode }, on_progress)`
+  continues a stopped generation: `ResumeMode::ContinueInsertion` gives the
+  network of a run with no stop, `ResumeMode::Finish` the network of the
+  fractures of the checkpoint.
 - `Network` has the input, the families, the accepted and rejected fractures,
   the intersections, the statistics, and the indices of the final fractures.
 - The library writes its log with the `tracing` crate. Your program installs

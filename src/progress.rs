@@ -80,7 +80,12 @@ impl GenerationProgress {
         }
 
         if update.fraction >= 1. {
-            self.bar.finish_and_clear();
+            self.clear();
         }
+    }
+
+    /// Removes the bar from the terminal
+    pub fn clear(&self) {
+        self.bar.finish_and_clear();
     }
 }
