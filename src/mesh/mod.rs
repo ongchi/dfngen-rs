@@ -11,7 +11,6 @@ mod triangulate;
 use std::collections::HashMap;
 
 use parry3d_f64::na::{center, distance, Point3};
-use rand_mt::Mt64;
 use tracing::{debug, info, warn};
 
 use crate::dfn::Dfn;
@@ -19,6 +18,7 @@ use crate::distribution::ApertureDistribution;
 use crate::error::DfngenError;
 use crate::fracture::poly::{FractureOrigin, Poly};
 use crate::io::input::Input;
+use crate::random::Generator;
 use crate::region_boundaries::{OtherSide, SegmentSide};
 use plane::FracturePlane;
 use shared_points::{build_shared_network, Join, LineOnFractures, PointOnFractures, SharedNetwork};
@@ -437,7 +437,7 @@ fn sample_apertures(
     options: &MeshOptions,
     seed: u64,
 ) -> Result<Vec<f64>, DfngenError> {
-    let mut generator = Mt64::new(seed);
+    let mut generator = Generator::new(seed);
     let mut apertures: Vec<f64> = Vec::with_capacity(polys.len());
 
     for (position, poly) in polys.iter().enumerate() {

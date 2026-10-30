@@ -1,22 +1,26 @@
+use std::io::{self, Write};
+
 use rand::distr::Uniform;
 use rand::Rng;
-use rand_mt::Mt64;
 use tracing::{debug, info};
 
+use crate::checkpoint::{Checkpoint, FamilyState, InsertionState, SavedFracture};
 use crate::dfn::{Dfn, PolyOptions, RejectedFracture};
 use crate::distribution::RadiusFunction;
 use crate::error::DfngenError;
 use crate::fracture::cluster_groups::SurfaceContacts;
 use crate::fracture::family_probability::{
-    cumulative_sum, index_from_probability, index_from_probability_and_p32_status,
-    p32_progress_fraction, remove_family_probability,
+    index_from_probability, index_from_probability_and_p32_status, p32_progress_fraction,
+    remove_family_probability,
 };
 use crate::fracture::fracture_family::{FractureFamily, FractureFamilyCollection};
 use crate::fracture::insert_user_defined_fractures;
 use crate::fracture::poly::{FractureOrigin, Poly};
 use crate::fram::{check_intersections, log_reject_reason};
 use crate::io::input::{Input, StopCondition};
+use crate::io::vtk::write_removed_fractures_vtk;
 use crate::mesh::{mesh_network, FractureMesh};
+use crate::random::Generator;
 use crate::region_boundaries::boundary_lines;
 use crate::stats::{FractureCount, Stats};
 
@@ -47,6 +51,66 @@ pub struct ProgressUpdate<'a> {
     pub fraction: f64,
     /// The fracture which was accepted, in the coordinates of the generation
     pub fracture: &'a Poly,
+    input: &'a Input,
+    dfn: &'a Dfn,
+    families: &'a [FractureFamily],
+    generator: &'a Generator,
+    insertion: &'a InsertionState,
+}
+
+impl ProgressUpdate<'_> {
+    /// The checkpoint of the state after this fracture: `resume` continues from it
+    pub fn checkpoint(&self) -> Checkpoint {
+        Checkpoint {
+            input_hash: self.input.text_hash,
+            seed: self.input.seed,
+            generator: self.generator.state(),
+            accepted_fractures: self
+                .dfn
+                .accepted_polys
+                .iter()
+                .filter_map(SavedFracture::of)
+                .collect(),
+            rejected_fractures: self
+                .dfn
+                .rejected_polys
+                .iter()
+                .filter_map(|rejected| Some((SavedFracture::of(&rejected.poly)?, rejected.reason)))
+                .collect(),
+            families: self.families.iter().map(FamilyState::of).collect(),
+            insertion: self.insertion.clone(),
+            stats: self.dfn.stats.clone(),
+        }
+    }
+
+    /// Writes all accepted fractures until now, with the cell data of
+    /// `fractures_removed.vtp` (VTK XML PolyData, ASCII). The clusters are
+    /// those of the network until now.
+    pub fn write_accepted_fractures(&self, output: &mut impl Write) -> io::Result<()> {
+        let all: Vec<usize> = (0..self.dfn.accepted_polys.len()).collect();
+        write_removed_fractures_vtk(
+            &all,
+            &self.dfn.accepted_polys,
+            &self.input.domain_mesh.center(),
+            output,
+        )
+    }
+}
+
+/// How a restart from a checkpoint continues
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ResumeMode {
+    /// Insertion of stochastic fractures until the stop condition, as in a run with no stop
+    ContinueInsertion,
+    /// No more insertion: the network has the fractures of the checkpoint
+    Finish,
+}
+
+/// A restart of a stopped generation from its checkpoint
+#[derive(Clone, Copy)]
+pub struct Resume<'a> {
+    pub checkpoint: &'a Checkpoint,
+    pub mode: ResumeMode,
 }
 
 /// Generates a fracture network
@@ -58,9 +122,45 @@ pub struct ProgressUpdate<'a> {
 /// * `on_progress` - Called after each accepted stochastic fracture
 pub fn generate(
     input: Input,
-    mut family_collection: FractureFamilyCollection,
+    family_collection: FractureFamilyCollection,
     on_progress: &mut dyn FnMut(&ProgressUpdate),
 ) -> Result<Network, DfngenError> {
+    generate_from(input, family_collection, None, on_progress)
+}
+
+/// Generates a fracture network from the checkpoint of a stopped generation.
+/// With `ResumeMode::ContinueInsertion`, the network is that of a run with no stop.
+///
+/// # Arguments
+///
+/// * `input` - Input options, from the input files of the stopped run. Its
+///   seed is that of the checkpoint.
+/// * `family_collection` - Stochastic fracture families
+/// * `resume` - The checkpoint, and what to do after it
+/// * `on_progress` - Called after each accepted stochastic fracture
+pub fn resume(
+    input: Input,
+    family_collection: FractureFamilyCollection,
+    resume: Resume,
+    on_progress: &mut dyn FnMut(&ProgressUpdate),
+) -> Result<Network, DfngenError> {
+    generate_from(input, family_collection, Some(resume), on_progress)
+}
+
+fn generate_from(
+    mut input: Input,
+    mut family_collection: FractureFamilyCollection,
+    resume: Option<Resume>,
+    on_progress: &mut dyn FnMut(&ProgressUpdate),
+) -> Result<Network, DfngenError> {
+    if let Some(resume) = &resume {
+        if input.text_hash != resume.checkpoint.input_hash {
+            return Err(DfngenError::CheckpointInputChanged);
+        }
+        // An input with `seed = 0` gets a new seed for each run
+        input.seed = resume.checkpoint.seed;
+    }
+
     let mut dfn = Dfn::new();
     let total_families = family_collection.families.len();
 
@@ -73,7 +173,7 @@ pub fn generate(
         region_boundaries: input.region_boundaries.clone(),
     };
 
-    let mut generator = Mt64::new(input.seed);
+    let mut generator = Generator::new(input.seed);
     let domain_volume = input.domain_volume;
 
     if total_families > 0 {
@@ -92,14 +192,31 @@ pub fn generate(
     insert_user_defined_fractures(&input.user_fractures, &options, &mut dfn);
 
     if total_families > 0 {
-        insert_stochastic_fractures(
-            &input,
-            &options,
-            &mut family_collection,
-            &mut dfn,
-            &mut generator,
-            on_progress,
-        )?;
+        let (mut insertion, is_insertion_continued) = match &resume {
+            None => (InsertionState::new(&family_collection), true),
+            Some(resume) => (
+                restore_checkpoint(
+                    resume.checkpoint,
+                    &options,
+                    &mut family_collection,
+                    &mut dfn,
+                    &mut generator,
+                )?,
+                matches!(resume.mode, ResumeMode::ContinueInsertion),
+            ),
+        };
+
+        if is_insertion_continued {
+            insert_stochastic_fractures(
+                &input,
+                &options,
+                &mut family_collection,
+                &mut dfn,
+                &mut generator,
+                &mut insertion,
+                on_progress,
+            )?;
+        }
     }
 
     // Remove last element off the rejects per attempt counter.
@@ -226,7 +343,7 @@ fn prepare_radii_lists(
     input: &Input,
     family_collection: &mut FractureFamilyCollection,
     stats: &mut Stats,
-    generator: &mut Mt64,
+    generator: &mut Generator,
 ) -> Result<(), DfngenError> {
     let total_families = family_collection.families.len();
 
@@ -284,33 +401,25 @@ fn insert_stochastic_fractures(
     options: &PolyOptions,
     family_collection: &mut FractureFamilyCollection,
     dfn: &mut Dfn,
-    generator: &mut Mt64,
+    generator: &mut Generator,
+    insertion: &mut InsertionState,
     on_progress: &mut dyn FnMut(&ProgressUpdate),
 ) -> Result<(), DfngenError> {
-    let total_families = family_collection.families.len();
     let domain_volume = input.domain_volume;
-
-    // Probabilities of the families which have not met their P32 target (P32 option).
-    // This is a copy: the family probabilities must stay in their original state.
-    let mut probabilities = family_collection.probabilities.clone();
-    let mut cdf = cumulative_sum(&probabilities);
 
     // Initialize uniform distribution on [0,1]
     let uniform_dist = Uniform::new(0., 1.)?;
 
-    // Used with the P32 stop condition.
-    // Values are set to true once the families p32 requirement is met.
-    // Once all elements have values all set to true, all families have had their
-    // P32 requirement
-    let mut p32_status = vec![false; total_families];
-
-    // `n_poly` does not include the user-defined fractures
-    let mut stochastic_accepted_count = 0;
-
     while match input.stop_condition {
-        StopCondition::NPoly(n_poly) => stochastic_accepted_count < n_poly,
-        StopCondition::P32 => p32_status.iter().any(|p| !p),
+        StopCondition::NPoly(n_poly) => insertion.stochastic_accepted_count < n_poly,
+        StopCondition::P32 => insertion.p32_status.iter().any(|p| !p),
     } {
+        let InsertionState {
+            probabilities,
+            cdf,
+            p32_status,
+            stochastic_accepted_count,
+        } = &mut *insertion;
         let roll = generator.sample(uniform_dist);
 
         // cdf_index is the index to the CDF array of the family being inserted
@@ -318,14 +427,14 @@ fn insert_stochastic_fractures(
             StopCondition::NPoly(_) => {
                 // n_poly Option
                 // Choose a family based purely on the family probabilities
-                let family_index = index_from_probability(&cdf, roll);
+                let family_index = index_from_probability(cdf, roll);
                 (family_index, family_index)
             }
             StopCondition::P32 => {
                 // P32 Option
                 // Choose a family based on probabiliyis AND their target p32 completion status.
                 // If a family has already met is fracture intinisty req. (p32) don't choose that family anymore
-                index_from_probability_and_p32_status(&p32_status, &cdf, roll)
+                index_from_probability_and_p32_status(p32_status, cdf, roll)
             }
         };
 
@@ -368,7 +477,7 @@ fn insert_stochastic_fractures(
             // A reject comes only from FRAM, thus FRAM has its options
             let (Err(reject_reason), Some(fram_options)) = (fram_result, &input.fram) else {
                 dfn.stats.accepted_count += 1;
-                stochastic_accepted_count += 1;
+                *stochastic_accepted_count += 1;
                 dfn.stats.accepted_per_family[family_index] += 1;
                 // Make new rejection counter for next fracture attempt
                 dfn.stats.rejects_per_attempt.push(0);
@@ -389,22 +498,24 @@ fn insert_stochastic_fractures(
                     // Remove the completed family's element in the CDF and the probabilities
                     // Distribute the removed family probability evenly among the others and rebuild the CDF
                     if probabilities.len() > 1 {
-                        cdf = remove_family_probability(&mut probabilities, cdf_index);
+                        *cdf = remove_family_probability(probabilities, cdf_index);
                     }
                 }
 
-                on_progress(&ProgressUpdate {
-                    accepted_count: stochastic_accepted_count,
-                    fraction: progress_fraction(
-                        input,
-                        stochastic_accepted_count,
-                        &family_collection.families,
-                    ),
-                    fracture: &new_poly,
-                });
-
                 // Intersections and triple points are saved within check_intersections()
                 dfn.accepted_polys.push(new_poly);
+
+                let accepted_count = *stochastic_accepted_count;
+                on_progress(&ProgressUpdate {
+                    accepted_count,
+                    fraction: progress_fraction(input, accepted_count, &family_collection.families),
+                    fracture: &dfn.accepted_polys[dfn.accepted_polys.len() - 1],
+                    input,
+                    dfn,
+                    families: &family_collection.families,
+                    generator,
+                    insertion,
+                });
                 break;
             };
 
@@ -438,6 +549,78 @@ fn insert_stochastic_fractures(
     }
 
     Ok(())
+}
+
+/// Puts the state of a checkpoint into a generation after the insertion of
+/// the user-defined fractures. The accepted stochastic fractures are checked
+/// again against the network, in their order: this gives the intersections,
+/// the triple points and the cluster groups of the stopped run. Returns the
+/// state of the insertion loop.
+fn restore_checkpoint(
+    checkpoint: &Checkpoint,
+    options: &PolyOptions,
+    family_collection: &mut FractureFamilyCollection,
+    dfn: &mut Dfn,
+    generator: &mut Generator,
+) -> Result<InsertionState, DfngenError> {
+    if checkpoint.families.len() != family_collection.families.len() {
+        return Err(DfngenError::CheckpointFormat(format!(
+            "{} families; the input has {}",
+            checkpoint.families.len(),
+            family_collection.families.len()
+        )));
+    }
+    for (state, family) in checkpoint
+        .families
+        .iter()
+        .zip(&mut family_collection.families)
+    {
+        state.apply_to(family);
+    }
+
+    // As in `insert_stochastic_fractures`
+    for (index, saved) in checkpoint.accepted_fractures.iter().enumerate() {
+        let mut poly = saved.to_poly();
+        poly.assign_bounding_box();
+        if options.region_boundaries.is_some() {
+            poly.boundary_lines = boundary_lines(
+                &poly.vertices,
+                &poly.normal,
+                &options.domain_mesh,
+                &poly.region_ids,
+            );
+        }
+        check_intersections(options, &mut poly, dfn).map_err(|reason| {
+            DfngenError::CheckpointRebuildFailed {
+                fracture: index + 1,
+                reason: reason.name(),
+            }
+        })?;
+        poly.assign_area();
+        dfn.accepted_polys.push(poly);
+    }
+
+    dfn.rejected_polys
+        .extend(
+            checkpoint
+                .rejected_fractures
+                .iter()
+                .map(|(saved, reason)| RejectedFracture {
+                    poly: saved.to_poly(),
+                    reason: *reason,
+                }),
+        );
+    // The counters of the stopped run; the checks above changed some of them
+    dfn.stats = checkpoint.stats.clone();
+    *generator = Generator::from_state(&checkpoint.generator).ok_or_else(|| {
+        DfngenError::CheckpointFormat("the state of the random generator is not complete".into())
+    })?;
+
+    info!(
+        "Restart from the checkpoint: {} accepted stochastic fractures",
+        checkpoint.accepted_count()
+    );
+    Ok(checkpoint.insertion.clone())
 }
 
 /// Part of the stop condition which is complete, from 0 to 1

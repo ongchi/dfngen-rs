@@ -3,11 +3,11 @@ use std::rc::Rc;
 use parry3d_f64::na::Vector3;
 use rand::Rng;
 use rand_distr::Uniform;
-use rand_mt::Mt64;
 
 use crate::distribution::{Fisher, RadiusDistribution};
 use crate::domain_mesh::DomainMesh;
 use crate::error::{DfngenError, FamilyError};
+use crate::random::Generator;
 
 use super::poly::{FractureOrigin, Poly};
 
@@ -82,7 +82,7 @@ impl FractureFamily {
         &mut self,
         force_large_fractures: bool,
         volume: f64,
-        generator: &mut Mt64,
+        generator: &mut Generator,
     ) -> Result<(), DfngenError> {
         let mut p32 = 0.;
 
@@ -101,14 +101,14 @@ impl FractureFamily {
     }
 
     /// Uniform random position in the cells of the family's region
-    pub fn sample_position(&self, generator: &mut Mt64) -> Vector3<f64> {
+    pub fn sample_position(&self, generator: &mut Generator) -> Vector3<f64> {
         self.domain_mesh
             .sample_point(self.region_id, generator)
             .coords
     }
 
     /// Samples a radius from the radius distribution of the family.
-    fn sample_radius(&self, generator: &mut Mt64) -> Result<f64, DfngenError> {
+    fn sample_radius(&self, generator: &mut Generator) -> Result<f64, DfngenError> {
         self.radius
             .sample(generator)
             .map_err(|source| DfngenError::FamilyRadius {
@@ -121,7 +121,7 @@ impl FractureFamily {
     /// The size, the normal vector and the rotation of the polygon stay.
     /// Thus a fracture which was rejected gets another attempt, and the
     /// family keeps its target distributions.
-    pub fn retranslate(&self, poly: &mut Poly, generator: &mut Mt64) {
+    pub fn retranslate(&self, poly: &mut Poly, generator: &mut Generator) {
         // The cluster group and the intersections are those of the old position
         poly.group = None;
         poly.intersection_indices.clear();
@@ -135,7 +135,7 @@ impl FractureFamily {
         poly.translate(position);
     }
 
-    pub fn normal_vector(&self, rng: &mut Mt64) -> Vector3<f64> {
+    pub fn normal_vector(&self, rng: &mut Generator) -> Vector3<f64> {
         rng.sample(&self.orientation)
     }
 
@@ -143,7 +143,7 @@ impl FractureFamily {
         &mut self,
         eps: f64,
         family_index: usize,
-        generator: &mut Mt64,
+        generator: &mut Generator,
     ) -> Result<Poly, DfngenError> {
         let radius = if self.radii_index >= self.radii_list.len() {
             // If out of radii from list, insert random radius
@@ -293,7 +293,7 @@ impl FractureFamilyCollection {
         &mut self,
         force_large_fractures: bool,
         mut n_poly: usize,
-        generator: &mut Mt64,
+        generator: &mut Generator,
     ) -> Result<(), DfngenError> {
         if force_large_fractures {
             for family in &mut self.families {
@@ -327,7 +327,7 @@ impl FractureFamilyCollection {
         force_large_fractures: bool,
         domain_volume: f64,
         region_volumes: &[f64],
-        generator: &mut Mt64,
+        generator: &mut Generator,
     ) -> Result<(), DfngenError> {
         for family in &mut self.families {
             let volume = family.region_volume(domain_volume, region_volumes);
@@ -415,7 +415,7 @@ mod tests {
                 false,
                 input.domain_volume,
                 &input.region_volumes,
-                &mut Mt64::new(1),
+                &mut Generator::new(1),
             )
             .unwrap();
 
@@ -434,7 +434,7 @@ mod tests {
                 false,
                 input.domain_volume,
                 &input.region_volumes,
-                &mut Mt64::new(1),
+                &mut Generator::new(1),
             )
             .unwrap();
 
@@ -459,7 +459,7 @@ mod tests {
                 true,
                 input.domain_volume,
                 &input.region_volumes,
-                &mut Mt64::new(1),
+                &mut Generator::new(1),
             )
             .unwrap();
 

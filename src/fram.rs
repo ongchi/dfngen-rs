@@ -1,5 +1,6 @@
 use parry3d_f64::bounding_volume::BoundingVolume;
 use parry3d_f64::na::{distance, Point3};
+use serde::{Deserialize, Serialize};
 use tracing::debug;
 
 use crate::{
@@ -33,7 +34,7 @@ pub struct FramOptions {
 }
 
 /// Reason why FRAM rejected a fracture
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum RejectReason {
     /// Intersection shorter than `min_feature_size`
     ShortIntersection,

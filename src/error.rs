@@ -81,6 +81,17 @@ pub enum DfngenError {
     Mesh(String),
     #[error("There are no intersecting fractures. Increase the fracture density, or decrease the domain size.")]
     NoIntersectingFractures,
+    /// The bytes of a checkpoint
+    #[error("Invalid checkpoint: {0}")]
+    CheckpointFormat(String),
+    #[error("The checkpoint is of another input: the input files changed after the checkpoint. Use the input files of the run which wrote it.")]
+    CheckpointInputChanged,
+    /// `fracture` starts at 1, in the order of the accepted stochastic fractures
+    #[error("The restart from the checkpoint failed: FRAM rejected accepted fracture {fracture} ({reason}). The checkpoint and this version of dfngen do not agree.")]
+    CheckpointRebuildFailed {
+        fracture: usize,
+        reason: &'static str,
+    },
 }
 
 /// A region name of a family or of a user-defined fracture which the domain mesh cannot give

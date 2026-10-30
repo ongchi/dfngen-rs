@@ -2,9 +2,11 @@ use std::collections::HashSet;
 use std::fmt;
 use std::ops::{Add, Sub};
 
+use serde::{Deserialize, Serialize};
+
 /// Number of fractures and of their polygons. Polygons with the same
 /// `fracture_id` are pieces of one user-defined fracture.
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct FractureCount {
     pub fractures: usize,
     pub polygons: usize,
@@ -66,7 +68,7 @@ impl fmt::Display for FractureCount {
 }
 
 /// Number of rejects for each reason
-#[derive(Default)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct RejectionReasons {
     /// Rejections due to intersection of length less than min_feature_size.
     pub short_intersection: usize,
@@ -89,6 +91,7 @@ pub struct RejectionReasons {
 }
 
 /// Statistics of the DFN which is generated
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Stats {
     /// Number of accepted fractures of each stochastic family, in the order of the families
     pub accepted_per_family: Vec<usize>,

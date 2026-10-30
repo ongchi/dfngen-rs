@@ -643,7 +643,7 @@ pub mod test_meshes {
 
 #[cfg(test)]
 mod tests {
-    use rand_mt::Mt64;
+    use crate::random::Generator;
 
     use super::test_meshes::*;
     use super::*;
@@ -762,7 +762,7 @@ mod tests {
 
     fn sample_points(region_id: usize, count: usize) -> Vec<Point3<f64>> {
         let mesh = l_shaped_mesh();
-        let mut rng = Mt64::new(1);
+        let mut rng = Generator::new(1);
 
         (0..count)
             .map(|_| mesh.sample_point(region_id, &mut rng))
@@ -816,7 +816,7 @@ mod tests {
             &[],
         )
         .unwrap();
-        let mut rng = Mt64::new(1);
+        let mut rng = Generator::new(1);
         let count = 30000;
         let sum = (0..count).fold(Vector3::zeros(), |sum, _| {
             sum + mesh.sample_point(0, &mut rng).coords
@@ -880,7 +880,7 @@ mod tests {
     #[test]
     fn test_sampled_points_of_a_region_are_also_in_its_cell_with_two_regions() {
         let mesh = mesh_with_a_cell_in_two_regions();
-        let mut rng = Mt64::new(1);
+        let mut rng = Generator::new(1);
         let points_in_the_shared_cell = (0..10000)
             .filter(|_| mesh.sample_point(2, &mut rng).x < 0.)
             .count();

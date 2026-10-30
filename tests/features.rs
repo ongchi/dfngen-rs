@@ -7,8 +7,9 @@ use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
+use dfngen::fracture::fracture_family::FractureFamilyCollection;
 use dfngen::fracture::poly::{FractureOrigin, Poly};
-use dfngen::io::input::StopCondition;
+use dfngen::io::input::{Input, StopCondition};
 use dfngen::mesh::FractureMesh;
 use dfngen::region_boundaries::{BoundarySegment, OtherSide, SegmentSide};
 use dfngen::stats::RejectionReasons;
@@ -38,6 +39,16 @@ fn run_with_replaced_text(case: &str, from: &str, to: &str) -> Network {
 
 /// Network of a case, with texts of its input file replaced (from, to)
 fn run_with_replacements(case: &str, replacements: &[(&str, &str)]) -> Network {
+    let (input, families) = input_with_replacements(case, replacements);
+
+    generate(input, families, &mut |_| {}).unwrap()
+}
+
+/// Input of a case, with texts of its input file replaced (from, to)
+fn input_with_replacements(
+    case: &str,
+    replacements: &[(&str, &str)],
+) -> (Input, FractureFamilyCollection) {
     let folder = case_folder(case);
     let mut toml_text = fs::read_to_string(folder.join(format!("{case}.toml"))).unwrap();
 
@@ -53,10 +64,8 @@ fn run_with_replacements(case: &str, replacements: &[(&str, &str)]) -> Network {
     let read_text = |name: &str| fs::read_to_string(folder.join(name)).unwrap();
     let mesh_text = read_text(&names.domain);
     let fractures_text = names.user_fractures.as_deref().map(read_text);
-    let (input, families) =
-        build_input_from_text(&toml_text, &mesh_text, fractures_text.as_deref()).unwrap();
 
-    generate(input, families, &mut |_| {}).unwrap()
+    build_input_from_text(&toml_text, &mesh_text, fractures_text.as_deref()).unwrap()
 }
 
 /// Names of the files which `write_output` writes for the network
@@ -1527,5 +1536,106 @@ mod boundary_surfaces {
                 );
             }
         }
+    }
+}
+
+mod checkpoint {
+    use dfngen::{resume, Checkpoint, DfngenError, Resume, ResumeMode};
+
+    use super::*;
+
+    /// Number of accepted stochastic fractures of the network
+    fn stochastic_count(network: &Network) -> usize {
+        network
+            .dfn
+            .accepted_polys
+            .iter()
+            .filter(|poly| poly.origin != FractureOrigin::UserDefined)
+            .count()
+    }
+
+    /// The checkpoint of a run of a case after the accepted stochastic
+    /// fracture `accepted_count`, through its bytes
+    fn checkpoint_at(case: &str, accepted_count: usize) -> Checkpoint {
+        let (input, families) = input_with_replacements(case, &[]);
+        let mut bytes = None;
+        generate(input, families, &mut |update| {
+            if update.accepted_count == accepted_count {
+                bytes = Some(update.checkpoint().to_bytes().unwrap());
+            }
+        })
+        .unwrap();
+
+        Checkpoint::from_bytes(&bytes.expect("no update with this count")).unwrap()
+    }
+
+    fn run_from(case: &str, checkpoint: &Checkpoint, mode: ResumeMode) -> Network {
+        let (input, families) = input_with_replacements(case, &[]);
+        let restart = Resume { checkpoint, mode };
+
+        resume(input, families, restart, &mut |_| {}).unwrap()
+    }
+
+    /// A run with a restart from the checkpoint at half of the stochastic
+    /// fractures gives the output files of a run with no stop
+    fn assert_restart_gives_the_output_of_a_run_with_no_stop(case: &str) {
+        let network = run(case);
+        let checkpoint = checkpoint_at(case, stochastic_count(&network) / 2);
+        let restarted = run_from(case, &checkpoint, ResumeMode::ContinueInsertion);
+
+        let names = output_file_names(&network);
+        assert_eq!(output_file_names(&restarted), names);
+        for name in names {
+            assert!(
+                output_file_text(&restarted, &name) == output_file_text(&network, &name),
+                "{case}: {name} differs"
+            );
+        }
+    }
+
+    #[test]
+    fn test_restart_gives_the_network_of_a_run_with_no_stop() {
+        assert_restart_gives_the_output_of_a_run_with_no_stop("base");
+    }
+
+    #[test]
+    fn test_restart_with_the_p32_stop_condition_gives_the_network_of_a_run_with_no_stop() {
+        assert_restart_gives_the_output_of_a_run_with_no_stop("stop_p32");
+    }
+
+    #[test]
+    fn test_restart_keeps_the_rejected_fractures() {
+        assert_restart_gives_the_output_of_a_run_with_no_stop("fram_rejections");
+    }
+
+    #[test]
+    fn test_restart_gives_the_mesh_of_a_run_with_no_stop() {
+        assert_restart_gives_the_output_of_a_run_with_no_stop("mesh");
+    }
+
+    #[test]
+    fn test_restart_with_user_fractures_and_regions_gives_the_network_of_a_run_with_no_stop() {
+        assert_restart_gives_the_output_of_a_run_with_no_stop("mesh_regions");
+    }
+
+    #[test]
+    fn test_finish_keeps_only_the_fractures_of_the_checkpoint() {
+        let network = run_from("base", &checkpoint_at("base", 40), ResumeMode::Finish);
+
+        assert_eq!(stochastic_count(&network), 40);
+    }
+
+    #[test]
+    fn test_restart_with_another_input_is_an_error() {
+        let checkpoint = checkpoint_at("base", 40);
+        let (input, families) = input_with_replacements("base", &[("seed = 12345", "seed = 1")]);
+        let restart = Resume {
+            checkpoint: &checkpoint,
+            mode: ResumeMode::ContinueInsertion,
+        };
+
+        let result = resume(input, families, restart, &mut |_| {});
+
+        assert!(matches!(result, Err(DfngenError::CheckpointInputChanged)));
     }
 }

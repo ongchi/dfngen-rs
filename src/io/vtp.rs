@@ -1,10 +1,8 @@
-use std::path::Path;
 use std::str::FromStr;
 
 use roxmltree::{Document, Node};
 use tracing::warn;
 
-use crate::error::DfngenError;
 use crate::io::vtu::{
     find_child, find_data_array, read_component_count, read_region_arrays, read_values,
 };
@@ -38,7 +36,7 @@ pub struct FracturePolygon {
     pub fracture_id: Option<u64>,
 }
 
-/// Reads the user-defined fractures from a VTK XML PolyData file (`.vtp`, ASCII)
+/// Reads the user-defined fractures from the text of a VTK XML PolyData file (`.vtp`, ASCII)
 ///
 /// Each polygon cell is one fracture, with the points of the cell as its
 /// vertices. The fractures are in the order of the cells. The cell data array
@@ -47,21 +45,6 @@ pub struct FracturePolygon {
 /// `fracture_id` (optional) gives the fracture of each polygon, for a fracture
 /// of more than one polygon. The point data and the other cell data of the
 /// file are ignored.
-pub fn read_user_fractures(path: &Path) -> Result<Vec<FracturePolygon>, DfngenError> {
-    let invalid_file = |message: String| DfngenError::InvalidFile {
-        file: path.display().to_string(),
-        message,
-    };
-
-    let text = std::fs::read_to_string(path).map_err(|e| {
-        invalid_file(format!(
-            "cannot read the file: {e}. The file must be an ASCII .vtp file."
-        ))
-    })?;
-
-    parse_user_fractures(&text).map_err(invalid_file)
-}
-
 pub(super) fn parse_user_fractures(text: &str) -> Result<Vec<FracturePolygon>, String> {
     let document = Document::parse(text).map_err(|e| e.to_string())?;
     let root = document.root_element();

@@ -1,11 +1,9 @@
-use std::path::Path;
 use std::str::FromStr;
 
 use parry3d_f64::na::Point3;
 use roxmltree::{Document, Node};
 
 use crate::domain_mesh::{DomainMesh, MeshSurfaceTriangle, MeshTetrahedron};
-use crate::error::DfngenError;
 
 /// Prefix of the name of a cell data array which gives one region:
 /// `region__<name>`
@@ -42,28 +40,13 @@ enum CellParts {
     Surface(&'static [[usize; 3]]),
 }
 
-/// Reads the domain from a VTK XML UnstructuredGrid file (`.vtu`, ASCII)
+/// Reads the domain from the text of a VTK XML UnstructuredGrid file (`.vtu`, ASCII)
 ///
 /// The volume cells can be tetrahedra, voxels, hexahedra, wedges and
 /// pyramids. The cell data arrays `region__<name>` (optional) give the
 /// regions of each volume cell. The surface cells (triangles and quads,
 /// optional) with the cell data arrays `boundary__<name>` give the boundary
 /// surfaces.
-pub fn read_domain_mesh(path: &Path) -> Result<DomainMesh, DfngenError> {
-    let invalid_mesh = |message: String| DfngenError::InvalidFile {
-        file: path.display().to_string(),
-        message,
-    };
-
-    let text = std::fs::read_to_string(path).map_err(|e| {
-        invalid_mesh(format!(
-            "cannot read the file: {e}. The file must be an ASCII .vtu file."
-        ))
-    })?;
-
-    parse_domain_mesh(&text).map_err(invalid_mesh)
-}
-
 pub(super) fn parse_domain_mesh(text: &str) -> Result<DomainMesh, String> {
     let document = Document::parse(text).map_err(|e| e.to_string())?;
     let root = document.root_element();

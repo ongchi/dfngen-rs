@@ -1,8 +1,8 @@
 use rand::Rng;
-use rand_mt::Mt64;
 
 use crate::distribution::{LogNormalSampling, TruncExp, TruncLogNormal, TruncPowerLaw};
 use crate::error::DfngenError;
+use crate::random::Generator;
 
 pub enum RadiusFunction {
     LogNormal {
@@ -69,7 +69,7 @@ impl RadiusDistribution {
     }
 
     /// Sampling from distribution function.
-    pub fn sample(&self, generator: &mut Mt64) -> Result<f64, DfngenError> {
+    pub fn sample(&self, generator: &mut Generator) -> Result<f64, DfngenError> {
         let radius = match self.function {
             RadiusFunction::LogNormal {
                 mu,
@@ -99,7 +99,7 @@ mod tests {
     use super::*;
 
     fn assert_samples_are_within_limits(distribution: &RadiusDistribution) {
-        let mut generator = Mt64::new(1);
+        let mut generator = Generator::new(1);
 
         for _ in 0..10_000 {
             let radius = distribution.sample(&mut generator).unwrap();

@@ -1,9 +1,9 @@
 use rand::Rng;
 use rand_distr::StandardNormal;
-use rand_mt::Mt64;
 use serde::Deserialize;
 
 use crate::error::InvalidAperture;
+use crate::random::Generator;
 
 /// Distribution of the hydraulic aperture of a fracture (m), as the
 /// transmissivity options of dfnWorks, with the aperture in place of the
@@ -47,7 +47,7 @@ impl ApertureDistribution {
 
     /// Aperture of a fracture with the radius. Only `log_normal` and
     /// `semi_correlated` use the generator.
-    pub fn sample(&self, radius: f64, generator: &mut Mt64) -> f64 {
+    pub fn sample(&self, radius: f64, generator: &mut Generator) -> f64 {
         match *self {
             Self::Constant { value } => value,
             Self::LogNormal { log_mean, sd } => {
@@ -74,7 +74,7 @@ mod tests {
             beta: 0.5,
         };
 
-        let aperture = distribution.sample(4., &mut Mt64::new(1));
+        let aperture = distribution.sample(4., &mut Generator::new(1));
 
         assert!((aperture - 2e-4).abs() < 1e-18);
     }
@@ -86,7 +86,7 @@ mod tests {
             sd: 0.,
         };
 
-        let aperture = distribution.sample(1., &mut Mt64::new(1));
+        let aperture = distribution.sample(1., &mut Generator::new(1));
 
         assert!((aperture - (-7f64).exp()).abs() < 1e-18);
     }

@@ -137,13 +137,14 @@ impl Distribution<Result<f64, Error>> for TruncLogNormal {
 #[cfg(test)]
 mod tests {
     use rand::Rng;
-    use rand_mt::Mt64;
+
+    use crate::random::Generator;
 
     use super::LogNormalSampling::{InverseCdf, Rejection};
     use super::*;
 
     fn sample_values(distr: &TruncLogNormal, count: usize) -> Vec<f64> {
-        let mut generator = Mt64::new(1);
+        let mut generator = Generator::new(1);
         (0..count)
             .map(|_| generator.sample(distr).unwrap())
             .collect()
@@ -231,7 +232,7 @@ mod tests {
         // Z = ln(X) is standard normal, truncated to [6, 7].
         let distr = TruncLogNormal::new(f64::exp(6.), f64::exp(7.), 0., 1., Rejection).unwrap();
 
-        let error = Mt64::new(1).sample(&distr).unwrap_err();
+        let error = Generator::new(1).sample(&distr).unwrap_err();
 
         assert!(error.to_string().contains("sampling = \"inverse_cdf\""));
     }

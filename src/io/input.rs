@@ -6,6 +6,7 @@ use parry3d_f64::na::Vector3;
 use serde::Deserialize;
 use tracing::{debug, info, warn};
 
+use crate::checkpoint::text_hash;
 use crate::distribution::{ApertureDistribution, Fisher, LogNormalSampling, RadiusDistribution};
 use crate::domain_mesh::{DomainMesh, MeshRegion};
 use crate::error::{DfngenError, FamilyError, RegionError, UserFractureError};
@@ -15,8 +16,8 @@ use crate::fracture::fracture_family::{
 };
 use crate::fracture::user_defined_fractures::UserFracture;
 use crate::fram::FramOptions;
-use crate::io::vtp::{parse_user_fractures, read_user_fractures, FracturePolygon};
-use crate::io::vtu::{parse_domain_mesh, read_domain_mesh};
+use crate::io::vtp::{parse_user_fractures, FracturePolygon};
+use crate::io::vtu::parse_domain_mesh;
 use crate::mesh::MeshOptions;
 use crate::region_boundaries::RegionBoundaryOptions;
 
@@ -88,6 +89,10 @@ pub struct Input {
     /// User-defined fractures, in the order of their file. The vertices have
     /// the coordinates of the generation.
     pub user_fractures: Vec<UserFracture>,
+
+    /// Hash of the texts of the input files (`checkpoint::text_hash`): a
+    /// checkpoint is only for the input with the same hash
+    pub text_hash: u64,
 }
 
 #[derive(Deserialize)]
@@ -259,13 +264,57 @@ pub fn read_input(input_file: &str) -> Result<(Input, FractureFamilyCollection),
 
     let file = parse_input_file(&text)?;
     let input_folder = Path::new(input_file).parent().unwrap_or(Path::new(""));
-    let domain_mesh = read_domain_mesh(&input_folder.join(&file.domain))?;
-    let user_fractures = match &file.user_fractures {
-        Some(fracture_file) => read_user_fractures(&input_folder.join(fracture_file))?,
-        None => Vec::new(),
+    let domain_mesh_path = input_folder.join(&file.domain);
+    let domain_mesh_text = read_data_file(&domain_mesh_path, "vtu")?;
+    let domain_mesh = parse_domain_mesh(&domain_mesh_text)
+        .map_err(|message| invalid_data_file(&domain_mesh_path, message))?;
+    let (user_fractures, user_fractures_text) = match &file.user_fractures {
+        Some(fracture_file) => {
+            let path = input_folder.join(fracture_file);
+            let fractures_text = read_data_file(&path, "vtp")?;
+            let fractures = parse_user_fractures(&fractures_text)
+                .map_err(|message| invalid_data_file(&path, message))?;
+            (fractures, Some(fractures_text))
+        }
+        None => (Vec::new(), None),
     };
 
-    build_input(&file, domain_mesh, &user_fractures)
+    let text_hash = input_text_hash(&text, &domain_mesh_text, user_fractures_text.as_deref());
+    build_input(&file, domain_mesh, &user_fractures, text_hash)
+}
+
+/// Text of the domain mesh or of the user-defined fracture file
+///
+/// # Arguments
+///
+/// * `path` - Path of the file
+/// * `extension` - The file format: `vtu` or `vtp`
+fn read_data_file(path: &Path, extension: &str) -> Result<String, DfngenError> {
+    std::fs::read_to_string(path).map_err(|e| {
+        invalid_data_file(
+            path,
+            format!("cannot read the file: {e}. The file must be an ASCII .{extension} file."),
+        )
+    })
+}
+
+fn invalid_data_file(path: &Path, message: String) -> DfngenError {
+    DfngenError::InvalidFile {
+        file: path.display().to_string(),
+        message,
+    }
+}
+
+/// Hash of the texts of the input files; the user-defined fracture file
+/// only if the input names it
+fn input_text_hash(
+    toml_text: &str,
+    domain_mesh_text: &str,
+    user_fractures_text: Option<&str>,
+) -> u64 {
+    let mut texts = vec![toml_text, domain_mesh_text];
+    texts.extend(user_fractures_text);
+    text_hash(&texts)
 }
 
 /// Names of the files which a TOML input file names
@@ -311,21 +360,25 @@ pub fn build_input_from_text(
             file: file.domain.clone(),
             message,
         })?;
-    let user_fractures = match &file.user_fractures {
+    let (user_fractures, user_fractures_text) = match &file.user_fractures {
         Some(fracture_file) => {
             let text = user_fractures_text.ok_or_else(|| DfngenError::UserFractureFileMissing {
                 file: fracture_file.clone(),
             })?;
 
-            parse_user_fractures(text).map_err(|message| DfngenError::InvalidFile {
-                file: fracture_file.clone(),
-                message,
-            })?
+            let fractures =
+                parse_user_fractures(text).map_err(|message| DfngenError::InvalidFile {
+                    file: fracture_file.clone(),
+                    message,
+                })?;
+            (fractures, Some(text))
         }
-        None => Vec::new(),
+        // The text of the fracture file is ignored if the input does not name it
+        None => (Vec::new(), None),
     };
 
-    build_input(&file, domain_mesh, &user_fractures)
+    let text_hash = input_text_hash(toml_text, domain_mesh_text, user_fractures_text);
+    build_input(&file, domain_mesh, &user_fractures, text_hash)
 }
 
 fn parse_input_file(text: &str) -> Result<InputFile, DfngenError> {
@@ -363,10 +416,12 @@ fn find_mesh_region_id(
 /// * `file` - Content of the TOML input file
 /// * `domain_mesh` - Domain mesh of `domain`
 /// * `fracture_polygons` - User-defined fractures, as their file gives them
+/// * `text_hash` - Hash of the texts of the input files
 fn build_input(
     file: &InputFile,
     domain_mesh: DomainMesh,
     fracture_polygons: &[FracturePolygon],
+    text_hash: u64,
 ) -> Result<(Input, FractureFamilyCollection), DfngenError> {
     // Each radius is at least 3 times min_feature_size, thus never 0
     if file.min_feature_size.is_nan() || file.min_feature_size <= 0. {
@@ -467,6 +522,7 @@ fn build_input(
         remove_fractures_less_than: file.generation.remove_fractures_less_than,
         region_volumes,
         user_fractures,
+        text_hash,
     };
 
     Ok((
@@ -815,7 +871,12 @@ pub mod test_inputs {
     /// Reads the sections with the L-shaped mesh as the domain. The mesh has
     /// the regions `south` and `north`, and its center is (15, 25, 35).
     pub fn parse(sections: &[&str]) -> Result<(Input, FractureFamilyCollection), DfngenError> {
-        build_input(&parse_input_file(&sections.concat())?, l_shaped_mesh(), &[])
+        build_input(
+            &parse_input_file(&sections.concat())?,
+            l_shaped_mesh(),
+            &[],
+            0,
+        )
     }
 }
 
@@ -1007,7 +1068,12 @@ mod tests {
         let mesh = DomainMesh::new(&tetrahedra, &region_names(&["empty"])).unwrap();
         let options = [GENERAL_OPTIONS, &rectangle_family_with_region(r#""empty""#)].concat();
 
-        let error = input_error(build_input(&parse_input_file(&options).unwrap(), mesh, &[]));
+        let error = input_error(build_input(
+            &parse_input_file(&options).unwrap(),
+            mesh,
+            &[],
+            0,
+        ));
 
         assert!(
             matches!(
@@ -1041,6 +1107,7 @@ mod tests {
             &parse_input_file(options).unwrap(),
             l_shaped_mesh(),
             &[triangle],
+            0,
         )
     }
 
@@ -1062,6 +1129,7 @@ mod tests {
             &parse_input_file(GENERAL_OPTIONS).unwrap(),
             l_shaped_mesh(),
             triangles,
+            0,
         )
     }
 
