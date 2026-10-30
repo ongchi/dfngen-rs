@@ -40,11 +40,13 @@ pub struct Network {
 }
 
 /// Progress of the insertion of the stochastic fractures
-pub struct ProgressUpdate {
+pub struct ProgressUpdate<'a> {
     /// Number of accepted stochastic fractures
     pub accepted_count: usize,
     /// Part of the stop condition which is complete, from 0 to 1
     pub fraction: f64,
+    /// The fracture which was accepted, in the coordinates of the generation
+    pub fracture: &'a Poly,
 }
 
 /// Generates a fracture network
@@ -398,6 +400,7 @@ fn insert_stochastic_fractures(
                         stochastic_accepted_count,
                         &family_collection.families,
                     ),
+                    fracture: &new_poly,
                 });
 
                 // Intersections and triple points are saved within check_intersections()
