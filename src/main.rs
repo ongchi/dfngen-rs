@@ -14,6 +14,7 @@ use crate::checkpoints::{read_checkpoint, remove_checkpoint_files, CheckpointWri
 use crate::progress::{GenerationProgress, LogWriter};
 
 mod checkpoints;
+mod libm_symbols;
 mod progress;
 
 /// Exit code of a run which Ctrl-C stopped (128 + SIGINT, as a shell gives)

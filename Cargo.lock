@@ -219,6 +219,7 @@ dependencies = [
  "ctrlc",
  "i_overlay",
  "indicatif",
+ "libm",
  "parry3d-f64",
  "postcard",
  "rand",
