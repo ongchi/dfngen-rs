@@ -218,7 +218,7 @@ and `tests/data/region_boundaries_user_fractures` are examples.
 ### Triangle mesh for fehm-rs
 
 With `mesh.enable = true`, the run also writes `dfn_mesh.vtu`: one triangle
-mesh of the final fractures, the mesh file of [fehm-rs](../fehm-rs). The
+mesh of the final fractures, the mesh file of [fehm-rs](https://github.com/ongchi/fehm-rs). The
 network is the same as without the option.
 
 - Only the part of each fracture in the domain mesh, and in the regions of
