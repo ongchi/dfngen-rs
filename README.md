@@ -707,9 +707,9 @@ fn generate_from_text(toml_text: &str, load: impl Fn(&str) -> String) -> Result<
   the system time.
 - `generate` calls the progress function after each accepted stochastic
   fracture. `fraction` goes from 0 to 1, and `fracture` is the accepted
-  fracture. `checkpoint()` gives the `Checkpoint` of the state after it
-  (`to_bytes`, `Checkpoint::from_bytes`), and `write_accepted_fractures`
-  writes the accepted fractures until then.
+  fracture. `domain_mesh()` gives the domain mesh, `checkpoint()` the
+  `Checkpoint` of the state after it (`to_bytes`, `Checkpoint::from_bytes`),
+  and `write_accepted_fractures` writes the accepted fractures until then.
 - `resume(input, families, Resume { checkpoint, mode }, on_progress)`
   continues a stopped generation: `ResumeMode::ContinueInsertion` gives the
   network of a run with no stop, `ResumeMode::Finish` the network of the

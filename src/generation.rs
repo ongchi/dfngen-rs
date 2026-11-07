@@ -8,6 +8,7 @@ use tracing::{debug, info};
 use crate::checkpoint::{Checkpoint, FamilyState, InsertionState, SavedFracture};
 use crate::dfn::{Dfn, PolyOptions, RejectedFracture};
 use crate::distribution::RadiusFunction;
+use crate::domain_mesh::DomainMesh;
 use crate::error::DfngenError;
 use crate::fracture::cluster_groups::SurfaceContacts;
 use crate::fracture::family_probability::{
@@ -60,6 +61,11 @@ pub struct ProgressUpdate<'a> {
 }
 
 impl ProgressUpdate<'_> {
+    /// The domain mesh of the generation (for `region_parts` of the fracture)
+    pub fn domain_mesh(&self) -> &DomainMesh {
+        &self.input.domain_mesh
+    }
+
     /// The checkpoint of the state after this fracture: `resume` continues from it
     pub fn checkpoint(&self) -> Checkpoint {
         Checkpoint {
