@@ -6,6 +6,10 @@
 //! fractures and their order. The checkpoint has the accepted stochastic
 //! fractures, and the restart checks them again against the network. The
 //! radii lists and the user-defined fractures come again from the input.
+//!
+//! A restart with other user-defined fractures checks the saved fractures
+//! without FRAM: all of them stay, and the network is not that of a run with
+//! no stop.
 
 use parry3d_f64::na::{Point3, Vector3};
 use serde::{Deserialize, Serialize};
@@ -19,13 +23,16 @@ use crate::random::GeneratorState;
 use crate::stats::Stats;
 
 /// Version of the format: a checkpoint of another version is an error
-const FORMAT_VERSION: u32 = 1;
+const FORMAT_VERSION: u32 = 2;
 
 /// State of the insertion of the stochastic fractures, after an accepted fracture
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Checkpoint {
-    /// `Input::text_hash` of the input of the run
-    pub(crate) input_hash: u64,
+    /// `Input::hashes.network` of the input of the run
+    pub(crate) network_hash: u64,
+    /// `Input::hashes.user_fractures` of the input of the run: a restart
+    /// with other user-defined fractures checks the saved fractures without FRAM
+    pub(crate) user_fractures_hash: u64,
     /// The seed of the run (an input with `seed = 0` gets a seed from the binary)
     pub(crate) seed: u64,
     pub(crate) generator: GeneratorState,
@@ -52,6 +59,9 @@ pub(crate) struct InsertionState {
     /// Number of accepted stochastic fractures: `n_poly` does not include the
     /// user-defined fractures
     pub stochastic_accepted_count: usize,
+    /// The statistics after the insertion of the user-defined fractures,
+    /// before the stochastic fractures (`Stats::with_user_part`)
+    pub user_fracture_stats: Stats,
 }
 
 /// The part of the state of a family which the insertion changes
@@ -118,7 +128,7 @@ impl SavedFracture {
 
 impl InsertionState {
     /// The state at the start of the insertion
-    pub fn new(family_collection: &FractureFamilyCollection) -> Self {
+    pub fn new(family_collection: &FractureFamilyCollection, user_fracture_stats: Stats) -> Self {
         // A copy: the family probabilities must stay in their original state
         let probabilities = family_collection.probabilities.clone();
         Self {
@@ -126,6 +136,7 @@ impl InsertionState {
             probabilities,
             p32_status: vec![false; family_collection.families.len()],
             stochastic_accepted_count: 0,
+            user_fracture_stats,
         }
     }
 }
@@ -222,7 +233,8 @@ mod tests {
         };
         let fracture = SavedFracture::of(&poly).unwrap();
         Checkpoint {
-            input_hash: 42,
+            network_hash: 42,
+            user_fractures_hash: 43,
             seed: 12345,
             generator: GeneratorState::RecentOutputs((0..312).collect()),
             accepted_fractures: vec![fracture.clone()],
@@ -236,6 +248,7 @@ mod tests {
                 cdf: vec![0.4, 1.],
                 p32_status: vec![false, true],
                 stochastic_accepted_count: 1,
+                user_fracture_stats: Stats::default(),
             },
             stats: Stats::default(),
         }
@@ -251,7 +264,7 @@ mod tests {
     #[test]
     fn test_other_format_version_is_an_error() {
         let mut bytes = checkpoint().to_bytes().unwrap();
-        bytes[0] = 2;
+        bytes[0] = (FORMAT_VERSION + 1) as u8;
         assert!(matches!(
             Checkpoint::from_bytes(&bytes),
             Err(DfngenError::CheckpointFormat(_))

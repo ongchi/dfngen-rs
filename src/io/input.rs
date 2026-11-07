@@ -90,9 +90,27 @@ pub struct Input {
     /// the coordinates of the generation.
     pub user_fractures: Vec<UserFracture>,
 
-    /// Hash of the texts of the input files (`checkpoint::text_hash`): a
-    /// checkpoint is only for the input with the same hash
-    pub text_hash: u64,
+    /// Hashes of the texts of the input files (`checkpoint::text_hash`): a
+    /// checkpoint is only for the input with the same `network` hash
+    pub hashes: InputHashes,
+}
+
+/// Hashes of the texts of the input files
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct InputHashes {
+    /// The TOML input file and the domain mesh
+    pub network: u64,
+    /// The user-defined fracture file; the hash of no text if the input names no file
+    pub user_fractures: u64,
+}
+
+impl InputHashes {
+    fn of(toml_text: &str, domain_mesh_text: &str, user_fractures_text: Option<&str>) -> Self {
+        Self {
+            network: text_hash(&[toml_text, domain_mesh_text]),
+            user_fractures: text_hash(&Vec::from_iter(user_fractures_text)),
+        }
+    }
 }
 
 #[derive(Deserialize)]
@@ -279,8 +297,8 @@ pub fn read_input(input_file: &str) -> Result<(Input, FractureFamilyCollection),
         None => (Vec::new(), None),
     };
 
-    let text_hash = input_text_hash(&text, &domain_mesh_text, user_fractures_text.as_deref());
-    build_input(&file, domain_mesh, &user_fractures, text_hash)
+    let hashes = InputHashes::of(&text, &domain_mesh_text, user_fractures_text.as_deref());
+    build_input(&file, domain_mesh, &user_fractures, hashes)
 }
 
 /// Text of the domain mesh or of the user-defined fracture file
@@ -303,18 +321,6 @@ fn invalid_data_file(path: &Path, message: String) -> DfngenError {
         file: path.display().to_string(),
         message,
     }
-}
-
-/// Hash of the texts of the input files; the user-defined fracture file
-/// only if the input names it
-fn input_text_hash(
-    toml_text: &str,
-    domain_mesh_text: &str,
-    user_fractures_text: Option<&str>,
-) -> u64 {
-    let mut texts = vec![toml_text, domain_mesh_text];
-    texts.extend(user_fractures_text);
-    text_hash(&texts)
 }
 
 /// Names of the files which a TOML input file names
@@ -377,8 +383,8 @@ pub fn build_input_from_text(
         None => (Vec::new(), None),
     };
 
-    let text_hash = input_text_hash(toml_text, domain_mesh_text, user_fractures_text);
-    build_input(&file, domain_mesh, &user_fractures, text_hash)
+    let hashes = InputHashes::of(toml_text, domain_mesh_text, user_fractures_text);
+    build_input(&file, domain_mesh, &user_fractures, hashes)
 }
 
 fn parse_input_file(text: &str) -> Result<InputFile, DfngenError> {
@@ -416,12 +422,12 @@ fn find_mesh_region_id(
 /// * `file` - Content of the TOML input file
 /// * `domain_mesh` - Domain mesh of `domain`
 /// * `fracture_polygons` - User-defined fractures, as their file gives them
-/// * `text_hash` - Hash of the texts of the input files
+/// * `hashes` - Hashes of the texts of the input files
 fn build_input(
     file: &InputFile,
     domain_mesh: DomainMesh,
     fracture_polygons: &[FracturePolygon],
-    text_hash: u64,
+    hashes: InputHashes,
 ) -> Result<(Input, FractureFamilyCollection), DfngenError> {
     // Each radius is at least 3 times min_feature_size, thus never 0
     if file.min_feature_size.is_nan() || file.min_feature_size <= 0. {
@@ -522,7 +528,7 @@ fn build_input(
         remove_fractures_less_than: file.generation.remove_fractures_less_than,
         region_volumes,
         user_fractures,
-        text_hash,
+        hashes,
     };
 
     Ok((
@@ -875,7 +881,7 @@ pub mod test_inputs {
             &parse_input_file(&sections.concat())?,
             l_shaped_mesh(),
             &[],
-            0,
+            InputHashes::of("", "", None),
         )
     }
 }
@@ -1072,7 +1078,7 @@ mod tests {
             &parse_input_file(&options).unwrap(),
             mesh,
             &[],
-            0,
+            InputHashes::of("", "", None),
         ));
 
         assert!(
@@ -1107,7 +1113,7 @@ mod tests {
             &parse_input_file(options).unwrap(),
             l_shaped_mesh(),
             &[triangle],
-            0,
+            InputHashes::of("", "", None),
         )
     }
 
@@ -1129,7 +1135,7 @@ mod tests {
             &parse_input_file(GENERAL_OPTIONS).unwrap(),
             l_shaped_mesh(),
             triangles,
-            0,
+            InputHashes::of("", "", None),
         )
     }
 

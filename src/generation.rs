@@ -1,4 +1,5 @@
 use std::io::{self, Write};
+use std::rc::Rc;
 
 use rand::distr::Uniform;
 use rand::Rng;
@@ -62,7 +63,8 @@ impl ProgressUpdate<'_> {
     /// The checkpoint of the state after this fracture: `resume` continues from it
     pub fn checkpoint(&self) -> Checkpoint {
         Checkpoint {
-            input_hash: self.input.text_hash,
+            network_hash: self.input.hashes.network,
+            user_fractures_hash: self.input.hashes.user_fractures,
             seed: self.input.seed,
             generator: self.generator.state(),
             accepted_fractures: self
@@ -129,12 +131,17 @@ pub fn generate(
 }
 
 /// Generates a fracture network from the checkpoint of a stopped generation.
-/// With `ResumeMode::ContinueInsertion`, the network is that of a run with no stop.
+/// With `ResumeMode::ContinueInsertion` and the same user-defined fractures,
+/// the network is that of a run with no stop. With other user-defined
+/// fractures, the saved stochastic fractures are checked without FRAM: all
+/// of them stay. The new stochastic fractures of `ContinueInsertion` are
+/// checked with FRAM.
 ///
 /// # Arguments
 ///
-/// * `input` - Input options, from the input files of the stopped run. Its
-///   seed is that of the checkpoint.
+/// * `input` - Input options, from the input files of the stopped run (the
+///   user-defined fracture file can be another one). Its seed is that of the
+///   checkpoint.
 /// * `family_collection` - Stochastic fracture families
 /// * `resume` - The checkpoint, and what to do after it
 /// * `on_progress` - Called after each accepted stochastic fracture
@@ -154,7 +161,7 @@ fn generate_from(
     on_progress: &mut dyn FnMut(&ProgressUpdate),
 ) -> Result<Network, DfngenError> {
     if let Some(resume) = &resume {
-        if input.text_hash != resume.checkpoint.input_hash {
+        if input.hashes.network != resume.checkpoint.network_hash {
             return Err(DfngenError::CheckpointInputChanged);
         }
         // An input with `seed = 0` gets a new seed for each run
@@ -193,10 +200,14 @@ fn generate_from(
 
     if total_families > 0 {
         let (mut insertion, is_insertion_continued) = match &resume {
-            None => (InsertionState::new(&family_collection), true),
+            None => (
+                InsertionState::new(&family_collection, dfn.stats.clone()),
+                true,
+            ),
             Some(resume) => (
                 restore_checkpoint(
                     resume.checkpoint,
+                    input.hashes.user_fractures,
                     &options,
                     &mut family_collection,
                     &mut dfn,
@@ -419,6 +430,7 @@ fn insert_stochastic_fractures(
             cdf,
             p32_status,
             stochastic_accepted_count,
+            ..
         } = &mut *insertion;
         let roll = generator.sample(uniform_dist);
 
@@ -556,13 +568,39 @@ fn insert_stochastic_fractures(
 /// again against the network, in their order: this gives the intersections,
 /// the triple points and the cluster groups of the stopped run. Returns the
 /// state of the insertion loop.
+///
+/// # Arguments
+///
+/// * `user_fractures_hash` - `Input::hashes.user_fractures`: with another
+///   hash than that of the checkpoint, FRAM does not check the saved fractures
+/// * `dfn` - The network with only the user-defined fractures
 fn restore_checkpoint(
     checkpoint: &Checkpoint,
+    user_fractures_hash: u64,
     options: &PolyOptions,
     family_collection: &mut FractureFamilyCollection,
     dfn: &mut Dfn,
     generator: &mut Generator,
 ) -> Result<InsertionState, DfngenError> {
+    let is_user_fracture_change = user_fractures_hash != checkpoint.user_fractures_hash;
+    // User decision: no FRAM after the first network, thus each saved
+    // fracture stays with the new user-defined fractures
+    let options_without_fram;
+    let check_options = if is_user_fracture_change {
+        options_without_fram = PolyOptions {
+            min_feature_size: options.min_feature_size,
+            eps: options.eps,
+            domain_size: options.domain_size,
+            domain_mesh: Rc::clone(&options.domain_mesh),
+            fram: None,
+            region_boundaries: options.region_boundaries.clone(),
+        };
+        &options_without_fram
+    } else {
+        options
+    };
+    let user_fracture_stats = dfn.stats.clone();
+
     if checkpoint.families.len() != family_collection.families.len() {
         return Err(DfngenError::CheckpointFormat(format!(
             "{} families; the input has {}",
@@ -590,7 +628,7 @@ fn restore_checkpoint(
                 &poly.region_ids,
             );
         }
-        check_intersections(options, &mut poly, dfn).map_err(|reason| {
+        check_intersections(check_options, &mut poly, dfn).map_err(|reason| {
             DfngenError::CheckpointRebuildFailed {
                 fracture: index + 1,
                 reason: reason.name(),
@@ -610,8 +648,13 @@ fn restore_checkpoint(
                     reason: *reason,
                 }),
         );
-    // The counters of the stopped run; the checks above changed some of them
-    dfn.stats = checkpoint.stats.clone();
+    // The counters of the stopped run, with those of the current
+    // user-defined fractures; the checks above changed some of them
+    let mut insertion = checkpoint.insertion.clone();
+    dfn.stats = checkpoint
+        .stats
+        .with_user_part(&insertion.user_fracture_stats, &user_fracture_stats);
+    insertion.user_fracture_stats = user_fracture_stats;
     *generator = Generator::from_state(&checkpoint.generator).ok_or_else(|| {
         DfngenError::CheckpointFormat("the state of the random generator is not complete".into())
     })?;
@@ -620,7 +663,10 @@ fn restore_checkpoint(
         "Restart from the checkpoint: {} accepted stochastic fractures",
         checkpoint.accepted_count()
     );
-    Ok(checkpoint.insertion.clone())
+    if is_user_fracture_change {
+        info!("Other user-defined fractures: FRAM did not check the saved fractures");
+    }
+    Ok(insertion)
 }
 
 /// Part of the stop condition which is complete, from 0 to 1

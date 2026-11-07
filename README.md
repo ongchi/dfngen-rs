@@ -30,8 +30,17 @@ dfngen <input_file.toml> <output_folder> --resume <old_output_folder>/checkpoint
 dfngen <input_file.toml> <output_folder> --resume <old_output_folder>/checkpoint.bin --finish
 ```
 
-The input files must be those of the stopped run: a checkpoint has a hash of
-their texts, and another input is an error. A restart uses the seed of the
+The input file and the domain mesh must be those of the stopped run: a
+checkpoint has a hash of their texts, and another input is an error. The
+user-defined fracture file can be another one (for an editor: add or remove
+a user-defined fracture and keep the stochastic fractures). Then FRAM does
+not check the saved fractures again (no FRAM after the first network): all
+of them stay, with the intersections of the new user-defined fractures, and
+the network is not that of a run with no stop. The statistics have the
+counts of the new user-defined fractures. The new stochastic fractures of a
+continued run are checked with FRAM. The input must name the same file
+(`user_fractures`): the name is in the hash of the input file. A restart
+uses the seed of the
 checkpoint (also with `seed = 0`). The checkpoint has the accepted stochastic
 fractures. The restart reads the input again (radii lists, user-defined
 fractures) and checks the saved fractures again against the network, in

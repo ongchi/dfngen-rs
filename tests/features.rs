@@ -1638,4 +1638,170 @@ mod checkpoint {
 
         assert!(matches!(result, Err(DfngenError::CheckpointInputChanged)));
     }
+
+    /// Fractures 1 and 2 of the user-defined fracture file of `mesh_regions`
+    /// (`region_boundaries_user_fractures.vtp`): it has no fracture 3, which
+    /// crosses the stochastic fractures
+    const TWO_USER_FRACTURES: &str = r#"<?xml version="1.0"?>
+<VTKFile type="PolyData" version="1.0" byte_order="LittleEndian">
+<PolyData>
+<Piece NumberOfPoints="8" NumberOfVerts="0" NumberOfLines="0" NumberOfStrips="0" NumberOfPolys="2">
+<Points>
+<DataArray type="Float64" Name="points" NumberOfComponents="3" format="ascii">
+12.0 22.0 35.0 18.0 22.0 35.0 18.0 28.0 35.0 12.0 28.0 35.0
+12.0 22.0 33.0 14.0 22.0 33.0 14.0 28.0 33.0 12.0 28.0 33.0
+</DataArray>
+</Points>
+<Polys>
+<DataArray type="Int64" Name="connectivity" format="ascii">0 1 2 3 4 5 6 7</DataArray>
+<DataArray type="Int64" Name="offsets" format="ascii">4 8</DataArray>
+</Polys>
+<CellData>
+<DataArray type="Float64" Name="aperture" format="ascii">2e-4 2e-4</DataArray>
+<DataArray type="Int32" Name="region__south" format="ascii">1 1</DataArray>
+<DataArray type="Int32" Name="region__north" format="ascii">1 0</DataArray>
+</CellData>
+</Piece>
+</PolyData>
+</VTKFile>
+"#;
+
+    /// Input of `mesh_regions` (FRAM, user-defined fractures and the mesh),
+    /// with FRAM on or off, and the user-defined fractures of the case or
+    /// those of `TWO_USER_FRACTURES`
+    fn mesh_regions_input(
+        is_fram_on: bool,
+        has_all_user_fractures: bool,
+    ) -> (Input, FractureFamilyCollection) {
+        let folder = case_folder("mesh_regions");
+        let mut toml_text = fs::read_to_string(folder.join("mesh_regions.toml")).unwrap();
+        if !is_fram_on {
+            toml_text = toml_text.replace("[fram]\nenable = true", "[fram]\nenable = false");
+        }
+        let names = read_input_file_names(&toml_text).unwrap();
+        let read_text = |name: &str| fs::read_to_string(folder.join(name)).unwrap();
+        let fractures_text = if has_all_user_fractures {
+            read_text(names.user_fractures.as_deref().unwrap())
+        } else {
+            TWO_USER_FRACTURES.to_string()
+        };
+
+        build_input_from_text(&toml_text, &read_text(&names.domain), Some(&fractures_text)).unwrap()
+    }
+
+    /// The network of `mesh_regions` from the checkpoint after its last
+    /// fracture, with other user-defined fractures
+    fn finish_with_other_user_fractures(
+        is_fram_on: bool,
+        has_all_at_start: bool,
+    ) -> (Network, Network) {
+        let (input, families) = mesh_regions_input(is_fram_on, has_all_at_start);
+        let mut bytes = None;
+        let network = generate(input, families, &mut |update| {
+            bytes = Some(update.checkpoint().to_bytes().unwrap());
+        })
+        .unwrap();
+        let checkpoint = Checkpoint::from_bytes(&bytes.unwrap()).unwrap();
+
+        let (input, families) = mesh_regions_input(is_fram_on, !has_all_at_start);
+        let restart = Resume {
+            checkpoint: &checkpoint,
+            mode: ResumeMode::Finish,
+        };
+        let restarted = resume(input, families, restart, &mut |_| {}).unwrap();
+
+        (network, restarted)
+    }
+
+    fn stochastic_vertices(network: &Network) -> Vec<&Vec<Point3<f64>>> {
+        network
+            .dfn
+            .accepted_polys
+            .iter()
+            .filter(|poly| poly.origin != FractureOrigin::UserDefined)
+            .map(|poly| &poly.vertices)
+            .collect()
+    }
+
+    fn user_fracture_count(network: &Network) -> usize {
+        network.dfn.accepted_polys.len() - stochastic_count(network)
+    }
+
+    #[test]
+    fn test_restart_with_an_added_user_fracture_keeps_the_stochastic_fractures_with_fram() {
+        let (network, restarted) = finish_with_other_user_fractures(true, false);
+
+        assert_eq!(
+            stochastic_vertices(&restarted),
+            stochastic_vertices(&network)
+        );
+    }
+
+    #[test]
+    fn test_restart_with_an_added_user_fracture_keeps_the_stochastic_fractures_without_fram() {
+        let (network, restarted) = finish_with_other_user_fractures(false, false);
+
+        assert_eq!(
+            stochastic_vertices(&restarted),
+            stochastic_vertices(&network)
+        );
+    }
+
+    #[test]
+    fn test_restart_with_an_added_user_fracture_has_the_new_fracture() {
+        let (network, restarted) = finish_with_other_user_fractures(true, false);
+
+        assert_eq!(
+            user_fracture_count(&restarted),
+            user_fracture_count(&network) + 1
+        );
+    }
+
+    /// Number of intersections of a stochastic and a user-defined fracture
+    fn mixed_intersection_count(network: &Network) -> usize {
+        let is_user =
+            |index: usize| network.dfn.accepted_polys[index].origin == FractureOrigin::UserDefined;
+        network
+            .dfn
+            .intersections
+            .iter()
+            .filter(|intersection| {
+                is_user(intersection.fracture1) != is_user(intersection.fracture2)
+            })
+            .count()
+    }
+
+    #[test]
+    fn test_restart_with_an_added_user_fracture_intersects_the_stochastic_fractures() {
+        let (network, restarted) = finish_with_other_user_fractures(true, false);
+
+        assert!(mixed_intersection_count(&restarted) > mixed_intersection_count(&network));
+    }
+
+    #[test]
+    fn test_restart_with_an_added_user_fracture_makes_the_mesh() {
+        let (_, restarted) = finish_with_other_user_fractures(true, false);
+
+        assert!(!restarted.mesh.unwrap().triangles.is_empty());
+    }
+
+    #[test]
+    fn test_restart_with_a_removed_user_fracture_keeps_the_stochastic_fractures() {
+        let (network, restarted) = finish_with_other_user_fractures(true, true);
+
+        assert_eq!(
+            stochastic_vertices(&restarted),
+            stochastic_vertices(&network)
+        );
+    }
+
+    #[test]
+    fn test_restart_with_a_removed_user_fracture_counts_the_accepted_fractures() {
+        let (_, restarted) = finish_with_other_user_fractures(true, true);
+
+        assert_eq!(
+            restarted.dfn.stats.accepted_count,
+            restarted.dfn.accepted_polys.len()
+        );
+    }
 }

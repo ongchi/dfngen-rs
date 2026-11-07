@@ -168,6 +168,60 @@ impl Default for Stats {
     }
 }
 
+impl RejectionReasons {
+    /// Each counter of `self` minus that of `old` plus that of `new`
+    fn replace_part(&self, old: &Self, new: &Self) -> Self {
+        let replace = |field: fn(&Self) -> usize| field(self) - field(old) + field(new);
+        Self {
+            short_intersection: replace(|reasons| reasons.short_intersection),
+            close_to_node: replace(|reasons| reasons.close_to_node),
+            close_to_edge: replace(|reasons| reasons.close_to_edge),
+            close_point_to_edge: replace(|reasons| reasons.close_point_to_edge),
+            outside: replace(|reasons| reasons.outside),
+            triple: replace(|reasons| reasons.triple),
+            inter_close_to_inter: replace(|reasons| reasons.inter_close_to_inter),
+            boundary_line: replace(|reasons| reasons.boundary_line),
+        }
+    }
+}
+
+impl Stats {
+    /// The statistics with other user-defined fractures: `old_user` and
+    /// `new_user` are the statistics after the insertion of the old and the
+    /// new user-defined fractures, before the stochastic fractures
+    pub fn with_user_part(&self, old_user: &Self, new_user: &Self) -> Self {
+        // The counter of the rejects at the end of the user part has also
+        // the rejects of the first stochastic attempts
+        let old_end = old_user.rejects_per_attempt.len() - 1;
+        let new_end = new_user.rejects_per_attempt.len() - 1;
+        let mut rejects_per_attempt = new_user.rejects_per_attempt[..new_end].to_vec();
+        rejects_per_attempt.push(
+            self.rejects_per_attempt[old_end] - old_user.rejects_per_attempt[old_end]
+                + new_user.rejects_per_attempt[new_end],
+        );
+        rejects_per_attempt.extend_from_slice(&self.rejects_per_attempt[old_end + 1..]);
+
+        Self {
+            accepted_count: self.accepted_count - old_user.accepted_count + new_user.accepted_count,
+            rejected_count: self.rejected_count - old_user.rejected_count + new_user.rejected_count,
+            rejection_reasons: self
+                .rejection_reasons
+                .replace_part(&old_user.rejection_reasons, &new_user.rejection_reasons),
+            intersections_shortened: self.intersections_shortened
+                - old_user.intersections_shortened
+                + new_user.intersections_shortened,
+            original_length: self.original_length - old_user.original_length
+                + new_user.original_length,
+            discarded_length: self.discarded_length - old_user.discarded_length
+                + new_user.discarded_length,
+            rejects_per_attempt,
+            rejected_user_fractures: new_user.rejected_user_fractures.clone(),
+            rejected_user_fracture_count: new_user.rejected_user_fracture_count,
+            ..self.clone()
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -190,5 +244,47 @@ mod tests {
         let count = FractureCount::from_fracture_ids([None, None, Some(7)]);
 
         assert_eq!(count, FractureCount::of_single_polygons(3));
+    }
+
+    /// Statistics after `accepted` user-defined fractures with `rejects`
+    /// rejects before each, and `rejected` user-defined fractures
+    fn user_stats(accepted: usize, rejects: usize, rejected: &[usize]) -> Stats {
+        let mut stats = Stats {
+            accepted_count: accepted,
+            rejected_count: accepted * rejects + rejected.len(),
+            rejects_per_attempt: vec![rejects; accepted + 1],
+            rejected_user_fractures: rejected.to_vec(),
+            ..Stats::default()
+        };
+        stats.rejects_per_attempt[accepted] = rejected.len();
+        stats.rejection_reasons.outside = stats.rejected_count;
+        stats
+    }
+
+    #[test]
+    fn test_with_user_part_replaces_the_counters_of_the_user_fractures() {
+        let old_user = user_stats(2, 1, &[3]);
+        // The stochastic part: 3 accepted, with 2, 0 and 4 rejects before them
+        let mut total = old_user.clone();
+        total.accepted_count += 3;
+        total.rejected_count += 6;
+        total.rejection_reasons.outside += 6;
+        total.rejects_per_attempt[2] += 2;
+        total.rejects_per_attempt.extend([0, 4, 0]);
+        let new_user = user_stats(1, 2, &[]);
+
+        let stats = total.with_user_part(&old_user, &new_user);
+
+        let expected = Stats {
+            accepted_count: 4,
+            rejected_count: 8,
+            rejects_per_attempt: vec![2, 2, 0, 4, 0],
+            rejection_reasons: RejectionReasons {
+                outside: 8,
+                ..RejectionReasons::default()
+            },
+            ..Stats::default()
+        };
+        assert_eq!(stats, expected);
     }
 }
