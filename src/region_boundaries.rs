@@ -128,6 +128,100 @@ impl BoundaryLine {
     }
 }
 
+/// Cross-sections of the cells near a convex fracture, clipped with it, in
+/// the plane of the fracture
+struct PlanePieces {
+    frame: PlaneFrame,
+    /// Vertices of the fracture in the plane, in the order of the fracture
+    outline: Vec<[f64; 2]>,
+    outline_tolerance: f64,
+    exact_points: ExactPoints,
+    /// The pieces in all cells
+    pieces: Vec<Vec<[f64; 2]>>,
+    /// True for each piece in the regions
+    is_piece_in_regions: Vec<bool>,
+}
+
+impl PlanePieces {
+    fn new(
+        vertices: &[Point3<f64>],
+        normal: &Vector3<f64>,
+        mesh: &DomainMesh,
+        region_ids: &[usize],
+    ) -> Self {
+        let frame = PlaneFrame::new(vertices, normal);
+        let outline: Vec<[f64; 2]> = vertices
+            .iter()
+            .map(|vertex| frame.to_plane(vertex))
+            .collect();
+        let counter_clockwise_outline = counter_clockwise(outline.clone());
+        let bounds = Aabb::from_points(vertices).loosened(mesh.tolerance());
+        let outline_tolerance = RELATIVE_OUTLINE_TOLERANCE * bounds.extents().norm();
+
+        let mut pieces: Vec<Vec<[f64; 2]>> = Vec::new();
+        let mut is_piece_in_regions: Vec<bool> = Vec::new();
+        let mut exact_points = ExactPoints::new(outline_tolerance);
+
+        for (corners, is_in_regions) in
+            mesh.plane_sections(&vertices[0], normal, &bounds, region_ids)
+        {
+            let plane_corners: Vec<[f64; 2]> = corners
+                .iter()
+                .map(|corner| frame.to_plane(corner))
+                .collect();
+            let piece = clip_convex(
+                &sort_around_center(plane_corners.clone()),
+                &counter_clockwise_outline,
+            );
+
+            if piece.len() < 3 || signed_area(&piece) <= 0. {
+                continue;
+            }
+
+            for &point in &piece {
+                // A corner of the cross-section keeps its point in space. A point of
+                // the clip is on the outline of the fracture.
+                let corner = plane_corners
+                    .iter()
+                    .position(|&plane_corner| plane_corner == point)
+                    .map(|i| corners[i]);
+                exact_points.insert(point, corner);
+            }
+
+            pieces.push(piece);
+            is_piece_in_regions.push(is_in_regions);
+        }
+
+        Self {
+            frame,
+            outline,
+            outline_tolerance,
+            exact_points,
+            pieces,
+            is_piece_in_regions,
+        }
+    }
+
+    fn region_pieces(&self) -> Vec<Vec<[f64; 2]>> {
+        self.pieces
+            .iter()
+            .zip(&self.is_piece_in_regions)
+            .filter(|(_, is_in_regions)| **is_in_regions)
+            .map(|(piece, _)| piece.clone())
+            .collect()
+    }
+
+    fn boundary_side<'a>(&'a self, mesh: &'a DomainMesh) -> BoundarySide<'a> {
+        BoundarySide {
+            frame: &self.frame,
+            outline: &self.outline,
+            outline_tolerance: self.outline_tolerance,
+            exact_points: &self.exact_points,
+            mesh,
+        }
+    }
+}
+
 /// Finds the boundary lines of a convex fracture: the lines where the
 /// boundary of the cells of one or more regions crosses it, and the lines
 /// where the mesh surface crosses it in cells of other regions. The faces
@@ -150,61 +244,10 @@ pub fn boundary_lines(
     mesh: &DomainMesh,
     region_ids: &[usize],
 ) -> Vec<BoundaryLine> {
-    let frame = PlaneFrame::new(vertices, normal);
-    let outline: Vec<[f64; 2]> = vertices
-        .iter()
-        .map(|vertex| frame.to_plane(vertex))
-        .collect();
-    let counter_clockwise_outline = counter_clockwise(outline.clone());
-    let bounds = Aabb::from_points(vertices).loosened(mesh.tolerance());
-    let outline_tolerance = RELATIVE_OUTLINE_TOLERANCE * bounds.extents().norm();
-
-    // The pieces in all cells, and true for each piece in the regions
-    let mut pieces: Vec<Vec<[f64; 2]>> = Vec::new();
-    let mut is_piece_in_regions: Vec<bool> = Vec::new();
-    let mut exact_points = ExactPoints::new(outline_tolerance);
-
-    for (corners, is_in_regions) in mesh.plane_sections(&vertices[0], normal, &bounds, region_ids) {
-        let plane_corners: Vec<[f64; 2]> = corners
-            .iter()
-            .map(|corner| frame.to_plane(corner))
-            .collect();
-        let piece = clip_convex(
-            &sort_around_center(plane_corners.clone()),
-            &counter_clockwise_outline,
-        );
-
-        if piece.len() < 3 || signed_area(&piece) <= 0. {
-            continue;
-        }
-
-        for &point in &piece {
-            // A corner of the cross-section keeps its point in space. A point of
-            // the clip is on the outline of the fracture.
-            let corner = plane_corners
-                .iter()
-                .position(|&plane_corner| plane_corner == point)
-                .map(|i| corners[i]);
-            exact_points.insert(point, corner);
-        }
-
-        pieces.push(piece);
-        is_piece_in_regions.push(is_in_regions);
-    }
-
-    let region_pieces: Vec<Vec<[f64; 2]>> = pieces
-        .iter()
-        .zip(&is_piece_in_regions)
-        .filter(|(_, is_in_regions)| **is_in_regions)
-        .map(|(piece, _)| piece.clone())
-        .collect();
-    let boundary = BoundarySide {
-        frame: &frame,
-        outline: &outline,
-        outline_tolerance,
-        exact_points: &exact_points,
-        mesh,
-    };
+    let plane_pieces = PlanePieces::new(vertices, normal, mesh, region_ids);
+    let pieces = &plane_pieces.pieces;
+    let region_pieces = plane_pieces.region_pieces();
+    let boundary = plane_pieces.boundary_side(mesh);
 
     let mut lines: Vec<BoundaryLine> = union(&region_pieces)
         .iter()
@@ -224,7 +267,7 @@ pub fn boundary_lines(
                 .iter()
                 .any(|region_id| cell_regions.contains(region_id))
         };
-        lines.extend(union(&pieces).iter().flat_map(|contour| {
+        lines.extend(union(pieces).iter().flat_map(|contour| {
             boundary.lines_of_contour(contour, vertices, |start, end| {
                 let side = boundary.segment_side(start, end)?;
                 let inner_cell = boundary
@@ -240,18 +283,68 @@ pub fn boundary_lines(
     lines
 }
 
+/// One connected part of a fracture in the cells of its regions
+#[derive(Clone, Debug, PartialEq)]
+pub struct RegionPart {
+    /// The outer contour
+    pub outline: Vec<Point3<f64>>,
+    /// The contours of the holes in the part
+    pub holes: Vec<Vec<Point3<f64>>>,
+}
+
+/// The parts of a convex fracture in the cells of its regions: the union of
+/// the pieces of `boundary_lines` (its contours without the fracture outline
+/// are the boundary lines). The mesh of the fracture is cut at the same
+/// cells. For a view of the fracture before its mesh.
+///
+/// # Arguments
+///
+/// * `vertices` - Vertices of the fracture, a convex polygon
+/// * `normal` - Unit normal vector of the fracture
+/// * `mesh` - Domain mesh
+/// * `region_ids` - Regions of the fracture (N is region N of
+///   `DomainMesh::regions`). No region: all cells of the mesh.
+pub fn region_parts(
+    vertices: &[Point3<f64>],
+    normal: &Vector3<f64>,
+    mesh: &DomainMesh,
+    region_ids: &[usize],
+) -> Vec<RegionPart> {
+    let plane_pieces = PlanePieces::new(vertices, normal, mesh, region_ids);
+    let boundary = plane_pieces.boundary_side(mesh);
+    let to_space = |contour: &Vec<[f64; 2]>| {
+        contour
+            .iter()
+            .map(|&point| boundary.to_space(point, vertices))
+            .collect()
+    };
+
+    union_shapes(&plane_pieces.region_pieces())
+        .iter()
+        .filter_map(|shape| {
+            let (outline, holes) = shape.split_first()?;
+            Some(RegionPart {
+                outline: to_space(outline),
+                holes: holes.iter().map(to_space).collect(),
+            })
+        })
+        .collect()
+}
+
 /// Contours of the union of the pieces. Outer contours are counter-clockwise
 /// and holes clockwise: the union is on the left side of each edge.
 fn union(pieces: &[Vec<[f64; 2]>]) -> Vec<Vec<[f64; 2]>> {
+    union_shapes(pieces).into_iter().flatten().collect()
+}
+
+/// The shapes of the union of the pieces: each has its outer contour, then
+/// its holes
+fn union_shapes(pieces: &[Vec<[f64; 2]>]) -> Vec<Vec<Vec<[f64; 2]>>> {
     let mut options = OverlayOptions::default();
     // The points where the cell on the other side of an edge can change stay
     options.preserve_output_collinear = true;
 
-    pieces
-        .simplify_shape_custom(FillRule::NonZero, options, Solver::default())
-        .into_iter()
-        .flatten()
-        .collect()
+    pieces.simplify_shape_custom(FillRule::NonZero, options, Solver::default())
 }
 
 /// Side of an edge of a contour of the union
@@ -754,6 +847,65 @@ mod tests {
         DomainMesh::new(&tetrahedra, &[])
             .unwrap()
             .with_boundary_surfaces(&triangles, &region_names(&["west"]))
+    }
+
+    /// Area of a contour in the plane z = 0
+    fn area(contour: &[Point3<f64>]) -> f64 {
+        let plane: Vec<[f64; 2]> = contour.iter().map(|point| [point.x, point.y]).collect();
+        0.5 * signed_area(&plane).abs()
+    }
+
+    fn parts(vertices: &[Point3<f64>], mesh: &DomainMesh, region_ids: &[usize]) -> Vec<RegionPart> {
+        region_parts(vertices, &Vector3::z(), mesh, region_ids)
+    }
+
+    #[test]
+    fn test_fracture_larger_than_the_box_has_one_part_in_the_box() {
+        let mesh = DomainMesh::new(&box_tetrahedra([-5.; 3], [5.; 3], &[]), &[]).unwrap();
+        let parts = parts(&square(0., 0., 8.), &mesh, &[]);
+
+        assert_eq!(parts.len(), 1);
+        assert!(parts[0].holes.is_empty());
+        assert!((area(&parts[0].outline) - 100.).abs() < EPS);
+        assert!(parts[0]
+            .outline
+            .iter()
+            .all(|point| point.x.abs() <= 5. + EPS && point.y.abs() <= 5. + EPS));
+    }
+
+    #[test]
+    fn test_part_of_the_l_shape_has_its_concave_outline() {
+        // The square of 4 x 4 at the inner corner: the quarter where x and y
+        // are positive has no cell
+        let parts = parts(&square(0., 0., 2.), &l_shaped_mesh(), &[]);
+
+        assert_eq!(parts.len(), 1);
+        assert!((area(&parts[0].outline) - 12.).abs() < EPS);
+    }
+
+    #[test]
+    fn test_part_of_one_region_has_only_its_cells() {
+        // Region 1 (south) is where y is negative
+        let parts = parts(&square(0., 0., 2.), &l_shaped_mesh(), &[1]);
+
+        assert_eq!(parts.len(), 1);
+        assert!((area(&parts[0].outline) - 8.).abs() < EPS);
+        assert!(parts[0].outline.iter().all(|point| point.y <= EPS));
+    }
+
+    #[test]
+    fn test_part_around_a_hole_of_the_mesh_has_the_hole() {
+        let parts = parts(&square(0., 0., 2.5), &mesh_with_a_hole(), &[]);
+
+        assert_eq!(parts.len(), 1);
+        assert!((area(&parts[0].outline) - 25.).abs() < EPS);
+        assert_eq!(parts[0].holes.len(), 1);
+        assert!((area(&parts[0].holes[0]) - 4.).abs() < EPS);
+    }
+
+    #[test]
+    fn test_fracture_outside_the_cells_has_no_part() {
+        assert!(parts(&square(3., 3., 1.), &l_shaped_mesh(), &[]).is_empty());
     }
 
     fn lengths(lines: &[BoundaryLine]) -> Vec<f64> {

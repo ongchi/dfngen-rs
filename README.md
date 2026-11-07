@@ -716,6 +716,10 @@ fn generate_from_text(toml_text: &str, load: impl Fn(&str) -> String) -> Result<
   fractures of the checkpoint.
 - `Network` has the input, the families, the accepted and rejected fractures,
   the intersections, the statistics, and the indices of the final fractures.
+- `region_boundaries::region_parts(vertices, normal, mesh, region_ids)` gives
+  the parts of a fracture in the cells of its regions (outline and holes),
+  in the coordinates of the generation: the shape of its mesh, for a view
+  before the mesh.
 - The library writes its log with the `tracing` crate. Your program installs
   the subscriber.
 - Only the items at the crate root are a stable interface. The modules are
